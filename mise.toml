@@ -1,5 +1,18 @@
 [tools]
 go = "1.26.4"
+golangci-lint = "2.12.2"
 
 [hooks]
 enter = '[[ "$(git config core.hooksPath)" == ".githooks" ]] || git config core.hooksPath .githooks'
+
+[tasks.lint]
+description = "Lint the project"
+run = """
+golangci-lint run
+"""
+
+[tasks.fmt]
+description = "Format go code with golangci-lint"
+run = """
+golangci-lint fmt
+"""
