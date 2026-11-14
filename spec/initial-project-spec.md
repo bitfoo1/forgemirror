@@ -24,7 +24,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 1: Project skeleton (CLI, version, entrypoint)
 - [x] Phase 2: Configuration
 - [x] Phase 2.5: Filtering
-- [ ] Phase 3: Core mirroring
+- [x] Phase 3: Core mirroring
 - [ ] Phase 4: HTTP webhook server
 - [ ] Phase 5: Concurrency & multi-target
 - [ ] Phase 6: Observability & graceful shutdown
@@ -97,14 +97,20 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 3: Core mirroring
 
-- [ ] `internal/mirror`: `Mirrorer` interface, git implementation via
-      `exec.CommandContext`
-- [ ] `git clone --mirror` into a temp dir → `git push --mirror` → cleanup
-      with `defer`, also on failure
-- [ ] Credentials injected via URL userinfo at runtime; redacted from errors
-- [ ] stdout/stderr captured into wrapped errors (`%w`)
-- [ ] Tests with a fake git binary: success, timeout, cleanup on failure,
-      redaction
+- [x] `internal/mirror`: `Mirrorer` (clone once) and `Workspace` (push to each
+      target, safe for concurrent pushes), git implementation via
+      `exec.CommandContext` with per-command timeout and `WaitDelay`
+- [x] `git clone --mirror` into a temp dir → push → cleanup, also on failure
+- [x] Push uses `+refs/heads/*` and `+refs/tags/*` with `--prune` instead of
+      `--mirror`: Forgejo exposes `refs/pull/*`, which GitHub rejects
+- [x] Credentials as a URL-scoped `http.<url>.extraHeader` via `GIT_CONFIG_*`
+      env vars: never on disk (the clone config would store a URL with
+      credentials), never in argv; inherited `GIT_*` vars and host/global git
+      config are ignored
+- [x] stdout/stderr captured into wrapped errors (`%w`), credentials redacted
+- [x] Tests: fake git (args, env, failure, timeout, cancellation, cleanup,
+      redaction) and real git (ref semantics, header scoping)
+- [ ] Known limitation: Git LFS objects are not mirrored
 
 ## Phase 4: HTTP webhook server
 
