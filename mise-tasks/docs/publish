@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#MISE description="CI: build the documentation and rsync it to the web host"
+#MISE depends=["docs:build"]
+set -euo pipefail
+
+# Provider-neutral: anything reachable with rsync over SSH works (Uberspace,
+# a VPS, …). Configuration comes from the CI environment:
+#   DOCS_DEPLOY_TARGET    user@host:/path/to/document/root/
+#   DOCS_SSH_KEY          base64-encoded private deploy key (secret)
+#   DOCS_SSH_KNOWN_HOSTS  host key line(s) of the target, pinned instead of
+#                         ssh-keyscan so a spoofed host cannot receive or
+#                         alter the site
+: "${DOCS_DEPLOY_TARGET:?}" "${DOCS_SSH_KEY:?}" "${DOCS_SSH_KNOWN_HOSTS:?}"
+
+ssh_dir="$(mktemp -d)"
+trap 'rm -rf "${ssh_dir}"' EXIT
+printf '%s' "${DOCS_SSH_KEY}" | base64 -d >"${ssh_dir}/id"
+printf '%s\n' "${DOCS_SSH_KNOWN_HOSTS}" >"${ssh_dir}/known_hosts"
+chmod 600 "${ssh_dir}/id"
+
+# --delete keeps the remote an exact copy of the build (removed pages vanish);
+# --delay-updates swaps files in at the end so visitors never see a
+# half-uploaded site.
+rsync --archive --compress --delete --delay-updates --human-readable --stats \
+  --chmod=D755,F644 \
+  -e "ssh -i ${ssh_dir}/id -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ssh_dir}/known_hosts" \
+  docs/public/ "${DOCS_DEPLOY_TARGET}"

@@ -1,0 +1,72 @@
+# Publishes the documentation site (docs/) to the web host via rsync over
+# SSH. Kept separate from CI so that the changelog/release job stays the last
+# job there and a failing docs upload can never block a release.
+#
+# The job only runs once the target is configured (repository → Settings →
+# Actions):
+#   Variables  DOCS_DEPLOY_TARGET    user@host:/document/root/ (trailing slash)
+#              DOCS_BASE_URL         public URL, e.g. https://forgemirror.example.org/
+#              DOCS_SSH_KNOWN_HOSTS  pinned host key line(s) of the target
+#   Secrets    DOCS_SSH_KEY          base64-encoded private deploy key
+#              GH_TOKEN              optional; avoids GitHub rate limits in mise
+
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      # Pages embed these files from the repository.
+      - forgemirror.example.yaml
+      - charts/forgemirror/values.yaml
+      - deploy/configmap.yaml
+      - mise.toml
+      - .forgejo/workflows/docs.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: docs
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: publish
+    if: vars.DOCS_DEPLOY_TARGET != ''
+    runs-on: docker
+    container:
+      image: debian:trixie-slim
+    steps:
+      - name: Checkout
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # rsync + openssh-client: transport to the web host (system tools,
+          # not available through mise).
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl git rsync openssh-client >/dev/null
+          git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
+          git checkout --quiet "${GITHUB_SHA}"
+
+      - name: Install mise and tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          MISE_VERSION: v2026.11.7 # keep in step with the local mise version
+        run: |
+          set -eu
+          curl -fsSL https://mise.run | sh
+          echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
+          # Only what the docs need: hugo, go (Hugo modules) and lychee.
+          "${HOME}/.local/bin/mise" install go hugo lychee
+
+      - name: Check
+        run: mise run docs:check
+
+      - name: Publish
+        env:
+          DOCS_DEPLOY_TARGET: ${{ vars.DOCS_DEPLOY_TARGET }}
+          DOCS_BASE_URL: ${{ vars.DOCS_BASE_URL }}
+          DOCS_SSH_KNOWN_HOSTS: ${{ vars.DOCS_SSH_KNOWN_HOSTS }}
+          DOCS_SSH_KEY: ${{ secrets.DOCS_SSH_KEY }}
+        run: mise run docs:publish

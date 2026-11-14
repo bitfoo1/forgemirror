@@ -1,4 +1,7 @@
-# CI/CD, releases and branch protection
+---
+title: CI/CD and releases
+weight: 2
+---
 
 ## Pipeline
 
@@ -12,6 +15,13 @@ on pull requests. Every step is a mise task, so a local `mise run check`
 | `changelog` | after `verify`   | PR: `changelog:preview --pr` · main: `release:publish`, then `release:pr` · tag: `release:publish` |
 
 The changelog job is always last: it only runs once the code is verified.
+
+`.forgejo/workflows/docs.yaml` publishes this documentation separately, on
+pushes to `main` that touch the docs (or files the docs embed). It runs
+`docs:check`, then `docs:publish`, which builds the site and syncs it to the
+web host with `rsync --delete` over SSH. Keeping it out of the CI workflow
+means the changelog job stays last there, and a failed upload never blocks a
+release.
 
 ## Release flow
 
@@ -55,6 +65,15 @@ release is `v0.1.0`.
 | `COSIGN_PRIVATE_KEY` | contents of `cosign.key`                                                        |
 | `COSIGN_PASSWORD`    | password of `cosign.key`                                                        |
 | `GH_TOKEN`           | optional; GitHub token so mise's tool downloads are not rate-limited            |
+| `DOCS_SSH_KEY`       | base64-encoded private SSH key allowed to write the docs document root          |
+
+### Variables (repository → Settings → Actions → Variables)
+
+| Variable               | Purpose                                                             |
+|------------------------|---------------------------------------------------------------------|
+| `DOCS_DEPLOY_TARGET`   | rsync target, `user@host:/document/root/`; the docs job is skipped while unset |
+| `DOCS_BASE_URL`        | public URL of the site, e.g. `https://forgemirror.example.org/`       |
+| `DOCS_SSH_KNOWN_HOSTS` | pinned host key line(s) of the web host (`ssh-keyscan host`, verified once by hand) |
 
 Create the signing key pair locally and commit only the public key:
 

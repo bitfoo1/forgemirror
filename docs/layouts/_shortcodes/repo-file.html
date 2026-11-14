@@ -1,0 +1,11 @@
+{{- /*
+Renders a repository file mounted under assets/repo/ as a highlighted code
+block, e.g. {{< repo-file "forgemirror.example.yaml" >}}.
+*/ -}}
+{{- $name := .Get 0 -}}
+{{- $lang := .Get 1 | default "yaml" -}}
+{{- with resources.Get (printf "repo/%s" $name) -}}
+  {{- highlight .Content $lang "" -}}
+{{- else -}}
+  {{- errorf "repo-file: %q is not mounted under assets/repo/ (%s)" $name $.Position -}}
+{{- end -}}

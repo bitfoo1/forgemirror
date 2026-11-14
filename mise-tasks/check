@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#MISE description="Full quality gate: fmt, tidy, vet, lint, tests with coverage, govulncheck, manifests, chart"
-#MISE depends=["fmt:check", "tidy:check", "vet", "lint", "test:coverage", "vuln", "deploy:check", "chart:check"]
+#MISE description="Full quality gate: fmt, tidy, vet, lint, tests with coverage, govulncheck, manifests, chart, docs"
+#MISE depends=["fmt:check", "tidy:check", "vet", "lint", "test:coverage", "vuln", "deploy:check", "chart:check", "docs:check"]
 set -euo pipefail
 
 # The pre-push hook and CI both run exactly this task, so a green local push

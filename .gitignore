@@ -42,3 +42,8 @@ go.work.sum
 
 # Helm chart dependencies (restored from Chart.lock by helm dependency build)
 /charts/forgemirror/charts/
+
+# Documentation build output (mise run docs:build)
+/docs/public/
+/docs/resources/
+/docs/.hugo_build.lock

@@ -29,6 +29,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 5: Concurrency & multi-target
 - [x] Phase 6: Observability & graceful shutdown
 - [x] Phase 7: Kubernetes deployment
+- [x] Documentation site
 
 ## Design decisions
 
@@ -164,3 +165,13 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] `deploy/README.md`: apply, configure the Forgejo system webhook, verify
 - [x] Helm chart `charts/forgemirror` on the bjw-s common library, published
       as an OCI artifact with every release (same version as the app)
+
+## Documentation site
+
+- [x] Hugo + Hextra site in `docs/`: overview, getting started, configuration
+      reference, Forgejo webhook, deployment (Helm, kustomize, container),
+      operations, security, development and CI/CD
+- [x] Reference pages embed repository files (example config, chart values,
+      ConfigMap) instead of copies
+- [x] `docs:check` (strict build + offline link check) is part of the gate
+- [x] `docs.yaml` workflow publishes via rsync over SSH with a pinned host key

@@ -1,0 +1,86 @@
+# forgemirror documentation (Hugo + Hextra).
+# baseURL is set at build time (--baseURL / DOCS_BASE_URL), so the same source
+# builds for local preview and for whichever host serves the site.
+baseURL: /
+title: forgemirror
+locale: en-US
+enableGitInfo: true
+enableRobotsTXT: true
+
+module:
+  imports:
+    - path: github.com/imfing/hextra
+  mounts:
+    - source: content
+      target: content
+    - source: static
+      target: static
+    - source: layouts
+      target: layouts
+    - source: assets
+      target: assets
+    # Single source of truth: the reference pages include these files from
+    # the repository instead of copies that could drift.
+    - source: ../forgemirror.example.yaml
+      target: assets/repo/forgemirror.example.yaml
+    - source: ../charts/forgemirror/values.yaml
+      target: assets/repo/chart-values.yaml
+    - source: ../deploy/configmap.yaml
+      target: assets/repo/configmap.yaml
+
+markup:
+  goldmark:
+    renderer:
+      # Required by the Hextra home layout (raw div/br); all content is
+      # authored in this repository.
+      unsafe: true
+  highlight:
+    noClasses: false
+
+menu:
+  main:
+    - name: Docs
+      pageRef: /docs
+      weight: 1
+    - name: Search
+      weight: 2
+      params:
+        type: search
+    - name: Source
+      weight: 3
+      url: https://git.bitfoo.de/dvonessen/forgemirror
+      params:
+        icon: code
+
+params:
+  # Project locations used throughout the pages via {{< param "project.…" >}}.
+  # Change them here when the public home of releases/images moves.
+  project:
+    repo: https://git.bitfoo.de/dvonessen/forgemirror
+    releases: https://git.bitfoo.de/dvonessen/forgemirror/releases
+    image: git.bitfoo.de/dvonessen/forgemirror
+    chart: oci://git.bitfoo.de/dvonessen/charts/forgemirror
+    chartRef: git.bitfoo.de/dvonessen/charts/forgemirror
+  description: Mirror Forgejo repositories to GitHub, Codeberg, GitLab and any other forge, instantly on push.
+  navbar:
+    displayTitle: true
+    displayLogo: false
+    width: wide
+  page:
+    width: wide
+  theme:
+    default: system
+    displayToggle: true
+  footer:
+    displayCopyright: false
+    displayPoweredBy: true
+  editURL:
+    enable: true
+    base: https://git.bitfoo.de/dvonessen/forgemirror/_edit/main/docs/content
+  displayUpdatedDate: true
+  dateFormat: "2006-01-02"
+  search:
+    enable: true
+    type: flexsearch
+    flexsearch:
+      index: content

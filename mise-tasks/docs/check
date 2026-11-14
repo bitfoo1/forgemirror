@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#MISE description="Strict documentation build (warnings fail), without touching docs/public"
+set -euo pipefail
+
+out="$(mktemp -d)"
+trap 'rm -rf "${out}"' EXIT
+# --panicOnWarning turns broken refs, missing repo-file mounts and template
+# warnings into failures, so CI rejects docs that would render wrong.
+hugo build --source docs --destination "${out}" --panicOnWarning --printPathWarnings --quiet
+
+# Hugo does not check links between pages. --offline limits lychee to links
+# inside the built site, so the check is fast and needs no network (external
+# sites being down must not break the gate).
+lychee --offline --no-progress --root-dir "${out}" "${out}"
+echo "documentation builds cleanly ($(find "${out}" -name '*.html' | wc -l | tr -d ' ') pages)"

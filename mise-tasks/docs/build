@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Build the documentation site into docs/public"
+set -euo pipefail
+
+# The site does not know where it is hosted; DOCS_BASE_URL (e.g.
+# https://forgemirror.example.org/) makes absolute links, sitemap and canonical
+# URLs correct. Without it the build uses root-relative URLs.
+hugo build --source docs --minify --cleanDestinationDir --panicOnWarning \
+  --baseURL "${DOCS_BASE_URL:-/}"

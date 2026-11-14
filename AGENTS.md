@@ -21,6 +21,8 @@ GitLab, …) with `git clone --mirror` + `git push --mirror`.
 - `.forgejo/workflows/` — CI; it calls the same mise tasks.
 - `deploy/` — Kubernetes manifests (kustomize); see `deploy/README.md`.
 - `charts/forgemirror/` — Helm chart (bjw-s common library); see its README.
+- `docs/` — documentation site (Hugo + Hextra, own Go module for Hugo
+  modules); `mise run docs:serve` to preview.
 
 ## Tooling — mise owns everything
 
@@ -35,7 +37,7 @@ Common tasks:
 
 - `mise run check` — the full gate (fmt, tidy, vet, lint, tests with race
   detector and ≥80 % coverage of `internal/`, govulncheck, Kubernetes manifest
-  and Helm chart validation). Pre-push and CI
+  and Helm chart validation, strict docs build). Pre-push and CI
   run exactly this. It must be green before every commit.
 - `mise run fmt` — format (gofumpt + goimports + golines via golangci-lint).
 - `mise run test -- -run TestName` — run selected tests.

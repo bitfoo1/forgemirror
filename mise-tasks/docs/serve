@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Live preview of the documentation on http://localhost:1313"
+set -euo pipefail
+
+hugo server --source docs --buildDrafts --disableFastRender
