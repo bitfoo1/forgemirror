@@ -2,8 +2,7 @@
 #MISE description="CI: tag the version at the top of CHANGELOG.md (if new), publish it with goreleaser and push the Helm chart"
 set -euo pipefail
 
-: "${GITEA_TOKEN:?}" "${PACKAGE_RW_TOKEN:?}" "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_ACTOR:?}"
-: "${COSIGN_PRIVATE_KEY:?}" "${COSIGN_PASSWORD?}"
+: "${GITEA_TOKEN:?}" "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_ACTOR:?}"
 
 api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
 registry="${GITHUB_SERVER_URL#https://}"
@@ -28,6 +27,10 @@ if [[ "${status}" == "200" ]]; then
   echo "${tag} is already released; nothing to publish"
   exit 0
 fi
+
+# Publishing credentials are only required past this point, so ordinary
+# pushes to main succeed before the release secrets are configured.
+: "${PACKAGE_RW_TOKEN:?}" "${COSIGN_PRIVATE_KEY:?}" "${COSIGN_PASSWORD?}"
 
 git fetch --quiet --tags --force origin
 if ! git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
