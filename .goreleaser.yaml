@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# goreleaser: binaries, container image (ko), SBOMs, cosign signatures and the
+# Forgejo release. Run through `mise run release:publish` (CI) or
+# `mise run snapshot` (local dry run).
+version: 2
+
+project_name: forgemirror
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: forgemirror
+    main: ./cmd/forgemirror
+    binary: forgemirror
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # No -X version stamping: the version package reads the VCS tag that Go
+    # embeds into the build info (the release runs on a clean, tagged checkout).
+    ldflags: [-s -w]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# ko builds the image without a Docker daemon; the CI runner exposes none.
+kos:
+  - id: forgemirror
+    build: forgemirror
+    # chainguard/git: non-root (65532), ships git and CA certificates. The
+    # service shells out to git, so the default chainguard/static cannot work.
+    base_image: cgr.dev/chainguard/git:latest
+    repositories:
+      - git.bitfoo.de/dvonessen/forgemirror
+    platforms: [linux/amd64, linux/arm64]
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    bare: true
+    sbom: spdx
+    creation_time: "{{ .CommitTimestamp }}"
+    labels:
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MIT
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, CHANGELOG.md]
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+# Key-based signing: keyless (Fulcio) needs an OIDC issuer that Sigstore can
+# reach, and the Forgejo instance is not internet-exposed.
+# Secrets: COSIGN_PRIVATE_KEY (PEM) and COSIGN_PASSWORD.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - --key=env://COSIGN_PRIVATE_KEY
+      - --bundle=${signature}
+      - ${artifact}
+      - --yes
+
+docker_signs:
+  - artifacts: manifests
+    args:
+      - sign
+      - --key=env://COSIGN_PRIVATE_KEY
+      - ${artifact}@${digest}
+      - --yes
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
+
+# Release notes come from git-cliff (--release-notes), so the changelog in the
+# release PR and the release page are produced by the same tool and config.
+changelog:
+  disable: true
+
+gitea_urls:
+  api: "{{ .Env.GITHUB_SERVER_URL }}/api/v1"
+  download: "{{ .Env.GITHUB_SERVER_URL }}"
+
+release:
+  gitea:
+    owner: dvonessen
+    name: forgemirror
+  mode: replace

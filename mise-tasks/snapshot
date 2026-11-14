@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="goreleaser dry run: cross-compile, archive, SBOM; no image, signing or publishing"
+set -euo pipefail
+
+# ko is skipped because a snapshot image needs a local Docker daemon, and
+# signing because it needs the release key. Both are exercised on release.
+# A snapshot publishes nothing; forge tokens from the developer's shell would
+# only trip goreleaser's "multiple tokens found" check.
+unset GITHUB_TOKEN GITLAB_TOKEN GITEA_TOKEN
+: "${GITHUB_SERVER_URL:=https://git.bitfoo.de}"
+export GITHUB_SERVER_URL
+goreleaser release --snapshot --clean --skip=ko,sign

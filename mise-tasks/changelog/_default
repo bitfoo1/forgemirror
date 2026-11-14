@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Regenerate CHANGELOG.md from the git history"
+set -euo pipefail
+
+git cliff --output CHANGELOG.md

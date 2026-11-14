@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#MISE description="Print the changelog of unreleased changes; with --pr, also post it as a PR comment"
+#USAGE flag "--pr <number>" help="pull request to comment on (CI, needs FORGEJO_API_TOKEN)"
+set -euo pipefail
+
+# The marker identifies our comment, so each pipeline run updates it in place
+# instead of piling up one comment per push.
+marker="<!-- forgemirror:changelog-preview -->"
+
+next="$(git cliff --bumped-version 2>/dev/null)"
+notes="$(git cliff --unreleased --bump --strip header 2>/dev/null)"
+printf '%s\n' "${notes}"
+
+# shellcheck disable=SC2154 # usage_pr is provided by mise from #USAGE
+[[ -z "${usage_pr:-}" ]] && exit 0
+
+: "${FORGEJO_API_TOKEN:?FORGEJO_API_TOKEN is required with --pr}"
+: "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}"
+api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+forgejo() {
+  local method="$1" path="$2"
+  shift 2
+  curl --fail-with-body -sS -X "${method}" \
+    -H "Authorization: token ${FORGEJO_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    "${api}${path}" "$@"
+}
+
+body="$(jq -n --arg m "${marker}" --arg v "${next}" --arg n "${notes}" \
+  '{body: ($m + "\n### Changelog preview (next version: " + $v + ")\n\n" + $n)}')"
+
+comment_id="$(forgejo GET "/issues/${usage_pr}/comments" |
+  jq -r --arg m "${marker}" 'map(select(.body | startswith($m))) | first | .id // empty')"
+
+if [[ -n "${comment_id}" ]]; then
+  forgejo PATCH "/issues/comments/${comment_id}" --data "${body}" >/dev/null
+else
+  forgejo POST "/issues/${usage_pr}/comments" --data "${body}" >/dev/null
+fi
+echo "changelog preview posted to PR #${usage_pr}" >&2

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#MISE description="CI: tag the version at the top of CHANGELOG.md (if new) and publish it with goreleaser"
+set -euo pipefail
+
+: "${GITEA_TOKEN:?}" "${PACKAGE_RW_TOKEN:?}" "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_ACTOR:?}"
+: "${COSIGN_PRIVATE_KEY:?}" "${COSIGN_PASSWORD?}"
+
+api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+registry="${GITHUB_SERVER_URL#https://}"
+
+if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+  tag="${GITHUB_REF_NAME}"
+else
+  # A merged release PR is recognised by its result, not by its commit
+  # message: the newest CHANGELOG.md heading names a version without a
+  # release. That works for merge, squash and rebase merges alike.
+  version="$(sed -nE 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n1)"
+  if [[ -z "${version}" ]]; then
+    echo "CHANGELOG.md names no released version yet; nothing to publish"
+    exit 0
+  fi
+  tag="v${version}"
+fi
+
+status="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: token ${GITEA_TOKEN}" \
+  "${api}/releases/tags/${tag}")"
+if [[ "${status}" == "200" ]]; then
+  echo "${tag} is already released; nothing to publish"
+  exit 0
+fi
+
+git fetch --quiet --tags --force origin
+if ! git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
+  git -c user.name="forgemirror release bot" -c user.email="release-bot@noreply.git.bitfoo.de" \
+    tag --annotate "${tag}" --message "${tag}"
+  # Pushed with the automatic token on purpose: tags pushed that way start no
+  # new pipeline, so this run stays the only one that publishes the release.
+  git push --quiet origin "refs/tags/${tag}"
+  echo "created tag ${tag}"
+fi
+# A re-run after a failed publish may find the tag on an older commit.
+git checkout --quiet "${tag}"
+
+notes="$(mktemp)"
+trap 'rm -f "${notes}"' EXIT
+git cliff --latest --strip all --output "${notes}" 2>/dev/null
+
+# ko pushes with credentials from the Docker config; the package registry
+# needs a token with the write:package scope.
+mkdir -p "${HOME}/.docker"
+auth="$(printf '%s:%s' "${GITHUB_ACTOR}" "${PACKAGE_RW_TOKEN}" | base64 | tr -d '\n')"
+printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${registry}" "${auth}" >"${HOME}/.docker/config.json"
+
+# goreleaser aborts when it sees more than one forge token; GITEA_TOKEN alone
+# puts it into Gitea/Forgejo mode.
+unset GITHUB_TOKEN GITLAB_TOKEN
+goreleaser release --clean --release-notes "${notes}"

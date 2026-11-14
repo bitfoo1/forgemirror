@@ -1,0 +1,127 @@
+# CI/CD for forgemirror. Every step calls a mise task, so this file only
+# decides *when* things run; *what* runs is identical to local development and
+# the git hooks.
+#
+# Runner constraints on git.bitfoo.de (act_runner, `runs-on: docker`):
+# - No node in the job image, so JavaScript actions (actions/checkout,
+#   upload-artifact, …) cannot run; checkout is done with plain git.
+# - No Docker daemon for jobs; images are built daemonless by ko.
+#
+# Secrets:
+#   RELEASE_TOKEN       PAT (write:repository) — pushes release/next and
+#                       opens the release PR so that CI runs on it.
+#   PACKAGE_RW_TOKEN    PAT (write:package) — pushes the container image.
+#   COSIGN_PRIVATE_KEY  cosign key (PEM) — signs checksums and the image.
+#   COSIGN_PASSWORD     password of the cosign key.
+#   GH_TOKEN            optional GitHub token; avoids GitHub API rate limits
+#                       when mise downloads tools.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+
+jobs:
+  verify:
+    name: verify
+    if: github.ref_type != 'tag'
+    runs-on: docker
+    container:
+      image: debian:trixie-slim
+    steps:
+      - name: Checkout
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # gcc + libc6-dev: the race detector (go test -race) needs cgo.
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl git gcc libc6-dev >/dev/null
+          git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
+          git checkout --quiet "${GITHUB_SHA}"
+
+      - name: Install mise and tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          MISE_VERSION: v2026.11.7 # keep in step with the local mise version
+        run: |
+          set -eu
+          curl -fsSL https://mise.run | sh
+          echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
+          "${HOME}/.local/bin/mise" install
+
+      - name: Commit messages
+        run: |
+          set -eu
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            range="$(mise exec -- jq -r '.pull_request.base.sha + ".." + .pull_request.head.sha' "${GITHUB_EVENT_PATH}")"
+          else
+            range="$(mise exec -- jq -r '.before + ".." + .after' "${GITHUB_EVENT_PATH}")"
+            case "${range}" in 0000000000000000000000000000000000000000..*) range="${GITHUB_SHA}~1..${GITHUB_SHA}" ;; esac
+          fi
+          mise run commits:check "${range}"
+
+      - name: Quality gate
+        run: mise run check
+
+      - name: Snapshot build
+        run: mise run snapshot
+
+  changelog:
+    name: changelog
+    needs: verify
+    # Tag pipelines skip verify (the tagged commit was verified on main), so
+    # this job must not depend on its success there.
+    if: always() && (needs.verify.result == 'success' || github.ref_type == 'tag')
+    runs-on: docker
+    container:
+      image: debian:trixie-slim
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl git >/dev/null
+          git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
+          git checkout --quiet "${GITHUB_SHA}"
+
+      - name: Install mise and tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          MISE_VERSION: v2026.11.7 # keep in step with the local mise version
+        run: |
+          set -eu
+          curl -fsSL https://mise.run | sh
+          echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
+          "${HOME}/.local/bin/mise" install
+
+      - name: Changelog preview (pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          FORGEJO_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise run changelog:preview --pr "$(mise exec -- jq -r .pull_request.number "${GITHUB_EVENT_PATH}")"
+
+      # Runs before release:pr on purpose: after a release PR merge the tag
+      # must exist before the next release PR is calculated from it.
+      - name: Publish release (merged release PR or pushed tag)
+        if: github.event_name == 'push'
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_RW_TOKEN: ${{ secrets.PACKAGE_RW_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: mise run release:publish
+
+      - name: Update release PR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: mise run release:pr

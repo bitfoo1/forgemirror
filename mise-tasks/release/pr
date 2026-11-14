@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#MISE description="CI: open, update or close the release PR (branch release/next) for the next version"
+set -euo pipefail
+
+# RELEASE_TOKEN must be a personal access token, not the automatic Actions
+# token: pushes and PRs made with the automatic token start no workflow runs
+# (forgejo#11446), so the release PR would never get its required checks.
+: "${RELEASE_TOKEN:?}" "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}"
+
+base="main"
+branch="release/next"
+api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+remote="https://oauth2:${RELEASE_TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git"
+
+forgejo() {
+  local method="$1" path="$2"
+  shift 2
+  curl --fail-with-body -sS -X "${method}" \
+    -H "Authorization: token ${RELEASE_TOKEN}" \
+    -H "Content-Type: application/json" \
+    "${api}${path}" "$@"
+}
+
+git fetch --quiet --tags --force origin "${base}"
+git checkout --quiet -B "${branch}" "origin/${base}"
+
+open_pr="$(forgejo GET "/pulls?state=open&limit=50" |
+  jq -r --arg b "${branch}" 'map(select(.head.ref == $b)) | first | .number // empty')"
+
+# Only user-facing changes justify a release; a run of chore/ci/docs commits
+# alone would otherwise produce a patch release on every merge.
+releasable="$(git cliff --unreleased --context 2>/dev/null | jq '
+  [.[].commits[] | select(.breaking or (.group | test("Features|Bug fixes|Performance")))] | length')"
+
+if [[ "${releasable}" -eq 0 ]]; then
+  echo "no user-facing changes since the last release"
+  if [[ -n "${open_pr}" ]]; then
+    forgejo PATCH "/pulls/${open_pr}" --data '{"state": "closed"}' >/dev/null
+    echo "closed stale release PR #${open_pr}"
+  fi
+  exit 0
+fi
+
+next="$(git cliff --bumped-version 2>/dev/null)"
+git cliff --bump --output CHANGELOG.md 2>/dev/null
+notes="$(git cliff --unreleased --bump --strip all 2>/dev/null)"
+title="chore(release): :bookmark: ${next}"
+
+git add CHANGELOG.md
+git -c user.name="forgemirror release bot" -c user.email="release-bot@noreply.git.bitfoo.de" \
+  commit --quiet --message "${title}"
+# Force: the branch is regenerated from main on every run, never edited by hand.
+git push --quiet --force "${remote}" "HEAD:refs/heads/${branch}"
+
+payload="$(jq -n --arg t "${title}" --arg b "${notes}" --arg h "${branch}" --arg base "${base}" \
+  '{title: $t, body: ("Merging this PR releases this version.\n\n" + $b), head: $h, base: $base}')"
+
+if [[ -n "${open_pr}" ]]; then
+  forgejo PATCH "/pulls/${open_pr}" --data "$(jq 'del(.head, .base)' <<<"${payload}")" >/dev/null
+  echo "updated release PR #${open_pr} for ${next}"
+else
+  number="$(forgejo POST "/pulls" --data "${payload}" | jq -r .number)"
+  echo "opened release PR #${number} for ${next}"
+fi
