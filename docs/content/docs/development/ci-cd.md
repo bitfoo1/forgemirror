@@ -71,7 +71,7 @@ release is `v0.1.0`.
 
 | Variable               | Purpose                                                             |
 |------------------------|---------------------------------------------------------------------|
-| `DOCS_DEPLOY_TARGET`   | rsync target, `user@host:/document/root/`; the docs job is skipped while unset |
+| `DOCS_DEPLOY_TARGET`   | rsync target, `user@host:/document/root/`; just `user@host:` when the deploy key is restricted with rrsync, which resolves paths below its root. The docs job is skipped while unset |
 | `DOCS_BASE_URL`        | public URL of the site, e.g. `https://forgemirror.example.org/`       |
 | `DOCS_SSH_KNOWN_HOSTS` | pinned host key line(s) of the web host (`ssh-keyscan host`, verified once by hand) |
 

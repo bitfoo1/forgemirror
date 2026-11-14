@@ -5,7 +5,10 @@ set -euo pipefail
 
 # Provider-neutral: anything reachable with rsync over SSH works (Uberspace,
 # a VPS, …). Configuration comes from the CI environment:
-#   DOCS_DEPLOY_TARGET    user@host:/path/to/document/root/
+#   DOCS_DEPLOY_TARGET    user@host:/path/to/document/root/, or just
+#                         user@host: when the key is locked to the document
+#                         root with rrsync (rrsync resolves every path
+#                         below that root, so an absolute path is doubled)
 #   DOCS_SSH_KEY          base64-encoded private deploy key (secret)
 #   DOCS_SSH_KNOWN_HOSTS  host key line(s) of the target, pinned instead of
 #                         ssh-keyscan so a spoofed host cannot receive or

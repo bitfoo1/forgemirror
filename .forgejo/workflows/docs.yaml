@@ -4,7 +4,8 @@
 #
 # The job only runs once the target is configured (repository → Settings →
 # Actions):
-#   Variables  DOCS_DEPLOY_TARGET    user@host:/document/root/ (trailing slash)
+#   Variables  DOCS_DEPLOY_TARGET    user@host:/document/root/ (trailing slash);
+#                                    user@host: for an rrsync-restricted key
 #              DOCS_BASE_URL         public URL, e.g. https://forgemirror.example.org/
 #              DOCS_SSH_KNOWN_HOSTS  pinned host key line(s) of the target
 #   Secrets    DOCS_SSH_KEY          base64-encoded private deploy key
