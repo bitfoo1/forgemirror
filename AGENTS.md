@@ -19,6 +19,7 @@ GitLab, …) with `git clone --mirror` + `git push --mirror`.
 - `mise-tasks/` — every task as a file task (`mise tasks` lists them).
 - `.githooks/` — thin shims that call `mise run hook:*`.
 - `.forgejo/workflows/` — CI; it calls the same mise tasks.
+- `deploy/` — Kubernetes manifests (kustomize); see `deploy/README.md`.
 
 ## Tooling — mise owns everything
 
@@ -32,7 +33,8 @@ GitLab, …) with `git clone --mirror` + `git push --mirror`.
 Common tasks:
 
 - `mise run check` — the full gate (fmt, tidy, vet, lint, tests with race
-  detector and ≥80 % coverage of `internal/`, govulncheck). Pre-push and CI
+  detector and ≥80 % coverage of `internal/`, govulncheck, Kubernetes manifest
+  validation). Pre-push and CI
   run exactly this. It must be green before every commit.
 - `mise run fmt` — format (gofumpt + goimports + golines via golangci-lint).
 - `mise run test -- -run TestName` — run selected tests.

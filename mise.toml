@@ -12,6 +12,8 @@ git-cliff = "2.14.2"
 cosign = "3.1.4"
 syft = "1.57.1" # goreleaser shells out to syft to generate SBOMs
 jq = "1.8.2"
+kustomize = "5.8.3"
+kubeconform = "0.8.0"
 
 [hooks]
 # Point git at the versioned hooks in .githooks/. `enter` covers developers

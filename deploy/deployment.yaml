@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgemirror
+spec:
+  # One replica: per-repository coalescing lives in memory, so two replicas
+  # could push the same repository concurrently.
+  replicas: 1
+  strategy:
+    # Recreate keeps the single-writer guarantee during rollouts as well.
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      # Must exceed server.shutdown_timeout so running mirrors can finish
+      # before the kubelet sends SIGKILL.
+      terminationGracePeriodSeconds: 75
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: forgemirror
+          image: git.bitfoo.de/dvonessen/forgemirror
+          args: ["--config", "/etc/forgemirror/forgemirror.yaml"]
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              # git clone of large repositories is memory hungry; raise this
+              # together with mirror.max_concurrent.
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/forgemirror
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets/forgemirror
+              readOnly: true
+            # Clones are temporary; emptyDir keeps the root filesystem
+            # read-only. sizeLimit evicts the pod instead of filling the node.
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: forgemirror
+        - name: secrets
+          secret:
+            secretName: forgemirror
+            defaultMode: 0440
+        - name: work
+          emptyDir:
+            sizeLimit: 5Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi

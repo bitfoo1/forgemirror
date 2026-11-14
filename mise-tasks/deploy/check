@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Render the Kubernetes manifests and validate them against the API schemas"
+set -euo pipefail
+
+# -strict rejects unknown fields, which catches typos that kubectl would only
+# report (or silently drop) at apply time. The Secret template is validated
+# separately because it is deliberately not part of the kustomization.
+kustomize build deploy | kubeconform -strict -summary -
+kubeconform -strict -summary deploy/secret.example.yaml

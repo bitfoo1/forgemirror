@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forgemirror
+data:
+  # Non-secret settings only. Secrets are read from files mounted from the
+  # forgemirror Secret (see deployment.yaml and secret.example.yaml).
+  forgemirror.yaml: |
+    server:
+      listen_address: ":8080"
+      # Keep below terminationGracePeriodSeconds in deployment.yaml.
+      shutdown_timeout: 60s
+    log:
+      level: info
+      format: json
+    webhook:
+      secret_file: /run/secrets/forgemirror/webhook-secret
+    source:
+      token_file: /run/secrets/forgemirror/source-token
+    mirror:
+      timeout: 10m
+      max_concurrent: 4
+      work_dir: /work
+    filter:
+      exclude_private: true
+    targets:
+      - name: github
+        url: "https://github.com/acme/{{ .Name }}.git"
+        token_file: /run/secrets/forgemirror/github-token

@@ -28,7 +28,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 4: HTTP webhook server
 - [x] Phase 5: Concurrency & multi-target
 - [x] Phase 6: Observability & graceful shutdown
-- [ ] Phase 7: Kubernetes deployment
+- [x] Phase 7: Kubernetes deployment
 
 ## Design decisions
 
@@ -158,7 +158,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 7: Kubernetes deployment
 
-- [ ] `deploy/`: Deployment (1 replica, requests/limits, liveness `/healthz`,
+- [x] `deploy/`: Deployment (1 replica, requests/limits, liveness `/healthz`,
       readiness `/readyz`, non-root, read-only root fs + writable tmp),
       Service (ClusterIP), Secret template, ConfigMap
-- [ ] `deploy/README.md`: apply, configure the Forgejo system webhook, verify
+- [x] `deploy/README.md`: apply, configure the Forgejo system webhook, verify
