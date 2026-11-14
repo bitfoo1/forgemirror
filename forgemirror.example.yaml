@@ -1,0 +1,51 @@
+# forgemirror example configuration. Copy to forgemirror.yaml and adjust.
+#
+# Every key can also be set via environment variables: prefix FORGEMIRROR_,
+# upper case, nesting with a double underscore, e.g.
+#   FORGEMIRROR_SERVER__LISTEN_ADDRESS=:9000
+#   FORGEMIRROR_WEBHOOK__SECRET_FILE=/run/secrets/webhook
+# Precedence: defaults < this file < environment < CLI flags.
+# Values shown are the defaults unless marked "required".
+
+server:
+  listen_address: ":8080"
+  read_header_timeout: 10s
+  # Upper bound for a graceful shutdown, including running mirrors.
+  shutdown_timeout: 60s
+
+log:
+  level: info # debug, info, warn, error
+  format: json # json, text
+
+webhook:
+  # required: the secret configured on the Forgejo webhook. Use either the
+  # value or secret_file (e.g. a mounted Kubernetes Secret), not both.
+  secret: change-me
+  # secret_file: /run/secrets/forgemirror/webhook-secret
+  max_body_bytes: 5242880
+
+# Credentials for cloning private repositories from Forgejo. Leave the token
+# empty if only public repositories are mirrored.
+source:
+  username: oauth2
+  # token_file: /run/secrets/forgemirror/source-token
+
+mirror:
+  # Upper bound for one clone + push to one target.
+  timeout: 10m
+  # Upper bound for git operations running at the same time.
+  max_concurrent: 4
+  git_binary: git
+  # Where temporary clones are created; empty uses the OS temp directory.
+  work_dir: ""
+
+# required: at least one target. `url` is a Go text/template rendered with
+# the repository: {{ .Owner }}, {{ .Name }}, {{ .FullName }}.
+targets:
+  - name: github
+    url: "https://github.com/acme/{{ .Name }}.git"
+    username: oauth2
+    token: change-me
+  - name: codeberg
+    url: "https://codeberg.org/{{ .Owner }}/{{ .Name }}.git"
+    token_file: /run/secrets/forgemirror/codeberg-token

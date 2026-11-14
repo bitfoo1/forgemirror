@@ -22,7 +22,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 - [x] Phase 0: Tooling, git hooks, CI/CD pipeline, release flow
 - [x] Phase 1: Project skeleton (CLI, version, entrypoint)
-- [ ] Phase 2: Configuration
+- [x] Phase 2: Configuration
 - [ ] Phase 2.5: Filtering
 - [ ] Phase 3: Core mirroring
 - [ ] Phase 4: HTTP webhook server
@@ -72,15 +72,15 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 2: Configuration
 
-- [ ] `internal/config`: typed `Config` loaded with koanf
+- [x] `internal/config`: typed `Config` loaded with koanf
       (YAML file → `FORGEMIRROR_*` env vars → CLI flags, later wins)
-- [ ] Sections: `server` (listen address, shutdown timeout), `log` (level,
+- [x] Sections: `server` (listen address, shutdown timeout), `log` (level,
       format), `webhook` (secret / secret_file), `source` (username, token /
       token_file), `targets[]` (name, url template, username, token /
       token_file), `mirror` (timeout, work dir)
-- [ ] Defaults for every optional value; secrets from `*_file` resolved
-- [ ] `Validate()` returns all problems at once (`errors.Join`)
-- [ ] Table-driven tests: valid file, env override, flag override, missing
+- [x] Defaults for every optional value; secrets from `*_file` resolved
+- [x] `Validate()` returns all problems at once (`errors.Join`)
+- [x] Table-driven tests: valid file, env override, flag override, missing
       required fields, empty targets, invalid template, secret files
 
 ## Phase 2.5: Filtering
