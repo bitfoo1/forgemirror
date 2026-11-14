@@ -19,6 +19,8 @@ import (
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+
+	"go.bitfoo.de/forgemirror/internal/filter"
 )
 
 const (
@@ -50,12 +52,13 @@ const (
 
 // Config is the complete runtime configuration.
 type Config struct {
-	Server  Server   `koanf:"server"`
-	Log     Log      `koanf:"log"`
-	Webhook Webhook  `koanf:"webhook"`
-	Source  Source   `koanf:"source"`
-	Mirror  Mirror   `koanf:"mirror"`
-	Targets []Target `koanf:"targets"`
+	Server  Server       `koanf:"server"`
+	Log     Log          `koanf:"log"`
+	Webhook Webhook      `koanf:"webhook"`
+	Source  Source       `koanf:"source"`
+	Mirror  Mirror       `koanf:"mirror"`
+	Filter  filter.Rules `koanf:"filter"`
+	Targets []Target     `koanf:"targets"`
 }
 
 // Server configures the HTTP server.

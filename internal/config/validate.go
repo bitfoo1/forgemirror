@@ -46,6 +46,10 @@ func (c *Config) Validate() error {
 		add("mirror.git_binary", errRequired)
 	}
 
+	if err := c.Filter.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
 	errs = append(errs, c.validateTargets()...)
 
 	return errors.Join(errs...)

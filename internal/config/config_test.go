@@ -25,6 +25,9 @@ source:
 mirror:
   timeout: 2m
   max_concurrent: 2
+filter:
+  require_topic: mirror
+  include_branches: [main, "release/.*"]
 targets:
   - name: github
     url: "https://github.com/acme/{{ .Name }}.git"
@@ -84,6 +87,8 @@ func TestLoadValidFile(t *testing.T) {
 		{"mirror timeout", cfg.Mirror.Timeout, 2 * time.Minute},
 		{"mirror max concurrent", cfg.Mirror.MaxConcurrent, 2},
 		{"git binary default", cfg.Mirror.GitBinary, "git"},
+		{"filter topic", cfg.Filter.RequireTopic, "mirror"},
+		{"filter branches", len(cfg.Filter.IncludeBranches), 2},
 		{"target count", len(cfg.Targets), 2},
 		{"target username default", cfg.Targets[0].Username, "oauth2"},
 		{"target username explicit", cfg.Targets[1].Username, "mirror-bot"},
@@ -193,6 +198,11 @@ func TestLoadErrors(t *testing.T) {
 			name:    "invalid log level",
 			yaml:    minimalYAML + "log:\n  level: loud\n",
 			wantErr: []string{"decoding config"},
+		},
+		{
+			name:    "invalid filter pattern",
+			yaml:    minimalYAML + "filter:\n  include_repos: \"(\"\n",
+			wantErr: []string{"filter.include_repos"},
 		},
 		{
 			name:    "invalid log format",

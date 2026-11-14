@@ -39,6 +39,20 @@ mirror:
   # Where temporary clones are created; empty uses the OS temp directory.
   work_dir: ""
 
+# Which pushes are mirrored. All rules are optional; without them every push
+# is mirrored. Patterns are Go regular expressions that must match the whole
+# value ("app" does not match "my-app"; use "app.*").
+filter:
+  # Matched against "owner/name". Exclude wins over include.
+  include_repos: ""
+  exclude_repos: ""
+  # Only pushes to these branches trigger a mirror; tag pushes always do.
+  include_branches: [] # e.g. ["main", "release/.*"]
+  exclude_private: false
+  exclude_forks: false
+  # Opt-in: only repositories with this Forgejo topic are mirrored.
+  require_topic: "" # e.g. "mirror"
+
 # required: at least one target. `url` is a Go text/template rendered with
 # the repository: {{ .Owner }}, {{ .Name }}, {{ .FullName }}.
 targets:

@@ -23,7 +23,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 0: Tooling, git hooks, CI/CD pipeline, release flow
 - [x] Phase 1: Project skeleton (CLI, version, entrypoint)
 - [x] Phase 2: Configuration
-- [ ] Phase 2.5: Filtering
+- [x] Phase 2.5: Filtering
 - [ ] Phase 3: Core mirroring
 - [ ] Phase 4: HTTP webhook server
 - [ ] Phase 5: Concurrency & multi-target
@@ -85,14 +85,15 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 2.5: Filtering
 
-- [ ] `filter` config: `include_repos` / `exclude_repos` (regex),
+- [x] `filter` config: `include_repos` / `exclude_repos` (regex),
       `include_branches` (regex list), `exclude_private`, `exclude_forks`,
       `require_topic`
-- [ ] Regexes compiled once at startup; invalid patterns fail validation
-- [ ] `Filter.Matches(repo) bool`, order: topic → visibility → fork →
-      include → exclude (exclude wins over include)
-- [ ] Tests for each rule, the empty filter, and include/exclude precedence
-- [ ] Tags are not filtered: `git push --mirror` mirrors all refs on purpose
+- [x] Regexes compiled once at startup; invalid patterns fail validation
+- [x] `Filter.Decide(repo, ref)` returns decision + reason, order: branch →
+      topic → visibility → fork → include → exclude (exclude wins over
+      include); patterns are anchored to the whole value
+- [x] Tests for each rule, the empty filter, and include/exclude precedence
+- [x] Tags are not filtered: `git push --mirror` mirrors all refs on purpose
 
 ## Phase 3: Core mirroring
 
