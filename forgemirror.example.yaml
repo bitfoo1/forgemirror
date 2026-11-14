@@ -1,4 +1,7 @@
+# yaml-language-server: $schema=https://forgemirror.bitfoo.de/schema/v1/forgemirror.schema.json
 # forgemirror example configuration. Copy to forgemirror.yaml and adjust.
+# The line above gives editors completion and validation (see the
+# "Editor support" section of the configuration docs).
 #
 # Every key can also be set via environment variables: prefix FORGEMIRROR_,
 # upper case, nesting with a double underscore, e.g.

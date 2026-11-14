@@ -141,6 +141,50 @@ always copies all branches and tags.
 Only one mirror run per repository is active at a time. Pushes that arrive
 during a run are coalesced into one follow-up run.
 
+## Editor support
+
+A [JSON Schema](https://json-schema.org/) for the configuration file is
+published with this documentation:
+[`schema/v1/forgemirror.schema.json`](../../schema/v1/forgemirror.schema.json).
+Editors use it for completion, hover documentation and checks for unknown
+keys, wrong types and invalid values while you type.
+
+The schema is a convenience for editors. `forgemirror validate` remains the
+authoritative check, because some rules can only be checked at runtime:
+regular expressions must compile, target names must be unique, and values
+can also come from environment variables.
+
+**YAML language server** (VS Code with the Red Hat YAML extension, Neovim,
+Helix, Zed and others): add this as the first line of `forgemirror.yaml`. The
+example file already starts with it.
+
+```yaml
+# yaml-language-server: $schema={{< schema-url >}}
+```
+
+**By file name**, for all projects at once, in VS Code `settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "{{< schema-url >}}": "forgemirror*.yaml"
+  }
+}
+```
+
+JetBrains IDEs: *Settings → Languages & Frameworks → Schemas and DTDs → JSON
+Schema Mappings*. Add the URL and the file pattern `forgemirror*.yaml`.
+
+**In CI**, validate with any JSON Schema tool, e.g.
+[check-jsonschema](https://check-jsonschema.readthedocs.io/):
+
+```sh
+check-jsonschema --schemafile {{< schema-url >}} forgemirror.yaml
+```
+
+The `v1` in the path stays compatible: new optional keys may be added, and a
+breaking change gets a new path.
+
 ## Full reference
 
 The annotated example file from the repository, with all keys and their

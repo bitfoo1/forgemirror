@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgemirror.bitfoo.de/schema/v1/forgemirror.schema.json",
+  "title": "forgemirror configuration",
+  "description": "Configuration file of forgemirror (forgemirror.yaml). Every key can also be set via FORGEMIRROR_* environment variables, so keys such as webhook.secret are not required in the file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["targets"],
+  "properties": {
+    "server": {
+      "description": "HTTP server.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "listen_address": {
+          "description": "host:port to listen on; an empty host listens on all interfaces.",
+          "type": "string",
+          "pattern": "^(\\[[^\\]]*\\]|[^:]*):[^:]*$",
+          "default": ":8080",
+          "examples": [":8080", "127.0.0.1:9000", "[::1]:8080"]
+        },
+        "read_header_timeout": {
+          "description": "How long a client may take to send the request headers.",
+          "$ref": "#/$defs/duration",
+          "default": "10s"
+        },
+        "shutdown_timeout": {
+          "description": "Upper bound for a graceful shutdown, including running mirrors. Keep it below the Kubernetes terminationGracePeriodSeconds.",
+          "$ref": "#/$defs/duration",
+          "default": "60s"
+        }
+      }
+    },
+    "log": {
+      "description": "Logging.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "description": "Minimum log level.",
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info"
+        },
+        "format": {
+          "description": "Log output format.",
+          "type": "string",
+          "enum": ["json", "text"],
+          "default": "json"
+        }
+      }
+    },
+    "webhook": {
+      "description": "Webhook endpoint that receives Forgejo push events.",
+      "type": "object",
+      "additionalProperties": false,
+      "not": { "required": ["secret", "secret_file"] },
+      "properties": {
+        "secret": {
+          "description": "Required (here, as secret_file, or via FORGEMIRROR_WEBHOOK__SECRET): the HMAC secret configured on the Forgejo webhook. Mutually exclusive with secret_file.",
+          "type": "string",
+          "minLength": 1
+        },
+        "secret_file": {
+          "description": "File to read webhook.secret from, e.g. a mounted Kubernetes Secret. Surrounding whitespace is trimmed. Mutually exclusive with secret.",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["/run/secrets/forgemirror/webhook-secret"]
+        },
+        "max_body_bytes": {
+          "description": "Maximum accepted request body size in bytes.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 5242880
+        }
+      }
+    },
+    "source": {
+      "description": "Credentials for cloning from Forgejo. Leave the token empty if only public repositories are mirrored.",
+      "type": "object",
+      "additionalProperties": false,
+      "not": { "required": ["token", "token_file"] },
+      "properties": {
+        "username": {
+          "description": "Username sent together with the token.",
+          "type": "string",
+          "default": "oauth2"
+        },
+        "token": {
+          "description": "Forgejo access token. Mutually exclusive with token_file.",
+          "type": "string",
+          "minLength": 1
+        },
+        "token_file": {
+          "description": "File to read source.token from. Surrounding whitespace is trimmed. Mutually exclusive with token.",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["/run/secrets/forgemirror/source-token"]
+        }
+      }
+    },
+    "mirror": {
+      "description": "How git runs.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout": {
+          "description": "Upper bound for one clone + push to one target.",
+          "$ref": "#/$defs/duration",
+          "default": "10m"
+        },
+        "max_concurrent": {
+          "description": "Maximum git processes running at once, across all repositories.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 4
+        },
+        "git_binary": {
+          "description": "git executable: a name looked up in PATH or an absolute path.",
+          "type": "string",
+          "minLength": 1,
+          "default": "git"
+        },
+        "work_dir": {
+          "description": "Directory for temporary clones; empty uses the OS temp directory.",
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "filter": {
+      "description": "Which pushes are mirrored. Every configured rule must pass; without rules every push is mirrored. Patterns are Go regular expressions (RE2) that must match the whole value.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include_repos": {
+          "description": "Only repositories whose \"owner/name\" matches this pattern are mirrored.",
+          "type": "string",
+          "default": "",
+          "examples": ["acme/.*"]
+        },
+        "exclude_repos": {
+          "description": "Repositories whose \"owner/name\" matches this pattern are never mirrored. Wins over include_repos.",
+          "type": "string",
+          "default": "",
+          "examples": ["acme/(secrets|infra-.*)"]
+        },
+        "include_branches": {
+          "description": "Only pushes to branches matching one of these patterns trigger a mirror. Tag pushes always do.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "examples": [["main", "release/.*"]]
+        },
+        "exclude_private": {
+          "description": "Skip repositories that are private on Forgejo.",
+          "type": "boolean",
+          "default": false
+        },
+        "exclude_forks": {
+          "description": "Skip forks.",
+          "type": "boolean",
+          "default": false
+        },
+        "require_topic": {
+          "description": "Opt-in: only repositories carrying this Forgejo topic are mirrored.",
+          "type": "string",
+          "default": "",
+          "examples": ["mirror"]
+        }
+      }
+    },
+    "targets": {
+      "description": "Forges that receive the mirror. Target repositories must already exist.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/target" }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "description": "Go duration, e.g. 90s, 10m, 1h30m.",
+      "type": "string",
+      "pattern": "^(([0-9]+(\\.[0-9]*)?|\\.[0-9]+)(ns|us|µs|μs|ms|s|m|h))+$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url"],
+      "oneOf": [{ "required": ["token"] }, { "required": ["token_file"] }],
+      "properties": {
+        "name": {
+          "description": "Unique name of the target, used in logs and metrics.",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["github", "codeberg"]
+        },
+        "url": {
+          "description": "Push URL as a Go text/template, rendered per repository with {{ .Owner }}, {{ .Name }} and {{ .FullName }}. http(s) only, without credentials.",
+          "type": "string",
+          "pattern": "^https?://[^/@]+(/.*)?$",
+          "examples": ["https://github.com/acme/{{ .Name }}.git", "https://codeberg.org/{{ .Owner }}/{{ .Name }}.git"]
+        },
+        "username": {
+          "description": "Username sent together with the token; GitHub, Codeberg and GitLab accept oauth2.",
+          "type": "string",
+          "default": "oauth2"
+        },
+        "token": {
+          "description": "Access token for the target. Exactly one of token and token_file is required.",
+          "type": "string",
+          "minLength": 1
+        },
+        "token_file": {
+          "description": "File to read the target token from. Surrounding whitespace is trimmed. Exactly one of token and token_file is required.",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["/run/secrets/forgemirror/github-token"]
+        }
+      }
+    }
+  }
+}
