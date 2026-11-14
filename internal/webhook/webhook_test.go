@@ -62,7 +62,7 @@ type recordingObserver struct {
 	outcomes []webhook.Outcome
 }
 
-func (o *recordingObserver) ObserveWebhook(outcome webhook.Outcome) {
+func (o *recordingObserver) ObserveWebhook(_ context.Context, outcome webhook.Outcome) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.outcomes = append(o.outcomes, outcome)

@@ -53,7 +53,7 @@ type Filter interface {
 
 // Observer is notified about every request outcome (metrics).
 type Observer interface {
-	ObserveWebhook(outcome Outcome)
+	ObserveWebhook(ctx context.Context, outcome Outcome)
 }
 
 // Outcome classifies a webhook request.
@@ -196,7 +196,7 @@ func (h *Handler) respond(
 	logger.Log(ctx, level, "webhook "+string(outcome), slog.Int("status", status), slog.String("detail", message))
 
 	if h.opts.Observer != nil {
-		h.opts.Observer.ObserveWebhook(outcome)
+		h.opts.Observer.ObserveWebhook(ctx, outcome)
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

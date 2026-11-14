@@ -16,6 +16,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/mirror"
 	"go.bitfoo.de/forgemirror/internal/server"
+	"go.bitfoo.de/forgemirror/internal/telemetry"
 	"go.bitfoo.de/forgemirror/internal/version"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
@@ -109,6 +110,27 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 
+	metrics, err := telemetry.New(version.Get().Version)
+	if err != nil {
+		return err
+	}
+
+	// ctx is already cancelled here; WithoutCancel keeps its values only.
+	return errors.Join(
+		serveAndDrain(ctx, cfg, logger, flt, metrics),
+		metrics.Shutdown(context.WithoutCancel(ctx)),
+	)
+}
+
+// serveAndDrain serves HTTP until ctx is cancelled, then drains HTTP requests
+// and running mirrors within the shutdown timeout.
+func serveAndDrain(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	flt *filter.Filter,
+	metrics *telemetry.Metrics,
+) error {
 	dispatcher := dispatch.New(dispatch.Options{
 		Mirrorer: mirror.NewGit(mirror.GitOptions{
 			Binary:  cfg.Mirror.GitBinary,
@@ -119,6 +141,7 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		Targets:       cfg.Targets,
 		MaxConcurrent: cfg.Mirror.MaxConcurrent,
 		Logger:        logger,
+		Observer:      metrics,
 	})
 
 	srv := server.New(server.Options{
@@ -129,8 +152,10 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 			Filter:       flt,
 			Dispatcher:   dispatcher,
 			Logger:       logger,
+			Observer:     metrics,
 		}),
-		Logger: logger,
+		Metrics: metrics.Handler(),
+		Logger:  logger,
 	})
 
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Server.ListenAddress)

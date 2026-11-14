@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -161,6 +162,52 @@ func waitForLog(t *testing.T, logs *syncBuffer, pattern *regexp.Regexp) []string
 	return nil
 }
 
+func scrapeMetrics(ctx context.Context, t *testing.T, addr string) string {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/metrics", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(body)
+}
+
+// assertMetrics polls because the "mirror finished" log line is written
+// before the run's deferred bookkeeping (active gauge) has completed.
+func assertMetrics(ctx context.Context, t *testing.T, addr string, want ...string) {
+	t.Helper()
+
+	var body string
+	for deadline := time.Now().Add(waitTimeout); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		body = scrapeMetrics(ctx, t, addr)
+		if containsAll(body, want) {
+			return
+		}
+	}
+	t.Fatalf("metrics never contained all of %q:\n%s", want, body)
+}
+
+func containsAll(s string, subs []string) bool {
+	for _, sub := range subs {
+		if !strings.Contains(s, sub) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // TestEndToEnd runs the real command against a fake git binary: a signed
 // push event must lead to a clone and a push, and cancellation must shut the
 // service down cleanly.
@@ -221,6 +268,11 @@ mirror:
 	}
 
 	waitForLog(t, &logs, regexp.MustCompile(`msg="mirror finished"`))
+	assertMetrics(ctx, t, addr,
+		`forge_mirror_operations_total{status="success",target="example"} 1`,
+		`forge_mirror_webhook_requests_total{outcome="accepted"} 1`,
+		`forge_mirror_active_operations 0`,
+	)
 	cancel()
 
 	select {

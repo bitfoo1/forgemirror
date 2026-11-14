@@ -27,7 +27,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 3: Core mirroring
 - [x] Phase 4: HTTP webhook server
 - [x] Phase 5: Concurrency & multi-target
-- [ ] Phase 6: Observability & graceful shutdown
+- [x] Phase 6: Observability & graceful shutdown
 - [ ] Phase 7: Kubernetes deployment
 
 ## Design decisions
@@ -35,9 +35,10 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - **Target URLs are templates.** One target serves many repositories, so its
   URL is a Go `text/template` (e.g.
   `https://github.com/acme/{{ .Name }}.git`), validated at startup.
-- **Credentials are injected per command, never persisted.** Tokens go into
-  the remote URL only for the lifetime of a git subprocess and are redacted
-  from all output. Every secret can be given inline or as `*_file` (for
+- **Credentials are injected per command, never persisted.** Tokens reach
+  git as a URL-scoped `http.<url>.extraHeader` via `GIT_CONFIG_*` environment
+  variables, so they never appear in argv, in the clone's config on disk, or
+  in logs (git output is redacted). Every secret can be given inline or as `*_file` (for
   Kubernetes Secret mounts).
 - **Source credentials.** Private Forgejo repositories need a token to clone;
   the config has a `source` section for it.
@@ -146,13 +147,13 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 6: Observability & graceful shutdown
 
-- [ ] `log/slog`: JSON or text, level from config; every mirror log has
+- [x] `log/slog`: JSON or text, level from config; every mirror log has
       target, repository, duration, outcome; no secrets
-- [ ] OpenTelemetry metrics with the Prometheus exporter on `GET /metrics`:
+- [x] OpenTelemetry metrics with the Prometheus exporter on `GET /metrics`:
       `forge_mirror_operations_total` (counter), `forge_mirror_duration_seconds`
       (histogram), `forge_mirror_webhook_requests_total` (counter),
       `forge_mirror_active_operations` (gauge)
-- [ ] SIGTERM/SIGINT: stop accepting requests, drain running mirrors, bounded
+- [x] SIGTERM/SIGINT: stop accepting requests, drain running mirrors, bounded
       by the shutdown timeout
 
 ## Phase 7: Kubernetes deployment
