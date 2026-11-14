@@ -25,7 +25,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 2: Configuration
 - [x] Phase 2.5: Filtering
 - [x] Phase 3: Core mirroring
-- [ ] Phase 4: HTTP webhook server
+- [x] Phase 4: HTTP webhook server
 - [ ] Phase 5: Concurrency & multi-target
 - [ ] Phase 6: Observability & graceful shutdown
 - [ ] Phase 7: Kubernetes deployment
@@ -114,14 +114,18 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 4: HTTP webhook server
 
-- [ ] `internal/webhook`: `POST /webhook`
-- [ ] Body size limit; HMAC-SHA256 over the raw body checked with
-      `hmac.Equal` against `X-Forgejo-Signature` / `X-Gitea-Signature`
-- [ ] Only `push` events are processed; others are acknowledged and ignored
-- [ ] Responses: 401 bad/missing signature, 400 malformed JSON, 202 accepted
-- [ ] `GET /healthz` (liveness) and `GET /readyz` (readiness)
-- [ ] `http.Server` with read/write/idle timeouts
-- [ ] Tests with `httptest`
+- [x] `internal/webhook`: handler for `POST /webhook`
+- [x] Body size limit; HMAC-SHA256 over the raw body checked with
+      `hmac.Equal` against `X-Forgejo-Signature` (fallback `X-Gitea-*`)
+- [x] Only `push` events are processed; others are acknowledged and ignored
+- [x] Responses: 202 queued, 200 ignored/filtered, 400 malformed, 401
+      bad/missing signature, 413 too large, 415 not JSON
+- [x] Accepted events go to a non-blocking `Dispatcher` (Forgejo times out
+      deliveries after a few seconds; mirrors take minutes)
+- [x] `internal/server`: routing, `GET /healthz` (liveness), `GET /readyz`
+      (readiness, 503 once shutdown begins), optional `GET /metrics`,
+      read/write/idle timeouts, graceful HTTP shutdown
+- [x] Tests with `httptest` and a real listener
 
 ## Phase 5: Concurrency & multi-target
 
