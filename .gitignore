@@ -47,3 +47,11 @@ go.work.sum
 /docs/public/
 /docs/resources/
 /docs/.hugo_build.lock
+
+# Stray outputs of ad-hoc commands run from the repo root instead of the
+# mise tasks: `go build cmd/forgemirror/main.go` / `go build ./cmd/forgemirror`
+# and `hugo` without `--source docs`.
+/main
+/forgemirror
+/public/
+/.hugo_build.lock
