@@ -1,0 +1,17 @@
+# Values used by mise run chart:check (lint, schema validation, and a
+# forgemirror validate run against the rendered config). Placeholder
+# credentials only.
+config:
+  filter:
+    exclude_private: true
+  targets:
+    - name: github
+      url: "https://github.com/acme/{{ .Name }}.git"
+      token_file: /run/secrets/forgemirror/github-token
+credentials:
+  data:
+    webhook-secret: placeholder-webhook-secret
+    github-token: placeholder-github-token
+serviceMonitor:
+  forgemirror:
+    enabled: true

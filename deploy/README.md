@@ -1,6 +1,8 @@
 # Deploying forgemirror on Kubernetes
 
-Plain manifests, assembled with kustomize (built into `kubectl`).
+Plain manifests, assembled with kustomize (built into `kubectl`). For Helm,
+use the chart in [`charts/forgemirror`](../charts/forgemirror/README.md)
+instead. Both deploy the same hardened setup.
 
 | File                  | Purpose                                                      |
 | --------------------- | ------------------------------------------------------------ |

@@ -1,0 +1,156 @@
+# forgemirror Helm chart values.
+#
+# The two forgemirror sections come first: `config` and `credentials`. The
+# remaining keys are the bjw-s common library (5.3.0) values, preconfigured
+# for forgemirror. Anything documented at
+# https://bjw-s-labs.github.io/helm-charts/docs/common-library/ can be
+# overridden here, e.g. ingress, serviceMonitor, networkpolicies.
+
+# -- forgemirror configuration, rendered verbatim into forgemirror.yaml.
+# Reference: forgemirror.example.yaml in the repository. Secrets belong in
+# `credentials`; reference them here with *_file paths under
+# /run/secrets/forgemirror/.
+config:
+  server:
+    listen_address: ":8080"
+    # Keep below terminationGracePeriodSeconds (defaultPodOptions below).
+    shutdown_timeout: 60s
+  log:
+    level: info
+    format: json
+  webhook:
+    secret_file: /run/secrets/forgemirror/webhook-secret
+  mirror:
+    timeout: 10m
+    max_concurrent: 4
+    work_dir: /work
+  filter: {}
+  # -- Required: at least one target. `url` is a Go text/template, e.g.
+  #   - name: github
+  #     url: "https://github.com/acme/{{ .Name }}.git"
+  #     token_file: /run/secrets/forgemirror/github-token
+  targets: []
+
+# -- Files mounted read-only under /run/secrets/forgemirror/.
+credentials:
+  # -- Name of an existing Secret to mount (recommended: create it with
+  # External Secrets, SOPS or sealed-secrets). Takes precedence over `data`.
+  existingSecret: ""
+  # -- Key/value pairs for a Secret created by the chart. Keys become file
+  # names, e.g. webhook-secret, source-token, github-token.
+  data: {}
+
+global:
+  # Resources are named after the release; with the release name
+  # "forgemirror" they are simply "forgemirror".
+  fullnameOverride: null
+  # forgemirror's target URLs are Go templates ({{ .Name }}); keep the library
+  # from evaluating them as Helm templates.
+  templateEvaluation:
+    excludePaths:
+      - [config]
+      - [configMaps, config, data]
+
+defaultPodOptions:
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  # Must exceed config.server.shutdown_timeout so running mirrors can finish
+  # before the kubelet sends SIGKILL.
+  terminationGracePeriodSeconds: 75
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+
+controllers:
+  forgemirror:
+    # One replica, Recreate: coalescing of concurrent pushes lives in memory,
+    # so two pods could push the same repository at the same time.
+    replicas: 1
+    strategy: Recreate
+    containers:
+      app:
+        image:
+          repository: git.bitfoo.de/dvonessen/forgemirror
+          # -- Defaults to the chart's appVersion.
+          tag: "{{ .Chart.AppVersion }}"
+          pullPolicy: IfNotPresent
+        args: ["--config", "/etc/forgemirror/forgemirror.yaml"]
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /healthz
+                port: 8080
+              periodSeconds: 20
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /readyz
+                port: 8080
+              periodSeconds: 5
+          startup:
+            enabled: false
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            # git clone of large repositories is memory hungry; raise this
+            # together with config.mirror.max_concurrent.
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+
+service:
+  forgemirror:
+    controller: forgemirror
+    ports:
+      http:
+        port: 8080
+
+persistence:
+  config:
+    type: configMap
+    identifier: config
+    globalMounts:
+      - path: /etc/forgemirror
+        readOnly: true
+  credentials:
+    # type and Secret reference are derived from `credentials`.
+    defaultMode: 0440
+    globalMounts:
+      - path: /run/secrets/forgemirror
+        readOnly: true
+  work:
+    # Temporary clones; the root filesystem stays read-only. sizeLimit evicts
+    # the pod instead of filling the node.
+    type: emptyDir
+    sizeLimit: 5Gi
+    globalMounts:
+      - path: /work
+  tmp:
+    type: emptyDir
+    sizeLimit: 100Mi
+    globalMounts:
+      - path: /tmp
+
+serviceMonitor:
+  forgemirror:
+    # -- Requires the Prometheus Operator CRDs.
+    enabled: false
+    serviceName: '{{ include "bjw-s.common.lib.chart.names.fullname" $ }}'
+    endpoints:
+      - port: http
+        path: /metrics
+        interval: 1m

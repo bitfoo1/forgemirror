@@ -1,0 +1,27 @@
+{{- include "bjw-s.common.loader.init" . }}
+
+{{- if not .Values.config.targets }}
+  {{- fail "config.targets: at least one mirror target is required" }}
+{{- end }}
+{{- if and (not .Values.credentials.existingSecret) (not .Values.credentials.data) }}
+  {{- fail "credentials: set existingSecret or data (at least the webhook-secret key)" }}
+{{- end }}
+
+{{- /*
+Map the forgemirror-specific values (config, credentials) onto bjw-s common
+resources. They are merged in code rather than written as bjw-s values in
+values.yaml so users configure forgemirror, not the library.
+*/}}
+{{- $generated := dict
+  "configMaps" (dict "config" (dict "data" (dict "forgemirror.yaml" (toYaml .Values.config))))
+  "persistence" (dict "credentials" (dict "type" "secret"))
+-}}
+{{- if .Values.credentials.existingSecret }}
+  {{- $_ := set $generated.persistence.credentials "name" .Values.credentials.existingSecret }}
+{{- else }}
+  {{- $_ := set $generated "secrets" (dict "credentials" (dict "stringData" .Values.credentials.data)) }}
+  {{- $_ := set $generated.persistence.credentials "identifier" "credentials" }}
+{{- end }}
+{{- $_ := mergeOverwrite .Values $generated -}}
+
+{{ include "bjw-s.common.loader.generate" . }}

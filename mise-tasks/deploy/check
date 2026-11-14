@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-#MISE description="Render the Kubernetes manifests and validate them against the API schemas"
+#MISE description="Validate the kustomize manifests: Kubernetes API schemas and forgemirror config"
 set -euo pipefail
+
+# kubeconform only reads files with a .yaml/.yml/.json extension.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+rendered="${tmp}/rendered.yaml"
+kustomize build deploy >"${rendered}"
 
 # -strict rejects unknown fields, which catches typos that kubectl would only
 # report (or silently drop) at apply time. The Secret template is validated
 # separately because it is deliberately not part of the kustomization.
-kustomize build deploy | kubeconform -strict -summary -
+kubeconform -strict -summary "${rendered}"
 kubeconform -strict -summary deploy/secret.example.yaml
+mise run deploy:validate-config "${rendered}"

@@ -39,3 +39,6 @@ go.work.sum
 # .idea/
 # .vscode/
 
+
+# Helm chart dependencies (restored from Chart.lock by helm dependency build)
+/charts/forgemirror/charts/

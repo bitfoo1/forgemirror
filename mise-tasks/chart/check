@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#MISE description="Validate the Helm chart: lint, Kubernetes API schemas and forgemirror config"
+set -euo pipefail
+
+chart=charts/forgemirror
+values="${chart}/ci/test-values.yaml"
+# kubeconform only reads files with a .yaml/.yml/.json extension.
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+rendered="${tmp}/rendered.yaml"
+
+helm dependency build "${chart}" >/dev/null
+helm lint --strict "${chart}" -f "${values}"
+helm template forgemirror "${chart}" -f "${values}" >"${rendered}"
+
+# ServiceMonitor is a CRD; its schema comes from the datree CRD catalog.
+kubeconform -strict -summary \
+  -schema-location default \
+  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+  "${rendered}"
+mise run deploy:validate-config "${rendered}"
+
+# The chart must refuse to render without targets or credentials instead of
+# producing a pod that crash-loops.
+if helm template forgemirror "${chart}" >/dev/null 2>&1; then
+  echo "chart rendered without targets/credentials; the fail guards are broken" >&2
+  exit 1
+fi

@@ -29,7 +29,9 @@ Releases are never tagged by hand.
    `CHANGELOG.md`, creates the tag, and runs goreleaser in the same job:
    binaries for linux/darwin × amd64/arm64, a multi-arch image at
    `git.bitfoo.de/dvonessen/forgemirror`, SBOMs, cosign signatures, and the
-   Forgejo release with git-cliff release notes.
+   Forgejo release with git-cliff release notes. Then it packages the Helm
+   chart with the same version, pushes it to
+   `oci://git.bitfoo.de/dvonessen/charts/forgemirror` and signs it with cosign.
 
 Why the tag and the release happen in one job: tags and pushes made with the
 automatic Actions token start no new workflow run
@@ -49,7 +51,7 @@ release is `v0.1.0`.
 | Secret               | Purpose                                                                         |
 |----------------------|---------------------------------------------------------------------------------|
 | `RELEASE_TOKEN`      | PAT with `write:repository`; pushes `release/next` and opens the release PR     |
-| `PACKAGE_RW_TOKEN`   | PAT with `write:package`; pushes the container image                            |
+| `PACKAGE_RW_TOKEN`   | PAT with `write:package`; pushes image and chart                               |
 | `COSIGN_PRIVATE_KEY` | contents of `cosign.key`                                                        |
 | `COSIGN_PASSWORD`    | password of `cosign.key`                                                        |
 | `GH_TOKEN`           | optional; GitHub token so mise's tool downloads are not rate-limited            |

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#MISE description="Run forgemirror validate against the config embedded in rendered manifests"
+#MISE hide=true
+#USAGE arg "<manifests>" help="Rendered manifests (YAML stream)"
+set -euo pipefail
+
+# Catches deployment configs that are valid YAML and valid Kubernetes but that
+# forgemirror itself would reject at startup (unknown keys, missing targets,
+# bad URL templates). Secret files referenced via *_file are created from the
+# rendered Secret, or with placeholder content if the Secret is not rendered
+# (kustomize ships it as a template only).
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+
+cp "${usage_manifests:?}" "${work}/manifests.yaml"
+yq 'select(.kind == "ConfigMap") | .data["forgemirror.yaml"]' "${work}/manifests.yaml" >"${work}/forgemirror.yaml"
+if [[ ! -s "${work}/forgemirror.yaml" || "$(cat "${work}/forgemirror.yaml")" == "null" ]]; then
+  echo "no ConfigMap with forgemirror.yaml found" >&2
+  exit 1
+fi
+
+mkdir -p "${work}/secrets" "${work}/work"
+for key in $(grep -oE '/run/secrets/forgemirror/[A-Za-z0-9._-]+' "${work}/forgemirror.yaml" | sed 's|.*/||' | sort -u); do
+  value="$(yq "select(.kind == \"Secret\") | .stringData[\"${key}\"] // \"\"" "${work}/manifests.yaml")"
+  printf '%s' "${value:-placeholder}" >"${work}/secrets/${key}"
+done
+
+sed -i.bak -e "s|/run/secrets/forgemirror/|${work}/secrets/|g" -e "s|work_dir: /work|work_dir: ${work}/work|" \
+  "${work}/forgemirror.yaml"
+go run ./cmd/forgemirror --config "${work}/forgemirror.yaml" validate

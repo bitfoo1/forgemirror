@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="CI: tag the version at the top of CHANGELOG.md (if new) and publish it with goreleaser"
+#MISE description="CI: tag the version at the top of CHANGELOG.md (if new), publish it with goreleaser and push the Helm chart"
 set -euo pipefail
 
 : "${GITEA_TOKEN:?}" "${PACKAGE_RW_TOKEN:?}" "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_ACTOR:?}"
@@ -42,7 +42,7 @@ fi
 git checkout --quiet "${tag}"
 
 notes="$(mktemp)"
-trap 'rm -f "${notes}"' EXIT
+trap 'rm -rf "${notes}" "${chart_dir:-}"' EXIT
 git cliff --latest --strip all --output "${notes}" 2>/dev/null
 
 # ko pushes with credentials from the Docker config; the package registry
@@ -55,3 +55,18 @@ printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${registry}" "${auth}" >"${HOME}/.doc
 # puts it into Gitea/Forgejo mode.
 unset GITHUB_TOKEN GITLAB_TOKEN
 goreleaser release --clean --release-notes "${notes}"
+
+# Helm chart: same version as the app, pushed as an OCI artifact next to the
+# image and signed with the same key. It lives under <owner>/charts/ because
+# <owner>/forgemirror is already the container image package.
+version="${tag#v}"
+charts_ref="oci://${registry}/${GITHUB_REPOSITORY%%/*}/charts"
+helm registry login "${registry}" --username "${GITHUB_ACTOR}" --password-stdin <<<"${PACKAGE_RW_TOKEN}"
+helm dependency build charts/forgemirror
+chart_dir="$(mktemp -d)"
+helm package charts/forgemirror --version "${version}" --app-version "${version}" --destination "${chart_dir}"
+push_log="$(helm push "${chart_dir}/forgemirror-${version}.tgz" "${charts_ref}" 2>&1)"
+echo "${push_log}"
+chart_digest="$(sed -n 's/^Digest: //p' <<<"${push_log}")"
+: "${chart_digest:?helm push printed no digest}"
+cosign sign --yes --key=env://COSIGN_PRIVATE_KEY "${charts_ref#oci://}/forgemirror@${chart_digest}"

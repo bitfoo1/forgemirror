@@ -162,3 +162,5 @@ Each phase ends with a green `mise run check` and one conventional commit.
       readiness `/readyz`, non-root, read-only root fs + writable tmp),
       Service (ClusterIP), Secret template, ConfigMap
 - [x] `deploy/README.md`: apply, configure the Forgejo system webhook, verify
+- [x] Helm chart `charts/forgemirror` on the bjw-s common library, published
+      as an OCI artifact with every release (same version as the app)
