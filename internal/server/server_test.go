@@ -107,7 +107,9 @@ func TestServeLifecycle(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	srv := newServer(nil)
 	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ctx, ln, 5*time.Second) }()
+	shutdownCtx, cancelShutdown := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancelShutdown()
+	go func() { done <- srv.Serve(ctx, shutdownCtx, ln) }()
 
 	// Readiness flips to true once Serve runs.
 	deadline := time.Now().Add(5 * time.Second)
@@ -146,7 +148,7 @@ func TestServeListenerError(t *testing.T) {
 	}
 	_ = ln.Close() // Serve fails immediately on a closed listener.
 
-	if serveErr := newServer(nil).Serve(t.Context(), ln, time.Second); serveErr == nil {
+	if serveErr := newServer(nil).Serve(t.Context(), t.Context(), ln); serveErr == nil {
 		t.Error("Serve() on a closed listener: error = nil, want error")
 	}
 }

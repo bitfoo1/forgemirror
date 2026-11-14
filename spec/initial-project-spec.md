@@ -26,7 +26,7 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] Phase 2.5: Filtering
 - [x] Phase 3: Core mirroring
 - [x] Phase 4: HTTP webhook server
-- [ ] Phase 5: Concurrency & multi-target
+- [x] Phase 5: Concurrency & multi-target
 - [ ] Phase 6: Observability & graceful shutdown
 - [ ] Phase 7: Kubernetes deployment
 
@@ -129,12 +129,20 @@ Each phase ends with a green `mise run check` and one conventional commit.
 
 ## Phase 5: Concurrency & multi-target
 
-- [ ] One goroutine per target, `sync.WaitGroup`, errors collected and
-      joined; one failing target does not stop the others
-- [ ] Handler returns 202 immediately; work runs in the background
-- [ ] Per-repository coalescing (see design decisions), mutex-guarded
-- [ ] Global concurrency limit
-- [ ] Known limitation: in-flight work is lost if the process crashes
+- [x] `internal/dispatch`: one clone per event, one goroutine per target
+      (`sync.WaitGroup.Go`), results per target; one failing target does not
+      stop the others
+- [x] Handler returns 202 immediately; work runs in the background with a
+      context detached from the request but cancelled by the dispatcher
+- [x] Per-repository coalescing: mutex-guarded map of running repositories;
+      pushes during a run queue exactly one follow-up run with the newest event
+- [x] Global limit on concurrent git processes (channel semaphore)
+- [x] `internal/app` wires filter → webhook → dispatcher → git mirrorer;
+      HTTP drain and mirror drain share one shutdown deadline
+- [x] End-to-end test: signed push → clone + push with a fake git → clean
+      shutdown
+- [x] Known limitation: in-flight and queued work is lost if the process
+      crashes (no persistent queue)
 
 ## Phase 6: Observability & graceful shutdown
 

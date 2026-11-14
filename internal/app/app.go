@@ -3,14 +3,21 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 
 	"github.com/urfave/cli/v3"
 
 	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/dispatch"
+	"go.bitfoo.de/forgemirror/internal/filter"
 	"go.bitfoo.de/forgemirror/internal/logging"
+	"go.bitfoo.de/forgemirror/internal/mirror"
+	"go.bitfoo.de/forgemirror/internal/server"
 	"go.bitfoo.de/forgemirror/internal/version"
+	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
 const (
@@ -91,7 +98,61 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		slog.Int("targets", len(cfg.Targets)),
 	)
 
-	return nil
+	return run(ctx, cfg, logger)
+}
+
+// run wires the service together and blocks until ctx is cancelled and the
+// graceful shutdown has finished.
+func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+	flt, err := filter.New(cfg.Filter)
+	if err != nil {
+		return err
+	}
+
+	dispatcher := dispatch.New(dispatch.Options{
+		Mirrorer: mirror.NewGit(mirror.GitOptions{
+			Binary:  cfg.Mirror.GitBinary,
+			WorkDir: cfg.Mirror.WorkDir,
+			Timeout: cfg.Mirror.Timeout,
+		}),
+		Source:        cfg.Source,
+		Targets:       cfg.Targets,
+		MaxConcurrent: cfg.Mirror.MaxConcurrent,
+		Logger:        logger,
+	})
+
+	srv := server.New(server.Options{
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		Webhook: webhook.NewHandler(webhook.Options{
+			Secret:       []byte(cfg.Webhook.Secret.Reveal()),
+			MaxBodyBytes: cfg.Webhook.MaxBodyBytes,
+			Filter:       flt,
+			Dispatcher:   dispatcher,
+			Logger:       logger,
+		}),
+		Logger: logger,
+	})
+
+	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Server.ListenAddress)
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", cfg.Server.ListenAddress, err)
+	}
+
+	// runCtx also ends when the server fails on its own, so the shutdown
+	// deadline starts in that case too.
+	runCtx, stopRun := context.WithCancel(ctx)
+	defer stopRun()
+	shutdownCtx, cancelShutdown := shutdownContext(runCtx, cfg.Server.ShutdownTimeout)
+	defer cancelShutdown()
+
+	serveErr := srv.Serve(runCtx, shutdownCtx, ln)
+	stopRun()
+
+	logger.InfoContext(ctx, "waiting for running mirrors")
+	dispatchErr := dispatcher.Shutdown(shutdownCtx)
+	logger.InfoContext(ctx, "forgemirror stopped")
+
+	return errors.Join(serveErr, dispatchErr)
 }
 
 func validate(_ context.Context, cmd *cli.Command) error {

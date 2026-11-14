@@ -72,10 +72,12 @@ func (s *Server) Handler() http.Handler {
 }
 
 // Serve accepts connections on ln until ctx is cancelled, then shuts down
-// gracefully: it stops accepting, lets in-flight requests finish within
-// shutdownTimeout and returns. The listener is passed in (instead of an
-// address) so callers and tests can bind to port 0 and learn the address.
-func (s *Server) Serve(ctx context.Context, ln net.Listener, shutdownTimeout time.Duration) error {
+// gracefully: it stops accepting and lets in-flight requests finish until
+// shutdownCtx ends. shutdownCtx is passed in, rather than a timeout, so the
+// caller can share one deadline between HTTP and background work. The
+// listener is passed in (instead of an address) so callers and tests can bind
+// to port 0 and learn the address.
+func (s *Server) Serve(ctx, shutdownCtx context.Context, ln net.Listener) error {
 	srv := &http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: s.opts.ReadHeaderTimeout,
@@ -83,7 +85,9 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener, shutdownTimeout tim
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 		ErrorLog:          slog.NewLogLogger(s.opts.Logger.Handler(), slog.LevelWarn),
-		BaseContext:       func(net.Listener) context.Context { return ctx },
+		// Requests inherit ctx's values but not its cancellation: shutdown
+		// cancels ctx, and in-flight requests must still be able to finish.
+		BaseContext: func(net.Listener) context.Context { return context.WithoutCancel(ctx) },
 	}
 
 	serveErr := make(chan error, 1)
@@ -102,11 +106,6 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener, shutdownTimeout tim
 
 	s.ready.Store(false)
 	s.opts.Logger.InfoContext(ctx, "http server shutting down")
-
-	// ctx is already cancelled; the shutdown deadline needs a fresh context
-	// that keeps ctx's values.
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
-	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("http server shutdown: %w", err)
