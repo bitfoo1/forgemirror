@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="Validate every commit message in a revision range, e.g. origin/main..HEAD"
+#USAGE arg "<range>" help="git revision range, or any rev-list arguments"
+set -euo pipefail
+
+# shellcheck disable=SC2154 # usage_range is provided by mise from #USAGE
+read -r -a revs <<<"${usage_range}"
+
+# mise does not forward stdin to tasks, so each message goes through a file.
+msg="$(mktemp)"
+trap 'rm -f "${msg}"' EXIT
+
+failed=0
+while IFS= read -r sha; do
+  # --no-show-signature: log.showSignature=true would prepend gpg output.
+  git log -1 --no-show-signature --format=%B "${sha}" >"${msg}"
+  if ! mise run --quiet commits:check-msg "${msg}"; then
+    echo "  -> in commit ${sha:0:12}" >&2
+    failed=1
+  fi
+done < <(git rev-list --no-merges "${revs[@]}")
+
+exit "${failed}"

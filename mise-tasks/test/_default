@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Run all tests with the race detector and write coverage.out"
+set -euo pipefail
+
+# -race: the service is concurrent; data races must fail the build.
+# -shuffle: catches tests that silently depend on execution order.
+go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out "$@" ./...

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="git commit-msg hook: validate the new commit message"
+#MISE hide=true
+#MISE quiet=true
+#USAGE arg "<file>" help="path to the commit message file git passes to the hook"
+set -euo pipefail
+
+# shellcheck disable=SC2154 # usage_file is provided by mise from #USAGE
+mise run --quiet commits:check-msg "${usage_file}"

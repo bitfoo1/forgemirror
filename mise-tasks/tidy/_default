@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Sync go.mod/go.sum with the imports"
+set -euo pipefail
+
+go mod tidy

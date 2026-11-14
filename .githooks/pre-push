@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Thin shim: all logic lives in the mise task so hooks and CI share one rule set.
+# git writes the pushed refs to stdin; they are forwarded as arguments because
+# mise tasks do not receive the hook's stdin.
+set -euo pipefail
+
+command -v mise >/dev/null 2>&1 || {
+  echo "pre-push: mise is required (https://mise.jdx.dev)" >&2
+  exit 1
+}
+# shellcheck disable=SC2046 # word splitting of the ref tuples is intended
+exec mise run hook:pre-push -- $(cat)

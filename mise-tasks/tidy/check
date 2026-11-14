@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Fail if go.mod/go.sum are not tidy; prints the diff"
+set -euo pipefail
+
+go mod tidy -diff

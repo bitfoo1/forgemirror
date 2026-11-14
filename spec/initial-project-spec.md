@@ -35,19 +35,19 @@ A webhook-driven service written in Go that listens for Forgejo push events and 
 
 > **What you will learn:** Go module system, project layout conventions, how to build and run a Go binary, how the `main` package works, basic CLI flags.
 
-- [ ] Install Go and verify the installation with `go version`
-- [ ] Read about Go's standard project layout (there is no enforced structure, but community conventions exist — research `cmd/` and `internal/` directories)
-- [ ] Create a new directory for the project
-- [ ] Initialize a Go module: understand what `go.mod` is and what the module path means
-- [ ] Create a `main.go` in `cmd/forge-mirror/` that prints "forge-mirror starting" and exits cleanly
-- [ ] Build the binary with `go build` and run it
-- [ ] Add a `-version` flag using the standard `flag` package that prints a version string and exits
-- [ ] Create a `Makefile` with the following targets:
-  - [ ] `build` — compiles the binary
-  - [ ] `test` — runs all tests
-  - [ ] `lint` — runs `golangci-lint` (research how to install it)
-  - [ ] `run` — builds and runs the binary
-- [ ] Understand the difference between `go run`, `go build`, and `go install`
+- [x] Install Go and verify the installation with `go version`
+- [x] Read about Go's standard project layout (there is no enforced structure, but community conventions exist — research `cmd/` and `internal/` directories)
+- [x] Create a new directory for the project
+- [x] Initialize a Go module: understand what `go.mod` is and what the module path means
+- [x] Create a `main.go` in `cmd/forge-mirror/` that prints "forge-mirror starting" and exits cleanly
+- [x] Build the binary with `go build` and run it
+- [x] Add a `-version` flag using the standard `flag` package that prints a version string and exits
+- [x] Create a `mise.toml` with the following targets:
+  - [x] `build` — compiles the binary
+  - [x] `test` — runs all tests
+  - [x] `lint` — runs `golangci-lint` (research how to install it)
+  - [x] `run` — builds and runs the binary
+- [x] Understand the difference between `go run`, `go build`, and `go install`
 
 ---
 
@@ -55,15 +55,15 @@ A webhook-driven service written in Go that listens for Forgejo push events and 
 
 > **What you will learn:** Go structs, interfaces, reading files, JSON/YAML unmarshalling, environment variables, error handling patterns (`if err != nil`), and the concept of zero values.
 
-- [ ] Define a `Config` struct that holds all runtime configuration (research what a struct is in Go)
-- [ ] The config struct must contain:
-  - [ ] Server listen address (e.g. `0.0.0.0:8080`)
-  - [ ] Webhook HMAC secret
-  - [ ] Log level (`debug`, `info`, `warn`, `error`)
-  - [ ] A slice of `Target` structs, each with:
-    - [ ] A human-readable name
-    - [ ] The remote URL to push to
-    - [ ] An access token (credential)
+- [x] Define a `Config` struct that holds all runtime configuration (research what a struct is in Go)
+- [x] The config struct must contain:
+  - [x] Server listen address (e.g. `0.0.0.0:8080`)
+  - [x] Webhook HMAC secret
+  - [x] Log level (`debug`, `info`, `warn`, `error`)
+  - [x] A slice of `Target` structs, each with:
+    - [x] A human-readable name
+    - [x] The remote URL to push to
+    - [x] An access token (credential)
 - [ ] Support loading config from a YAML file (research the `gopkg.in/yaml.v3` package)
 - [ ] Support overriding any value via environment variables (research the `github.com/kelseyhightower/envconfig` package or implement manually)
 - [ ] Validate the loaded config: return a descriptive error if required fields are missing

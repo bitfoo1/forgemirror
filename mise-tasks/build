@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Build bin/forgemirror for the host platform"
+#MISE sources=["go.mod", "go.sum", "**/*.go"]
+#MISE outputs=["bin/forgemirror"]
+set -euo pipefail
+
+# No -ldflags version stamping needed: since Go 1.24 `go build` embeds the
+# VCS tag/commit into the binary's build info, which the version package reads.
+go build -trimpath -o bin/forgemirror ./cmd/forgemirror

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Fail if any Go file is not formatted; prints the diff"
+set -euo pipefail
+
+golangci-lint fmt --diff

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#MISE description="git pre-push hook: validate outgoing commit messages, then run the quality gate"
+#MISE hide=true
+#USAGE arg "[refs]..." var=#true help="the <local-ref> <local-sha> <remote-ref> <remote-sha> tuples git writes to the hook's stdin"
+set -euo pipefail
+
+# shellcheck disable=SC2154 # usage_refs is provided by mise from #USAGE
+read -r -a refs <<<"${usage_refs:-}"
+zero="0000000000000000000000000000000000000000"
+
+for ((i = 0; i + 3 < ${#refs[@]}; i += 4)); do
+  local_sha="${refs[i + 1]}"
+  remote_sha="${refs[i + 3]}"
+  [[ "${local_sha}" == "${zero}" ]] && continue # branch/tag deletion: nothing to check
+
+  if [[ "${remote_sha}" == "${zero}" ]]; then
+    # New remote branch: check only commits that no remote branch has yet.
+    range="${local_sha} --not --remotes"
+  else
+    range="${remote_sha}..${local_sha}"
+  fi
+  mise run --quiet commits:check "${range}"
+done
+
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "warning: uncommitted changes are included in the checks below" >&2
+fi
+
+mise run check

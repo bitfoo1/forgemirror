@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Run go vet"
+set -euo pipefail
+
+# golangci-lint already runs govet, but the standalone run is kept on purpose:
+# it uses the exact analyzer set of the pinned Go toolchain.
+go vet ./...

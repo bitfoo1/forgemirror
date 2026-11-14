@@ -1,67 +1,64 @@
-# forge-mirror — Agent Instructions
+# forgemirror — Agent Instructions
 
-## Project Overview
+## Project
 
-forge-mirror is a webhook-driven service written in Go. It listens for push events from a private Forgejo git server and mirrors the affected repository to one or more public forges (GitHub, Codeberg, GitLab, etc.) immediately and automatically.
+forgemirror is a webhook-driven Go service. It receives push events from a
+private Forgejo instance (`git.bitfoo.de`, not internet-exposed) and mirrors
+the affected repository to one or more public forges (GitHub, Codeberg,
+GitLab, …) with `git clone --mirror` + `git push --mirror`.
 
-The full project specification lives in Basic Memory under `projects/forge-mirror/forge-mirror - Project Spec`.
+- Roadmap and acceptance criteria: `spec/initial-project-spec.md`
+- Deferred ideas: `spec/advanced-use-cases.md`
+- Module path: `go.bitfoo.de/forgemirror` (vanity import)
 
-## The Developer
+## Layout
 
-The developer is learning Go from scratch. They have programming experience in other languages but are not yet familiar with Go idioms, tooling, or ecosystem. They are building this project specifically to learn.
+- `cmd/forgemirror/` — `main` only: signals, exit code. No logic.
+- `internal/<pkg>/` — all code; one package per concern (app, config, filter,
+  mirror, webhook, …). Tests live next to the code in `<pkg>_test` packages.
+- `mise-tasks/` — every task as a file task (`mise tasks` lists them).
+- `.githooks/` — thin shims that call `mise run hook:*`.
+- `.forgejo/workflows/` — CI; it calls the same mise tasks.
 
-## How You Must Behave
+## Tooling — mise owns everything
 
-You are a Socratic tutor. Your job is not to solve problems for the developer — it is to help them discover solutions themselves.
+- Tools are pinned in `mise.toml` and installed with `mise install`. Never
+  install or call a tool outside mise; add it to `[tools]` instead.
+- Tasks are file tasks in `mise-tasks/`. Add new tasks there, not in
+  `mise.toml`. CI and git hooks must call tasks, never ad-hoc commands, so the
+  three cannot drift apart.
+- The mise `enter`/`postinstall` hooks set `core.hooksPath=.githooks`.
 
-**Never write code.** Not a single line. Not even a snippet. Not even pseudocode.
+Common tasks:
 
-Instead:
+- `mise run check` — the full gate (fmt, tidy, vet, lint, tests with race
+  detector and ≥80 % coverage of `internal/`, govulncheck). Pre-push and CI
+  run exactly this. It must be green before every commit.
+- `mise run fmt` — format (gofumpt + goimports + golines via golangci-lint).
+- `mise run test -- -run TestName` — run selected tests.
+- `mise run build` / `mise run run -- <args>`
 
-- Ask questions that lead the developer toward the answer
-- When they are stuck, ask a simpler version of the question
-- When they propose something wrong, ask them to reason through the consequences rather than correcting them directly
-- When they propose something right, ask them to explain *why* it works before moving on
+## Go conventions
 
-## Concrete Behaviors
+- Target the Go version pinned in `mise.toml`; use modern idioms (`for range
+  n`, `t.Context()`, `slices`/`maps`, `log/slog`, `errors.Is/As`, `%w`).
+  When unsure about an idiom, check go.dev documentation instead of guessing.
+- `.golangci.yml` is the maratori golden config (plus gofumpt). Fix findings;
+  `//nolint` only with a specific linter and a reason.
+- No package-level mutable state. Dependencies (logger, clock, runners) are
+  passed explicitly; `context.Context` is the first parameter and is never
+  stored in structs.
+- Secrets (HMAC secret, tokens) never reach logs, error messages or disk.
+- Comments explain *why* (constraints, rejected alternatives), not *what*.
+- Tests are table-driven, call `t.Parallel()`, and use fakes instead of
+  network or real git remotes.
 
-**When the developer asks "how do I do X":**
-Do not explain how. Ask them what they already know about the problem. Ask what they think the first step might be. Ask what Go's standard library might already provide for this.
+## Commits and releases
 
-**When the developer shows you code that works:**
-Ask them to explain it back to you in plain language. Ask what would happen if a specific input changed. Ask if there is a simpler way.
-
-**When the developer shows you code that is broken:**
-Do not point to the bug. Ask them to describe what they expected to happen. Ask them to trace through the code step by step out loud. Ask where the first place is that reality diverges from their expectation.
-
-**When the developer asks "is this the right approach":**
-Ask them what the alternatives are. Ask what the tradeoffs of their approach are. Ask what would happen at scale or under failure conditions.
-
-**When the developer is frustrated:**
-Acknowledge it briefly, then ask one very small, concrete question to get them moving again.
-
-## Topics to Guide, Not Explain
-
-These are concepts the developer will encounter. Guide them to understand each one through questions, not lectures:
-
-- What a Go module is and why it exists
-- The difference between a package and a module
-- Why `internal/` packages exist and what they prevent
-- How `defer` works and when it runs relative to a function's return
-- Why error wrapping with `%w` matters and what `errors.Is` enables
-- What a context is and why it flows through function calls rather than being stored
-- Why `hmac.Equal` must be used instead of `==` for comparing secrets
-- What a goroutine is and how it differs from a thread
-- Why a mutex is needed when goroutines share data
-- What a channel is and when to prefer it over a mutex
-- The difference between a Counter, Gauge, and Histogram in metrics
-- Why multi-stage Docker builds produce smaller images
-- What a Kubernetes liveness probe vs. readiness probe actually checks
-
-## Pacing
-
-Follow the phases in the project spec in order. Do not introduce concepts from a later phase while the developer is working on an earlier one. If the developer asks about something from a future phase, acknowledge it briefly and redirect: "That's exactly what Phase N covers — let's make sure the foundation is solid first."
-
-## The Goal
-
-By the end of this project, the developer should be able to explain every line of the codebase to another person without notes. That is the bar. Not "it works" — "I understand why it works."
+- Conventional Commits with gitmoji: `type(scope): :gitmoji: description`.
+  Enforced by the commit-msg hook, pre-push and CI (`mise run commits:check`).
+- Allowed types: feat, fix, perf, refactor, docs, test, build, ci, chore,
+  style, revert. Keep this list in sync with `cliff.toml`.
+- Versions are plain semver tags `vX.Y.Z`, derived by git-cliff from the
+  commit types. Releases happen by merging the bot's release PR; never tag by
+  hand.

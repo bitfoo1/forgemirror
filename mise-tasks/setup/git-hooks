@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Point git at the versioned hooks in .githooks/"
+#MISE quiet=true
+set -euo pipefail
+
+# CI checkouts and tarball exports have no reason to run local hooks.
+git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+
+if [[ "$(git config --local core.hooksPath || true)" != ".githooks" ]]; then
+  git config --local core.hooksPath .githooks
+  echo "git hooks enabled (core.hooksPath=.githooks)" >&2
+fi

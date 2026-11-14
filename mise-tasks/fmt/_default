@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Format all Go code (gofumpt, goimports, golines via golangci-lint)"
+set -euo pipefail
+
+golangci-lint fmt

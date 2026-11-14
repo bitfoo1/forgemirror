@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="Full quality gate: fmt, tidy, vet, lint, tests with coverage, govulncheck"
+#MISE depends=["fmt:check", "tidy:check", "vet", "lint", "test:coverage", "vuln"]
+set -euo pipefail
+
+# The pre-push hook and CI both run exactly this task, so a green local push
+# predicts a green pipeline.
+echo "all checks passed"

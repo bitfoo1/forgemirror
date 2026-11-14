@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#MISE description="Validate one commit message file against Conventional Commits"
+#MISE quiet=true
+#USAGE arg "<file>" help="file containing the commit message"
+set -euo pipefail
+
+# Keep TYPES in sync with the commit_parsers in cliff.toml: a type that the
+# changelog does not know would silently vanish from the release notes.
+TYPES="feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert"
+PATTERN="^(${TYPES})(\([a-zA-Z0-9_./+-]+\))?(!)?: .{3,}"
+
+# shellcheck disable=SC2154 # usage_file is provided by mise from #USAGE
+subject="$(head -n1 "${usage_file}")"
+
+# Messages git generates itself, and fixups that are squashed before merging.
+if [[ "${subject}" =~ ^(Merge |Revert \"|fixup! |squash! |amend! ) ]]; then
+  exit 0
+fi
+
+if [[ ! "${subject}" =~ ${PATTERN} ]]; then
+  cat >&2 <<EOF
+ERROR: commit message does not follow Conventional Commits.
+
+  ${subject}
+
+Expected: <type>(<scope>)!: <description>   (scope and ! are optional)
+Types:    ${TYPES//|/, }
+Example:  feat(webhook): :sparkles: verify X-Forgejo-Signature
+See:      https://www.conventionalcommits.org/
+EOF
+  exit 1
+fi

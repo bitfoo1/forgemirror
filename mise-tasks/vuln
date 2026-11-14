@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Scan code and dependencies for known Go vulnerabilities"
+set -euo pipefail
+
+govulncheck ./...

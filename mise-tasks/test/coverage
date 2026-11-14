@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Run tests and fail if coverage of internal/ is below the threshold"
+#MISE depends=["test"]
+#MISE env={COVERAGE_THRESHOLD = "80"}
+set -euo pipefail
+
+# Only internal/ counts towards the threshold. cmd/ holds nothing but process
+# wiring (signals, exit codes), which unit tests cannot exercise meaningfully;
+# counting it would push the team towards tests that only chase the number.
+profile="$(mktemp)"
+trap 'rm -f "${profile}"' EXIT
+awk 'NR == 1 || $0 ~ /\/internal\//' coverage.out >"${profile}"
+
+total="$(go tool cover -func="${profile}" | awk '/^total:/ { sub(/%/, "", $NF); print $NF }')"
+echo "internal/ coverage: ${total}% (threshold: ${COVERAGE_THRESHOLD}%)"
+
+if awk -v t="${total}" -v min="${COVERAGE_THRESHOLD}" 'BEGIN { exit !(t < min) }'; then
+  echo "coverage ${total}% is below the required ${COVERAGE_THRESHOLD}%" >&2
+  exit 1
+fi

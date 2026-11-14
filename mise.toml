@@ -1,18 +1,21 @@
+# mise is the single entry point for this project: it pins every tool, defines
+# every task (file tasks live in mise-tasks/) and wires up the git hooks.
+# Local development, the git hooks and CI all go through `mise run <task>`, so
+# they cannot drift apart. `mise tasks` lists everything.
+
 [tools]
-go = "1.26.4"
-golangci-lint = "2.12.2"
+go = "1.27.4"
+golangci-lint = "2.15.0"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
+goreleaser = "2.20.2"
+git-cliff = "2.14.2"
+cosign = "3.1.4"
+syft = "1.57.1" # goreleaser shells out to syft to generate SBOMs
+jq = "1.8.2"
 
 [hooks]
-enter = '[[ "$(git config core.hooksPath)" == ".githooks" ]] || git config core.hooksPath .githooks'
-
-[tasks.lint]
-description = "Lint the project"
-run = """
-golangci-lint run
-"""
-
-[tasks.fmt]
-description = "Format go code with golangci-lint"
-run = """
-golangci-lint fmt
-"""
+# Point git at the versioned hooks in .githooks/. `enter` covers developers
+# with an activated shell; `postinstall` covers `mise install` (fresh clones,
+# shells without `mise activate`).
+enter = { task = "setup:git-hooks" }
+postinstall = { task = "setup:git-hooks" }
