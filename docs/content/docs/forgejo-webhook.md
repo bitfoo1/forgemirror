@@ -72,7 +72,7 @@ forgemirror answers right away, and mirroring happens in the background. A
 | 202    | `accepted`                 | Mirror queued, or coalesced into a running one (`mirror queued`); or a repository deletion queued (`delete queued`) |
 | 200    | `filtered`                 | Valid push or deletion, but a filter rule excludes it; the body names the rule |
 | 200    | `ignored`                  | Not a push or repository event, a repository event other than `deleted`, or a push while `sync.on_push` is `false` (`push events disabled (sync.on_push is false)`) |
-| 400    | `bad_request`              | Malformed JSON, required fields missing, or a clone URL outside `source.base_url` |
+| 400    | `bad_request`              | Malformed JSON, required fields missing, a clone URL outside `source.base_url`, or a repository event whose `full_name` is not `owner.login/name` |
 | 401    | `unauthorized`             | Missing or wrong signature, so the secrets differ              |
 | 413    | `too_large`                | Body exceeds `webhook.max_body_bytes` (default 5 MiB)          |
 | 415    | `unsupported_media_type`   | Content type is not `application/json`                         |

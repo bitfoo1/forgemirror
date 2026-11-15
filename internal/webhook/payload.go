@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"errors"
+	"strings"
 
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
@@ -33,6 +34,9 @@ var (
 	errMissingRef      = errors.New("missing ref")
 	errMissingFullName = errors.New("missing repository.full_name")
 	errMissingCloneURL = errors.New("missing repository.clone_url")
+	errMissingOwner    = errors.New("missing repository.owner.login")
+	errMissingName     = errors.New("missing repository.name")
+	errNameMismatch    = errors.New("repository.full_name does not match owner.login/name")
 )
 
 func (e *pushEvent) validate() error {
@@ -57,14 +61,28 @@ type repositoryEvent struct {
 	Repository payloadRepository `json:"repository"`
 }
 
-// validate requires only the full name: nothing is cloned for a deletion, so
-// the clone URL is irrelevant.
+// validate skips the clone URL, since nothing is cloned for a deletion. The
+// filter matches full_name, but the target URL is rendered from owner and
+// name, so all three must agree: otherwise a payload could pass the filter as
+// one repository and delete another.
 func (e *repositoryEvent) validate() error {
-	if e.Repository.FullName == "" {
-		return errMissingFullName
+	r := e.Repository
+
+	var errs []error
+	if r.FullName == "" {
+		errs = append(errs, errMissingFullName)
+	}
+	if r.Owner.Login == "" {
+		errs = append(errs, errMissingOwner)
+	}
+	if r.Name == "" {
+		errs = append(errs, errMissingName)
+	}
+	if len(errs) == 0 && !strings.EqualFold(r.FullName, r.Owner.Login+"/"+r.Name) {
+		errs = append(errs, errNameMismatch)
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (e *repositoryEvent) repository() repo.Repository {

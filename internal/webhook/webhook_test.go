@@ -317,7 +317,6 @@ const (
   }
 }`
 	repositoryCreatedPayload = `{"action": "created", "repository": {"name": "app", "full_name": "acme/app"}}`
-	repositoryNoFullName     = `{"action": "deleted", "repository": {"name": "app"}}`
 )
 
 func repositoryRequest(body string) request {
@@ -432,17 +431,49 @@ func TestRepositoryCreatedIgnored(t *testing.T) {
 	}
 }
 
-func TestRepositoryDeletedMissingFullName(t *testing.T) {
+func TestRepositoryDeletedInvalidRepository(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		repo string
+		want string
+	}{
+		{name: "missing full_name", repo: `{"name": "app", "owner": {"login": "acme"}}`, want: "full_name"},
+		{name: "missing owner", repo: `{"name": "app", "full_name": "acme/app"}`, want: "owner.login"},
+		{name: "missing name", repo: `{"full_name": "acme/app", "owner": {"login": "acme"}}`, want: "repository.name"},
+		{
+			name: "full_name disagrees",
+			repo: `{"name": "app", "full_name": "acme/other", "owner": {"login": "acme"}}`,
+			want: "does not match",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec, dispatcher := serve(t, webhook.Options{
+				Filter: staticFilter{decision: filter.Decision{Mirror: true}},
+			}, repositoryRequest(`{"action": "deleted", "repository": `+tc.repo+`}`))
+
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("status = %d, body = %q; want 400 mentioning %q", rec.Code, rec.Body.String(), tc.want)
+			}
+			if len(dispatcher.events) != 0 {
+				t.Errorf("dispatched %d events, want 0", len(dispatcher.events))
+			}
+		})
+	}
+}
+
+func TestRepositoryDeletedFullNameCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
 	rec, dispatcher := serve(t, webhook.Options{
 		Filter: staticFilter{decision: filter.Decision{Mirror: true}},
-	}, repositoryRequest(repositoryNoFullName))
+	}, repositoryRequest(`{"action": "deleted", "repository": {"name": "App", "full_name": "ACME/app", "owner": {"login": "acme"}}}`))
 
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
-	}
-	if len(dispatcher.events) != 0 {
-		t.Errorf("dispatched %d events, want 0", len(dispatcher.events))
+	if rec.Code != http.StatusAccepted || len(dispatcher.events) != 1 {
+		t.Errorf("status = %d, events = %d; want 202 and one event", rec.Code, len(dispatcher.events))
 	}
 }
