@@ -8,8 +8,10 @@
 #   gcc and libc6-dev, so no apt step is needed.
 # - actions/cache talks to the runner's cache server (runner-cache in the
 #   forgejo-runner namespace); pull requests get write-isolated entries.
-# - Images are built daemonless by ko. The runner provides a Docker daemon
-#   through DOCKER_HOST, which only the e2e job uses (Forgejo in compose).
+# - Images are built daemonless by ko. The runner pod has a plain-TCP DinD
+#   sidecar on 127.0.0.1:2375. Jobs share the pod's network (network: host)
+#   but do not inherit the runner's DOCKER_HOST, so the e2e job, the only one
+#   that needs Docker (Forgejo in compose), sets it itself.
 #
 # Secrets:
 #   RELEASE_TOKEN       PAT (write:repository) — pushes release/next, opens
@@ -86,7 +88,10 @@ jobs:
         run: mise run snapshot
 
   # Runs forgemirror against a real Forgejo (e2e/compose.yaml). The docker
-  # and compose CLIs come from mise; the daemon is the runner's (DOCKER_HOST).
+  # and compose CLIs come from mise; the daemon is the runner pod's DinD
+  # sidecar. Because job and daemon share one network namespace, Forgejo's
+  # published port is reachable on 127.0.0.1 and host-gateway leads back to
+  # forgemirror in the job.
   e2e:
     name: e2e
     needs: verify
@@ -94,6 +99,8 @@ jobs:
     runs-on: docker
     container:
       image: node:24-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1
+    env:
+      DOCKER_HOST: tcp://127.0.0.1:2375
     steps:
       - name: Checkout
         env:
