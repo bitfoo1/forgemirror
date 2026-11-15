@@ -14,11 +14,22 @@ import (
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
-// Observer is notified after every scheduled run; telemetry implements it.
+// Observer is notified after every scheduled run; telemetry and the status
+// store implement it.
 type Observer interface {
 	// ScheduledRunFinished reports how many repositories were dispatched,
 	// or the error that prevented listing them.
 	ScheduledRunFinished(ctx context.Context, repos int, err error)
+}
+
+// Observers fans every event out to each of its observers in order.
+type Observers []Observer
+
+// ScheduledRunFinished implements [Observer].
+func (obs Observers) ScheduledRunFinished(ctx context.Context, repos int, err error) {
+	for _, o := range obs {
+		o.ScheduledRunFinished(ctx, repos, err)
+	}
 }
 
 // Options configure [Run].

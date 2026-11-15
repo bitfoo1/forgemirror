@@ -20,17 +20,19 @@ import (
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
-// Observer is notified about mirror activity (metrics). All methods must be
-// safe for concurrent use.
+// Observer is notified about mirror activity (metrics, status). All methods
+// must be safe for concurrent use. repo is the full name ("owner/name") of the
+// source repository.
 type Observer interface {
-	// RunStarted and RunFinished bracket one mirror run of one repository.
-	RunStarted(ctx context.Context)
-	RunFinished(ctx context.Context)
+	// RunStarted and RunFinished bracket one run (mirror or deletion) of one
+	// repository.
+	RunStarted(ctx context.Context, repo string)
+	RunFinished(ctx context.Context, repo string)
 	// TargetFinished reports the outcome for one target; err is nil on success.
-	TargetFinished(ctx context.Context, target string, duration time.Duration, err error)
+	TargetFinished(ctx context.Context, repo, target string, duration time.Duration, err error)
 	// SyncFinished reports one forge API operation ("create", "settings",
 	// "labels" or "delete") on a typed target; err is nil on success.
-	SyncFinished(ctx context.Context, target, operation string, err error)
+	SyncFinished(ctx context.Context, repo, target, operation string, err error)
 }
 
 // Options configures a [Dispatcher].
@@ -150,6 +152,20 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	d.wg.Go(func() { d.runLoop(ctx, e) })
 }
 
+// Queued returns the repositories that have a run in progress, each mapped to
+// whether a follow-up run is queued behind it.
+func (d *Dispatcher) Queued() map[string]bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	out := make(map[string]bool, len(d.running))
+	for repo, state := range d.running {
+		out[repo] = state.next != nil
+	}
+
+	return out
+}
+
 // Shutdown stops accepting events and waits for running mirrors. If ctx ends
 // first, running git processes are killed and ctx's error is returned.
 func (d *Dispatcher) Shutdown(ctx context.Context) error {
@@ -214,8 +230,9 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 	stop := context.AfterFunc(d.base, cancel)
 	defer stop()
 
-	d.opts.Observer.RunStarted(ctx)
-	defer d.opts.Observer.RunFinished(ctx)
+	repo := e.Repository.FullName
+	d.opts.Observer.RunStarted(ctx, repo)
+	defer d.opts.Observer.RunFinished(ctx, repo)
 
 	logger := d.eventLogger(e)
 	if e.Kind == webhook.EventDelete {
@@ -227,7 +244,7 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 	start := time.Now()
 	logger.InfoContext(ctx, "mirror started")
 
-	runs := d.targetRuns()
+	runs := d.targetRuns(repo)
 	d.prepare(ctx, logger, runs, e, start)
 	d.mirror(ctx, logger, runs, e, start)
 	parallel(runs, func(tr *targetRun) {
@@ -281,7 +298,7 @@ func (d *Dispatcher) mirror(
 	parallel(pending, func(tr *targetRun) {
 		pushStart := time.Now()
 		tr.err = d.push(ctx, ws, tr.cfg, e)
-		d.finishTarget(ctx, logger, tr.cfg.Name, pushStart, tr.err)
+		d.finishTarget(ctx, logger, tr, pushStart, tr.err)
 	})
 }
 
@@ -385,11 +402,11 @@ func acquireSlot(ctx context.Context, sem chan struct{}, kind string) (func(), e
 	}
 }
 
-func (d *Dispatcher) finishTarget(ctx context.Context, logger *slog.Logger, target string, start time.Time, err error) {
+func (d *Dispatcher) finishTarget(ctx context.Context, logger *slog.Logger, tr *targetRun, start time.Time, err error) {
 	duration := time.Since(start)
-	d.opts.Observer.TargetFinished(ctx, target, duration, err)
+	d.opts.Observer.TargetFinished(ctx, tr.repo, tr.cfg.Name, duration, err)
 
-	logger = logger.With(slog.String("target", target), slog.Duration("duration", duration))
+	logger = logger.With(slog.String("target", tr.cfg.Name), slog.Duration("duration", duration))
 	if err != nil {
 		logger.ErrorContext(ctx, "target failed", slog.String("outcome", "failure"), slog.Any("error", err))
 
@@ -408,7 +425,38 @@ func (d *Dispatcher) eventLogger(e webhook.Event) *slog.Logger {
 
 type noopObserver struct{}
 
-func (noopObserver) RunStarted(context.Context)                                   {}
-func (noopObserver) RunFinished(context.Context)                                  {}
-func (noopObserver) TargetFinished(context.Context, string, time.Duration, error) {}
-func (noopObserver) SyncFinished(context.Context, string, string, error)          {}
+func (noopObserver) RunStarted(context.Context, string)                                   {}
+func (noopObserver) RunFinished(context.Context, string)                                  {}
+func (noopObserver) TargetFinished(context.Context, string, string, time.Duration, error) {}
+func (noopObserver) SyncFinished(context.Context, string, string, string, error)          {}
+
+// Observers fans every event out to each of its observers in order.
+type Observers []Observer
+
+// RunStarted implements [Observer].
+func (obs Observers) RunStarted(ctx context.Context, repo string) {
+	for _, o := range obs {
+		o.RunStarted(ctx, repo)
+	}
+}
+
+// RunFinished implements [Observer].
+func (obs Observers) RunFinished(ctx context.Context, repo string) {
+	for _, o := range obs {
+		o.RunFinished(ctx, repo)
+	}
+}
+
+// TargetFinished implements [Observer].
+func (obs Observers) TargetFinished(ctx context.Context, repo, target string, duration time.Duration, err error) {
+	for _, o := range obs {
+		o.TargetFinished(ctx, repo, target, duration, err)
+	}
+}
+
+// SyncFinished implements [Observer].
+func (obs Observers) SyncFinished(ctx context.Context, repo, target, operation string, err error) {
+	for _, o := range obs {
+		o.SyncFinished(ctx, repo, target, operation, err)
+	}
+}

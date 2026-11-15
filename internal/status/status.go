@@ -1,0 +1,242 @@
+// Package status keeps the recent state of every repository and target in
+// memory for the web UI. It receives the same events as the metrics, but
+// per repository, which metrics cannot afford (unbounded label values).
+//
+// State is not persisted: after a restart the UI fills again with the next
+// runs, which is enough for a status page.
+package status
+
+import (
+	"cmp"
+	"context"
+	"maps"
+	"slices"
+	"sync"
+	"time"
+)
+
+// operationDelete is the forge operation that removes a target repository;
+// see dispatch.Observer.
+const operationDelete = "delete"
+
+// Options configures a [Store].
+type Options struct {
+	// ScheduleInterval is sync.schedule; 0 means no schedule.
+	ScheduleInterval time.Duration
+	// Now returns the current time; nil means [time.Now].
+	Now func() time.Time
+}
+
+// Store records the state of repositories, targets and the scheduler. It
+// implements dispatch.Observer and schedule.Observer and is safe for
+// concurrent use.
+type Store struct {
+	now      func() time.Time
+	started  time.Time
+	mu       sync.Mutex
+	repos    map[string]*repoState
+	schedule Schedule
+}
+
+type repoState struct {
+	running      int
+	lastStarted  time.Time
+	lastFinished time.Time
+	targets      map[string]*Target
+	// deleting is set when a run removed (or tried to remove) target
+	// repositories, i.e. the source repository was deleted.
+	deleting bool
+	// deleteFailed keeps the repository visible after a failed deletion.
+	deleteFailed bool
+}
+
+// Snapshot is a consistent copy of the store's state.
+type Snapshot struct {
+	// Started is when the store, and so the service, started.
+	Started  time.Time
+	Repos    []Repo
+	Schedule Schedule
+}
+
+// Repo is the state of one source repository.
+type Repo struct {
+	// Name is the full name, "owner/name".
+	Name         string
+	Running      bool
+	LastStarted  time.Time
+	LastFinished time.Time
+	// Targets is sorted by target name.
+	Targets []Target
+}
+
+// Target is the state of one repository on one target.
+type Target struct {
+	Name string
+	// LastRun is when the last push (or failed attempt) finished; zero if
+	// only forge operations ran so far.
+	LastRun  time.Time
+	Duration time.Duration
+	// Error is the redacted error text of the last push; empty on success.
+	Error string
+	// Operations holds the last result of each forge operation, sorted by
+	// name.
+	Operations []Operation
+}
+
+// Operation is the last result of one forge API operation.
+type Operation struct {
+	Name  string
+	At    time.Time
+	Error string
+}
+
+// Schedule is the state of scheduled syncs.
+type Schedule struct {
+	Interval time.Duration
+	// LastRun is when the last sweep finished; zero before the first.
+	LastRun time.Time
+	Repos   int
+	Error   string
+	Runs    int
+}
+
+// New returns an empty [Store].
+func New(opts Options) *Store {
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
+
+	return &Store{
+		now:      now,
+		started:  now(),
+		repos:    make(map[string]*repoState),
+		schedule: Schedule{Interval: opts.ScheduleInterval},
+	}
+}
+
+func (s *Store) repo(name string) *repoState {
+	r, ok := s.repos[name]
+	if !ok {
+		r = &repoState{targets: make(map[string]*Target)}
+		s.repos[name] = r
+	}
+
+	return r
+}
+
+func (r *repoState) target(name string) *Target {
+	t, ok := r.targets[name]
+	if !ok {
+		t = &Target{Name: name}
+		r.targets[name] = t
+	}
+
+	return t
+}
+
+// RunStarted implements dispatch.Observer.
+func (s *Store) RunStarted(_ context.Context, repo string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	r := s.repo(repo)
+	r.running++
+	r.lastStarted = s.now()
+	r.deleting, r.deleteFailed = false, false
+}
+
+// RunFinished implements dispatch.Observer. A repository whose deletion
+// succeeded on every target is forgotten.
+func (s *Store) RunFinished(_ context.Context, repo string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	r := s.repo(repo)
+	r.running = max(r.running-1, 0)
+	r.lastFinished = s.now()
+	if r.deleting && !r.deleteFailed && r.running == 0 {
+		delete(s.repos, repo)
+	}
+}
+
+// TargetFinished implements dispatch.Observer.
+func (s *Store) TargetFinished(_ context.Context, repo, target string, duration time.Duration, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	t := s.repo(repo).target(target)
+	t.LastRun = s.now()
+	t.Duration = duration
+	t.Error = errorText(err)
+}
+
+// SyncFinished implements dispatch.Observer.
+func (s *Store) SyncFinished(_ context.Context, repo, target, operation string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	r := s.repo(repo)
+	if operation == operationDelete {
+		r.deleting = true
+		r.deleteFailed = r.deleteFailed || err != nil
+	}
+
+	t := r.target(target)
+	op := Operation{Name: operation, At: s.now(), Error: errorText(err)}
+	if i := slices.IndexFunc(t.Operations, func(o Operation) bool { return o.Name == operation }); i >= 0 {
+		t.Operations[i] = op
+
+		return
+	}
+	t.Operations = append(t.Operations, op)
+	slices.SortFunc(t.Operations, func(a, b Operation) int { return cmp.Compare(a.Name, b.Name) })
+}
+
+// ScheduledRunFinished implements schedule.Observer.
+func (s *Store) ScheduledRunFinished(_ context.Context, repos int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.schedule.LastRun = s.now()
+	s.schedule.Repos = repos
+	s.schedule.Error = errorText(err)
+	s.schedule.Runs++
+}
+
+// Snapshot returns a copy of the current state; repositories are sorted by
+// name.
+func (s *Store) Snapshot() Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	snap := Snapshot{Started: s.started, Schedule: s.schedule, Repos: make([]Repo, 0, len(s.repos))}
+	for _, name := range slices.Sorted(maps.Keys(s.repos)) {
+		r := s.repos[name]
+		repo := Repo{
+			Name:         name,
+			Running:      r.running > 0,
+			LastStarted:  r.lastStarted,
+			LastFinished: r.lastFinished,
+			Targets:      make([]Target, 0, len(r.targets)),
+		}
+		for _, tn := range slices.Sorted(maps.Keys(r.targets)) {
+			t := *r.targets[tn]
+			t.Operations = slices.Clone(t.Operations)
+			repo.Targets = append(repo.Targets, t)
+		}
+		snap.Repos = append(snap.Repos, repo)
+	}
+
+	return snap
+}
+
+// errorText returns err's message. It is the same text that is logged,
+// which is redacted where it is created (git output, URLs).
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return err.Error()
+}

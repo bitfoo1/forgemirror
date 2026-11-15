@@ -138,18 +138,22 @@ func (m *Metrics) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// The repository is deliberately not a label in any metric: one series per
+// repository would grow without bound on large instances. The web UI shows
+// per-repository state instead.
+
 // RunStarted implements [dispatch.Observer].
-func (m *Metrics) RunStarted(ctx context.Context) {
+func (m *Metrics) RunStarted(ctx context.Context, _ string) {
 	m.active.Add(ctx, 1)
 }
 
 // RunFinished implements [dispatch.Observer].
-func (m *Metrics) RunFinished(ctx context.Context) {
+func (m *Metrics) RunFinished(ctx context.Context, _ string) {
 	m.active.Add(ctx, -1)
 }
 
 // TargetFinished implements [dispatch.Observer].
-func (m *Metrics) TargetFinished(ctx context.Context, target string, duration time.Duration, err error) {
+func (m *Metrics) TargetFinished(ctx context.Context, _, target string, duration time.Duration, err error) {
 	targetAttr := attribute.String("target", target)
 
 	m.operations.Add(ctx, 1, metric.WithAttributes(targetAttr, attribute.String("status", status(err))))
@@ -157,7 +161,7 @@ func (m *Metrics) TargetFinished(ctx context.Context, target string, duration ti
 }
 
 // SyncFinished implements [dispatch.Observer].
-func (m *Metrics) SyncFinished(ctx context.Context, target, operation string, err error) {
+func (m *Metrics) SyncFinished(ctx context.Context, _, target, operation string, err error) {
 	m.syncOps.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("target", target),
 		attribute.String("operation", operation),

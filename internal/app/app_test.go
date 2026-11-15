@@ -725,3 +725,89 @@ func writeExecutable(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func httpGet(ctx context.Context, t *testing.T, url string) (int, string) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return resp.StatusCode, string(body)
+}
+
+func TestWebUI(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dir := t.TempDir()
+	fakeGit, _ := fakeGitBinary(t, dir)
+	svc := startService(ctx, t, writeConfig(t, testConfig+`
+server:
+  listen_address: "127.0.0.1:0"
+  ops_listen_address: "127.0.0.1:0"
+  shutdown_timeout: 5s
+ui:
+  enabled: true
+  listen_address: "127.0.0.1:0"
+  log_entries: 50
+mirror:
+  git_binary: `+fakeGit+`
+  work_dir: `+dir+`
+`))
+	webAddr := waitForLog(t, svc.logs, listeningOn("web"))[1]
+
+	postPush(ctx, t, svc.addr, `{"ref":"refs/heads/main","repository":{"name":"app","full_name":"acme/app",`+
+		`"owner":{"login":"acme"},"clone_url":"https://git.example/acme/app.git"}}`)
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
+
+	for path, want := range map[string][]string{
+		"/":                   {"<title>forgemirror</title>", "ops_listen_address: 127.0.0.1:0"},
+		"/fragments/repos":    {"acme/app", "<code>example</code>", `class="ok"`},
+		"/fragments/logs":     {"forgemirror starting", "mirror finished"},
+		"/fragments/overview": {"<code>example</code>"},
+	} {
+		status, body := httpGet(ctx, t, "http://"+webAddr+path)
+		if status != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", path, status)
+		}
+		for _, w := range want {
+			if !strings.Contains(body, w) {
+				t.Errorf("GET %s lacks %q:\n%s", path, w, body)
+			}
+		}
+	}
+
+	// The UI is on its own listener only.
+	if status, _ := httpGet(ctx, t, "http://"+svc.addr+"/"); status != http.StatusNotFound {
+		t.Errorf("GET / on the webhook listener = %d, want 404", status)
+	}
+	svc.stop(t)
+}
+
+func TestWebUIDisabled(t *testing.T) {
+	t.Parallel()
+
+	svc := startService(t.Context(), t, writeConfig(t, testConfig+`
+server:
+  listen_address: "127.0.0.1:0"
+  ops_listen_address: "127.0.0.1:0"
+  shutdown_timeout: 5s
+`))
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="http server listening" server=ops`))
+	svc.stop(t)
+
+	if strings.Contains(svc.logs.String(), "server=web ") {
+		t.Errorf("web listener started although ui.enabled is false:\n%s", svc.logs.String())
+	}
+}

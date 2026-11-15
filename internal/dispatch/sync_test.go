@@ -636,6 +636,9 @@ func TestDeleteEvent(t *testing.T) {
 				(syncs[0].err != nil) != tc.wantErr {
 				t.Errorf("sync results = %+v, want one delete for github (failed=%v)", syncs, tc.wantErr)
 			}
+			if got := obs.observedRepos(); !slices.Equal(got, []string{"acme/app"}) {
+				t.Errorf("observed repositories = %q, want [acme/app]", got)
+			}
 		})
 	}
 }

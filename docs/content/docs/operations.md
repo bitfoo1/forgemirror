@@ -11,7 +11,7 @@ weight: 5
 | ops (`:9090`)       | `GET /healthz`  | Liveness: `200` while the process serves HTTP                            |
 | ops (`:9090`)       | `GET /readyz`   | Readiness: `503` before serving and once shutdown begins, so load balancers stop sending webhooks |
 | ops (`:9090`)       | `GET /metrics`  | Prometheus metrics                                                      |
-| web (`:8080`)       | `GET /`         | Web UI, only with `ui.enabled: true`                       |
+| web (`:8080`)       | `GET /`         | [Web UI](../web-ui/), only with `ui.enabled: true`                       |
 
 See [Listeners](../configuration/#listeners) for why there are three.
 

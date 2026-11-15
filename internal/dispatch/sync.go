@@ -30,7 +30,9 @@ var (
 // targetRun is the state of one target during one run. Each step hands a
 // targetRun to exactly one goroutine, so it needs no lock.
 type targetRun struct {
-	cfg *config.Target
+	// repo is the full name of the source repository of this run.
+	repo string
+	cfg  *config.Target
 	// api is nil for untyped targets and for typed targets without a client.
 	api  forge.Target
 	addr forge.Address
@@ -56,11 +58,11 @@ type sourceState struct {
 	labels []forge.Label
 }
 
-func (d *Dispatcher) targetRuns() []*targetRun {
+func (d *Dispatcher) targetRuns(repo string) []*targetRun {
 	runs := make([]*targetRun, len(d.opts.Targets))
 	for i := range d.opts.Targets {
 		t := &d.opts.Targets[i]
-		runs[i] = &targetRun{cfg: t, api: d.opts.Forges[t.Name]}
+		runs[i] = &targetRun{repo: repo, cfg: t, api: d.opts.Forges[t.Name]}
 	}
 
 	return runs
@@ -100,7 +102,7 @@ func runErrors(runs []*targetRun) error {
 // target that never got pushed still shows up in the mirror metrics.
 func (d *Dispatcher) fail(ctx context.Context, logger *slog.Logger, tr *targetRun, start time.Time, err error) {
 	tr.err = err
-	d.finishTarget(ctx, logger, tr.cfg.Name, start, err)
+	d.finishTarget(ctx, logger, tr, start, err)
 }
 
 // prepare loads the source state and makes sure every typed target has a
@@ -218,7 +220,7 @@ func (d *Dispatcher) prepareTarget(
 	created.DefaultBranch = ""
 
 	err = tr.api.Create(ctx, addr, created)
-	d.syncFinished(ctx, logger, name, opCreate, err)
+	d.syncFinished(ctx, logger, tr, opCreate, err)
 	if err != nil {
 		return fmt.Errorf("target %q: creating repository: %w", name, err)
 	}
@@ -239,7 +241,7 @@ func (d *Dispatcher) privatise(ctx context.Context, logger *slog.Logger, tr *tar
 
 	private := true
 	err := tr.api.Update(ctx, tr.addr, forge.Settings{Private: &private})
-	d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
+	d.syncFinished(ctx, logger, tr, opSettings, err)
 	if err != nil {
 		return fmt.Errorf("target %q: making repository private: %w", tr.cfg.Name, err)
 	}
@@ -282,7 +284,7 @@ func (d *Dispatcher) syncSettings(ctx context.Context, logger *slog.Logger, tr *
 		var err error
 		if current, err = tr.api.Get(ctx, tr.addr); err != nil {
 			err = fmt.Errorf("reading created repository: %w", err)
-			d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
+			d.syncFinished(ctx, logger, tr, opSettings, err)
 
 			return err
 		}
@@ -294,7 +296,7 @@ func (d *Dispatcher) syncSettings(ctx context.Context, logger *slog.Logger, tr *
 	}
 
 	err := tr.api.Update(ctx, tr.addr, diff)
-	d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
+	d.syncFinished(ctx, logger, tr, opSettings, err)
 
 	return err
 }
@@ -305,7 +307,7 @@ func (d *Dispatcher) syncLabels(ctx context.Context, logger *slog.Logger, tr *ta
 	current, err := tr.api.Labels(ctx, tr.addr)
 	if err != nil {
 		err = fmt.Errorf("listing labels: %w", err)
-		d.syncFinished(ctx, logger, tr.cfg.Name, opLabels, err)
+		d.syncFinished(ctx, logger, tr, opLabels, err)
 
 		return err
 	}
@@ -333,7 +335,7 @@ func (d *Dispatcher) syncLabels(ctx context.Context, logger *slog.Logger, tr *ta
 	}
 
 	err = errors.Join(errs...)
-	d.syncFinished(ctx, logger, tr.cfg.Name, opLabels, err)
+	d.syncFinished(ctx, logger, tr, opLabels, err)
 
 	return err
 }
@@ -346,7 +348,7 @@ func (d *Dispatcher) deleteRepos(ctx context.Context, logger *slog.Logger, e web
 	logger.InfoContext(ctx, "deletion started")
 
 	var runs []*targetRun
-	for _, tr := range d.targetRuns() {
+	for _, tr := range d.targetRuns(e.Repository.FullName) {
 		if !tr.typed() || !tr.cfg.Delete {
 			logger.DebugContext(ctx, "target keeps the repository; delete is not enabled",
 				slog.String("target", tr.cfg.Name))
@@ -382,7 +384,7 @@ func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *ta
 	if err != nil {
 		err = fmt.Errorf("target %q: deleting repository: %w", tr.cfg.Name, err)
 	}
-	d.syncFinished(ctx, logger, tr.cfg.Name, opDelete, err)
+	d.syncFinished(ctx, logger, tr, opDelete, err)
 
 	return err
 }
@@ -397,10 +399,16 @@ func (d *Dispatcher) deleteAt(ctx context.Context, api forge.Target, addr forge.
 	return api.Delete(ctx, addr)
 }
 
-func (d *Dispatcher) syncFinished(ctx context.Context, logger *slog.Logger, target, operation string, err error) {
-	d.opts.Observer.SyncFinished(ctx, target, operation, err)
+func (d *Dispatcher) syncFinished(
+	ctx context.Context,
+	logger *slog.Logger,
+	tr *targetRun,
+	operation string,
+	err error,
+) {
+	d.opts.Observer.SyncFinished(ctx, tr.repo, tr.cfg.Name, operation, err)
 
-	logger = logger.With(slog.String("target", target), slog.String("operation", operation))
+	logger = logger.With(slog.String("target", tr.cfg.Name), slog.String("operation", operation))
 	if err != nil {
 		logger.ErrorContext(ctx, "forge operation failed", slog.String("outcome", "failure"), slog.Any("error", err))
 

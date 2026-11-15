@@ -1,6 +1,6 @@
 ---
 title: Security
-weight: 6
+weight: 7
 ---
 
 ## Threat model
@@ -11,6 +11,11 @@ weight: 6
 - **forgemirror is not an internet service.** Expose `/webhook` only to
   Forgejo's network. The webhook secret authenticates requests, but there is
   no reason to make the endpoint publicly reachable.
+- **The web UI has no login.** It is off by default and runs on its own
+  port. When enabled, protect that port with a proxy or SSO; see
+  [Web UI](../web-ui/#secure-it). It shows no secrets and changes nothing.
+- **Probes and metrics stay internal.** They are served on the ops port,
+  separate from the webhook, so exposing the webhook exposes nothing else.
 - **Targets get everything.** The mirror copies all branches and tags. Use
   [filters](../configuration/#filter) to keep repositories with sensitive
   history from being mirrored at all.

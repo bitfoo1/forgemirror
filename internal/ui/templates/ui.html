@@ -1,0 +1,134 @@
+{{define "page" -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{- /* The indicator styles would be injected as an inline <style>, which the
+Content-Security-Policy forbids; eval and script tags are never needed. */}}
+<meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
+<title>forgemirror</title>
+<link rel="stylesheet" href="static/style.css">
+<script src="static/htmx.min.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>forgemirror</h1>
+  <span class="meta">{{.Version}}</span>
+  <span class="meta">read-only status · refreshes every {{.Refresh}}</span>
+</header>
+<main>
+  <section id="overview" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
+    {{template "overview" .}}
+  </section>
+  <section id="repos" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
+    {{template "repos" .}}
+  </section>
+  <section>
+    <h2>Logs</h2>
+    <form class="toolbar" action="./" method="get">
+      <label for="log-level">Level</label>
+      <select id="log-level" name="level" hx-get="fragments/logs" hx-target="#logs" hx-trigger="change">
+        {{- range .Levels}}
+        <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+        {{- end}}
+      </select>
+      <noscript><button type="submit">Filter</button></noscript>
+    </form>
+    <div id="logs" class="scroll" hx-get="fragments/logs" hx-trigger="every {{.Refresh}}" hx-include="#log-level" hx-swap="innerHTML">
+      {{template "logs" .}}
+    </div>
+  </section>
+  <section>
+    <h2>Configuration</h2>
+    <p class="muted">Effective configuration after defaults, file, environment and flags. Secrets are redacted.</p>
+    <pre>{{.Config}}</pre>
+  </section>
+</main>
+</body>
+</html>
+{{- end}}
+
+{{define "overview" -}}
+<h2>Overview</h2>
+<dl>
+  <dt>Started</dt><dd><time datetime="{{iso .Snapshot.Started}}">{{when .Snapshot.Started}}</time> (up {{since .Snapshot.Started}})</dd>
+  <dt>Targets</dt><dd>{{range $i, $t := .Targets}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</dd>
+  <dt>Push webhooks</dt><dd>{{if .OnPush}}<span class="ok">on</span>{{else}}<span class="muted">off</span>{{end}}</dd>
+  <dt>Schedule</dt>
+  <dd>
+    {{- with .Snapshot.Schedule}}
+      {{- if .Interval}}every {{.Interval}}
+        {{- if .LastRun.IsZero}} · <span class="muted">first sweep running</span>
+        {{- else}} · last sweep <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time>:
+          {{- if .Error}} <span class="fail">failed</span> <span class="err">{{.Error}}</span>
+          {{- else}} <span class="ok">{{.Repos}} repositories</span>{{end}}
+          · next around <time datetime="{{iso (nextSweep .)}}">{{when (nextSweep .)}}</time>
+        {{- end}}
+      {{- else}}<span class="muted">off</span>{{end}}
+    {{- end}}
+  </dd>
+  <dt>Running</dt><dd>{{.Running}} {{if eq .Running 1}}repository{{else}}repositories{{end}}{{if .Queued}}, {{.Queued}} with a queued follow-up run{{end}}</dd>
+</dl>
+{{- end}}
+
+{{define "repos" -}}
+<h2>Repositories</h2>
+{{- if not .Snapshot.Repos}}
+<p class="muted">No runs since the start. Repositories appear here after their first push or scheduled sweep.</p>
+{{- else}}
+<div class="scroll">
+<table>
+  <thead><tr><th>Repository</th><th>State</th><th>Target</th><th>Last push</th><th>Forge operations</th></tr></thead>
+  <tbody>
+  {{- range $r := .Snapshot.Repos}}
+    {{- $rows := len $r.Targets}}{{if eq $rows 0}}{{$rows = 1}}{{end}}
+    <tr>
+      <td rowspan="{{$rows}}"><code>{{$r.Name}}</code></td>
+      <td rowspan="{{$rows}}">
+        {{- if $r.Running}}<span class="badge warn">running</span>{{if index $.QueuedRepos $r.Name}} <span class="badge muted">queued</span>{{end}}
+        {{- else if not $r.LastFinished.IsZero}}<span class="muted">idle since <time datetime="{{iso $r.LastFinished}}">{{when $r.LastFinished}}</time></span>{{end}}
+      </td>
+      {{- if not $r.Targets}}<td colspan="3" class="muted">unchanged, nothing pushed</td></tr>
+      {{- else}}
+      {{- range $i, $t := $r.Targets}}
+      {{- if $i}}<tr>{{end}}
+      <td><code>{{$t.Name}}</code></td>
+      <td>
+        {{- if $t.LastRun.IsZero}}<span class="muted">—</span>
+        {{- else if $t.Error}}<span class="fail">failed</span> <time datetime="{{iso $t.LastRun}}">{{when $t.LastRun}}</time><div class="err">{{$t.Error}}</div>
+        {{- else}}<span class="ok">ok</span> <time datetime="{{iso $t.LastRun}}">{{when $t.LastRun}}</time> <span class="muted">in {{round $t.Duration}}</span>{{end}}
+      </td>
+      <td>
+        {{- range $t.Operations}}
+        <div>{{.Name}}: {{if .Error}}<span class="fail">failed</span> <span class="err">{{.Error}}</span>{{else}}<span class="ok">ok</span>{{end}} <span class="muted"><time datetime="{{iso .At}}">{{when .At}}</time></span></div>
+        {{- else}}<span class="muted">—</span>{{end}}
+      </td>
+      </tr>
+      {{- end}}
+      {{- end}}
+  {{- end}}
+  </tbody>
+</table>
+</div>
+{{- end}}
+{{- end}}
+
+{{define "logs" -}}
+{{- if not .Logs}}
+<p class="muted">No log records at this level yet.</p>
+{{- else}}
+<table class="logs">
+  <thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead>
+  <tbody>
+  {{- range .Logs}}
+    <tr>
+      <td class="mono"><time datetime="{{iso .Time}}">{{clock .Time}}</time></td>
+      <td><span class="{{levelClass .Level}}">{{.Level}}</span></td>
+      <td class="msg">{{.Message}}{{range .Attrs}} <span class="mono muted">{{.Key}}=</span><span class="mono">{{.Value}}</span>{{end}}</td>
+    </tr>
+  {{- end}}
+  </tbody>
+</table>
+{{- end}}
+{{- end}}

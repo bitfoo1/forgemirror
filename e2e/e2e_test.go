@@ -92,6 +92,7 @@ func TestEndToEnd(t *testing.T) {
 		run  func(t *testing.T)
 	}{
 		{name: "push", run: func(t *testing.T) { testPush(t, e, api, fm, secret) }},
+		{name: "ui", run: func(t *testing.T) { testUI(t, e, fm, secret) }},
 		{name: "schedule", run: func(t *testing.T) { testSchedule(t, api) }},
 		{name: "delete", run: func(t *testing.T) { testDelete(t, e, api, fm, secret) }},
 	}
@@ -186,6 +187,40 @@ func checkMirror(ctx context.Context, api *forgejoAPI, sha string) error {
 	}
 
 	return checkLabels(ctx, api, map[string]string{"bug": bugColor, "docs": docsColor})
+}
+
+// testUI checks that the web UI shows the mirrored repository and leaks
+// none of the credentials.
+func testUI(t *testing.T, e env, fm *forgemirror, secret string) {
+	eventually(t, 10*time.Second, func() error {
+		var body bytes.Buffer
+		status, err := plainGet(t.Context(), fm.webURL()+"/fragments/repos", &body)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("UI status %d", status)
+		}
+		for _, want := range []string{"src/app", "<code>dst</code>", `class="ok"`} {
+			if !strings.Contains(body.String(), want) {
+				return fmt.Errorf("UI repositories lack %q:\n%s", want, body.String())
+			}
+		}
+
+		return nil
+	})
+
+	for _, path := range []string{"/", "/fragments/overview", "/fragments/logs"} {
+		var body bytes.Buffer
+		if status, err := plainGet(t.Context(), fm.webURL()+path, &body); err != nil || status != http.StatusOK {
+			t.Fatalf("GET %s = %d, %v", path, status, err)
+		}
+		for _, s := range []string{e.token, secret} {
+			if strings.Contains(body.String(), s) {
+				t.Errorf("GET %s leaks a credential", path)
+			}
+		}
+	}
 }
 
 func testSchedule(t *testing.T, api *forgejoAPI) {
@@ -324,6 +359,7 @@ func eventually(t *testing.T, deadline time.Duration, check func() error) {
 type forgemirror struct {
 	port    int // webhook
 	opsPort int // health and metrics
+	webPort int // UI
 	logs    *syncBuffer
 }
 
@@ -333,6 +369,7 @@ func startForgemirror(t *testing.T, e env, secret string) *forgemirror {
 	dir := t.TempDir()
 	port := freePort(t)
 	opsPort := freePort(t)
+	webPort := freePort(t)
 	tokenFile := filepath.Join(dir, "target-token")
 	if err := os.WriteFile(tokenFile, []byte(e.token), 0o600); err != nil {
 		t.Fatal(err)
@@ -345,6 +382,9 @@ func startForgemirror(t *testing.T, e env, secret string) *forgemirror {
   listen_address: "0.0.0.0:%d"
   ops_listen_address: "127.0.0.1:%d"
   shutdown_timeout: 5s
+ui:
+  enabled: true
+  listen_address: "127.0.0.1:%d"
 log:
   level: debug
   format: text
@@ -367,13 +407,13 @@ targets:
     prune_labels: true
     settings:
       has_issues: false
-`, port, opsPort, e.forgejoURL+"/", e.user, e.forgejoURL, e.user, tokenFile)
+`, port, opsPort, webPort, e.forgejoURL+"/", e.user, e.forgejoURL, e.user, tokenFile)
 	configFile := filepath.Join(dir, "forgemirror.yaml")
 	if err := os.WriteFile(configFile, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	fm := &forgemirror{port: port, opsPort: opsPort, logs: &syncBuffer{}}
+	fm := &forgemirror{port: port, opsPort: opsPort, webPort: webPort, logs: &syncBuffer{}}
 	cmd := exec.CommandContext(t.Context(), e.binary, "--config", configFile)
 	// Source token and webhook secret come from the environment and the target
 	// token from token_file, so none of them is in the config file or in the
@@ -415,6 +455,10 @@ func (f *forgemirror) webhookURL(host string) string {
 
 func (f *forgemirror) opsURL() string {
 	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(f.opsPort))
+}
+
+func (f *forgemirror) webURL() string {
+	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(f.webPort))
 }
 
 var acceptedMetric = regexp.MustCompile(

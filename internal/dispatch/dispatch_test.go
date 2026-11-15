@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -122,11 +123,14 @@ type recordingObserver struct {
 	done    atomic.Int32
 	results []targetResult
 	syncs   []syncResult
+	// repos collects the repository of every target and sync event.
+	repos []string
 }
 
-func (o *recordingObserver) SyncFinished(_ context.Context, target, operation string, err error) {
+func (o *recordingObserver) SyncFinished(_ context.Context, repo, target, operation string, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.repos = append(o.repos, repo)
 	o.syncs = append(o.syncs, syncResult{target: target, operation: operation, err: err})
 }
 
@@ -137,13 +141,30 @@ func (o *recordingObserver) snapshot() ([]targetResult, []syncResult) {
 	return slices.Clone(o.results), slices.Clone(o.syncs)
 }
 
-func (o *recordingObserver) RunStarted(context.Context)  { o.started.Add(1) }
-func (o *recordingObserver) RunFinished(context.Context) { o.done.Add(1) }
-
-func (o *recordingObserver) TargetFinished(_ context.Context, target string, _ time.Duration, err error) {
+func (o *recordingObserver) RunStarted(_ context.Context, repo string) {
+	o.started.Add(1)
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	o.repos = append(o.repos, repo)
+}
+
+func (o *recordingObserver) RunFinished(context.Context, string) { o.done.Add(1) }
+
+func (o *recordingObserver) TargetFinished(_ context.Context, repo, target string, _ time.Duration, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.repos = append(o.repos, repo)
 	o.results = append(o.results, targetResult{target: target, err: err})
+}
+
+// observedRepos returns the distinct repositories seen in events.
+func (o *recordingObserver) observedRepos() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	repos := slices.Clone(o.repos)
+	slices.Sort(repos)
+
+	return slices.Compact(repos)
 }
 
 // targets loads two validated targets through the real config package, so
@@ -238,6 +259,9 @@ func TestFanOut(t *testing.T) {
 	if obs.started.Load() != 1 || obs.done.Load() != 1 {
 		t.Errorf("runs started/finished = %d/%d, want 1/1", obs.started.Load(), obs.done.Load())
 	}
+	if got := obs.observedRepos(); !slices.Equal(got, []string{"acme/app"}) {
+		t.Errorf("observed repositories = %q, want [acme/app]", got)
+	}
 }
 
 func compareStrings(a, b string) int {
@@ -331,11 +355,17 @@ func TestCoalescing(t *testing.T) {
 
 	d.Dispatch(t.Context(), event("app"))
 	waitFor(t, started)
+	if got := d.Queued(); !maps.Equal(got, map[string]bool{"acme/app": false}) {
+		t.Errorf("Queued() while running = %v, want acme/app without follow-up", got)
+	}
 
 	for i := range 3 {
 		e := event("app")
 		e.Delivery = fmt.Sprintf("follow-up-%d", i)
 		d.Dispatch(t.Context(), e)
+	}
+	if got := d.Queued(); !maps.Equal(got, map[string]bool{"acme/app": true}) {
+		t.Errorf("Queued() with follow-up = %v, want acme/app queued", got)
 	}
 	close(release)
 
@@ -344,6 +374,29 @@ func TestCoalescing(t *testing.T) {
 
 	if got := cloneCount.Load(); got != 2 {
 		t.Errorf("clones = %d, want 2 (initial run + one coalesced follow-up)", got)
+	}
+	if got := d.Queued(); len(got) != 0 {
+		t.Errorf("Queued() after shutdown = %v, want empty", got)
+	}
+}
+
+func TestObserversFanOut(t *testing.T) {
+	t.Parallel()
+
+	a, b := &recordingObserver{}, &recordingObserver{}
+	obs := dispatch.Observers{a, b}
+	ctx := t.Context()
+	obs.RunStarted(ctx, "acme/app")
+	obs.TargetFinished(ctx, "acme/app", "gh", time.Second, nil)
+	obs.SyncFinished(ctx, "acme/app", "gh", "labels", nil)
+	obs.RunFinished(ctx, "acme/app")
+
+	for i, o := range []*recordingObserver{a, b} {
+		results, syncs := o.snapshot()
+		if o.started.Load() != 1 || o.done.Load() != 1 || len(results) != 1 || len(syncs) != 1 {
+			t.Errorf("observer %d: started=%d done=%d results=%d syncs=%d, want 1 each",
+				i, o.started.Load(), o.done.Load(), len(results), len(syncs))
+		}
 	}
 }
 

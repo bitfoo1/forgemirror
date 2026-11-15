@@ -59,7 +59,7 @@ exposed or locked down as a whole, without path rules in a proxy:
 |-----------------------------|---------|----------------------------------------|------------------------------|
 | `server.listen_address`     | `:8081` | `POST /webhook`                        | Forgejo                      |
 | `server.ops_listen_address` | `:9090` | `/healthz`, `/readyz`, `/metrics`      | kubelet, Prometheus          |
-| `ui.listen_address`         | `:8080` | the web UI, only with `ui.enabled: true` | operators, behind a proxy or SSO |
+| `ui.listen_address`         | `:8080` | the [web UI](../web-ui/), only with `ui.enabled: true` | operators, behind a proxy or SSO |
 
 The addresses must differ. Exposing the webhook port, e.g. through an
 ingress for a Forgejo in another network, exposes nothing but `/webhook`,

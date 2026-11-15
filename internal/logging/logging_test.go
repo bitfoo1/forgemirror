@@ -28,7 +28,7 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			logging.New(&buf, tc.cfg).Info("hello", "k", "v")
+			logging.New(&buf, tc.cfg, nil).Info("hello", "k", "v")
 
 			isJSON := json.Valid(bytes.TrimSpace(buf.Bytes()))
 			if isJSON != tc.wantJSON {
@@ -42,7 +42,7 @@ func TestNewLevel(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	logger := logging.New(&buf, config.Log{Level: slog.LevelWarn, Format: config.LogFormatText})
+	logger := logging.New(&buf, config.Log{Level: slog.LevelWarn, Format: config.LogFormatText}, nil)
 	logger.Info("dropped")
 	logger.Warn("kept")
 

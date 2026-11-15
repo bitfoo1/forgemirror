@@ -43,12 +43,12 @@ func TestMetrics(t *testing.T) {
 	})
 
 	ctx := t.Context()
-	m.RunStarted(ctx)
-	m.RunStarted(ctx)
-	m.RunFinished(ctx)
-	m.TargetFinished(ctx, "github", 3*time.Second, nil)
-	m.TargetFinished(ctx, "github", time.Second, nil)
-	m.TargetFinished(ctx, "codeberg", 2*time.Second, errors.New("push failed"))
+	m.RunStarted(ctx, "acme/app")
+	m.RunStarted(ctx, "acme/app")
+	m.RunFinished(ctx, "acme/app")
+	m.TargetFinished(ctx, "acme/app", "github", 3*time.Second, nil)
+	m.TargetFinished(ctx, "acme/app", "github", time.Second, nil)
+	m.TargetFinished(ctx, "acme/app", "codeberg", 2*time.Second, errors.New("push failed"))
 	m.ObserveWebhook(ctx, webhook.OutcomeAccepted)
 	m.ObserveWebhook(ctx, webhook.OutcomeUnauthorized)
 	m.ObserveWebhook(ctx, webhook.OutcomeUnauthorized)
@@ -111,9 +111,9 @@ func TestSyncFinishedCounts(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	m.SyncFinished(ctx, "github", "create", nil)
-	m.SyncFinished(ctx, "github", "labels", errors.New("forbidden"))
-	m.SyncFinished(ctx, "github", "labels", errors.New("forbidden"))
+	m.SyncFinished(ctx, "acme/app", "github", "create", nil)
+	m.SyncFinished(ctx, "acme/app", "github", "labels", errors.New("forbidden"))
+	m.SyncFinished(ctx, "acme/app", "github", "labels", errors.New("forbidden"))
 
 	body := scrape(t, m)
 

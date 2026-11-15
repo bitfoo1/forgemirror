@@ -26,7 +26,9 @@ import (
 	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/schedule"
 	"go.bitfoo.de/forgemirror/internal/server"
+	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/telemetry"
+	"go.bitfoo.de/forgemirror/internal/ui"
 	"go.bitfoo.de/forgemirror/internal/version"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
@@ -115,7 +117,13 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	logger := logging.New(cmd.Root().ErrWriter, cfg.Log)
+	// The UI's log buffer must be attached before the first record, so the
+	// startup lines are part of it.
+	var logs *logging.Ring
+	if cfg.UI.Enabled {
+		logs = logging.NewRing(cfg.UI.LogEntries)
+	}
+	logger := logging.New(cmd.Root().ErrWriter, cfg.Log, logs)
 	logger.InfoContext(ctx, "forgemirror starting",
 		slog.String("version", cmd.Root().Version),
 		slog.String("listen_address", cfg.Server.ListenAddress),
@@ -124,12 +132,12 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		slog.Int("targets", len(cfg.Targets)),
 	)
 
-	return run(ctx, cfg, logger)
+	return run(ctx, cfg, logger, logs)
 }
 
 // run wires the service together and blocks until ctx is cancelled and the
 // graceful shutdown has finished.
-func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+func run(ctx context.Context, cfg *config.Config, logger *slog.Logger, logs *logging.Ring) error {
 	flt, err := filter.New(cfg.Filter, cfg.PrivatePolicy())
 	if err != nil {
 		return err
@@ -148,7 +156,7 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 
 	// ctx is already cancelled here; WithoutCancel keeps its values only.
 	return errors.Join(
-		serveAndDrain(ctx, cfg, logger, flt, metrics, clients),
+		serveAndDrain(ctx, cfg, logger, logs, flt, metrics, clients),
 		metrics.Shutdown(context.WithoutCancel(ctx)),
 	)
 }
@@ -159,10 +167,22 @@ func serveAndDrain(
 	ctx context.Context,
 	cfg *config.Config,
 	logger *slog.Logger,
+	logs *logging.Ring,
 	flt *filter.Filter,
 	metrics *telemetry.Metrics,
 	clients forgeClients,
 ) error {
+	// The status store only exists for the UI; without it, events go to the
+	// metrics alone.
+	var store *status.Store
+	dispatchObs := dispatch.Observers{metrics}
+	scheduleObs := schedule.Observers{metrics}
+	if cfg.UI.Enabled {
+		store = status.New(status.Options{ScheduleInterval: cfg.Sync.Schedule})
+		dispatchObs = append(dispatchObs, store)
+		scheduleObs = append(scheduleObs, store)
+	}
+
 	dispatcher := dispatch.New(dispatch.Options{
 		Mirrorer: mirror.NewGit(mirror.GitOptions{
 			Binary:  cfg.Mirror.GitBinary,
@@ -175,7 +195,7 @@ func serveAndDrain(
 		Forges:        clients.targets,
 		MaxConcurrent: cfg.Mirror.MaxConcurrent,
 		Logger:        logger,
-		Observer:      metrics,
+		Observer:      dispatchObs,
 	})
 
 	// Without a secret the endpoint must not exist: an HMAC over an empty key
@@ -200,6 +220,20 @@ func serveAndDrain(
 		{name: "webhook", address: cfg.Server.ListenAddress, handler: server.WebhookHandler(webhookHandler)},
 		{name: "ops", address: cfg.Server.OpsListenAddress, handler: server.OpsHandler(health, metrics.Handler())},
 	}
+	if cfg.UI.Enabled {
+		web, err := ui.Handler(ui.Options{
+			Config:  cfg,
+			Store:   store,
+			Logs:    logs,
+			Queued:  dispatcher.Queued,
+			Version: version.Get().String(),
+			Logger:  logger,
+		})
+		if err != nil {
+			return err
+		}
+		listeners = append(listeners, listener{name: "web", address: cfg.UI.ListenAddress, handler: web})
+	}
 	bound, err := listen(ctx, listeners)
 	if err != nil {
 		return err
@@ -212,7 +246,7 @@ func serveAndDrain(
 	shutdownCtx, cancelShutdown := shutdownContext(runCtx, cfg.Server.ShutdownTimeout)
 	defer cancelShutdown()
 
-	schedulerDone := startScheduler(runCtx, cfg, logger, flt, metrics, clients.source, dispatcher)
+	schedulerDone := startScheduler(runCtx, cfg, logger, flt, scheduleObs, clients.source, dispatcher)
 
 	// Readiness ends as soon as shutdown begins, before the listeners close,
 	// so Kubernetes stops routing new webhooks to this pod.
@@ -308,7 +342,7 @@ func startScheduler(
 	cfg *config.Config,
 	logger *slog.Logger,
 	flt *filter.Filter,
-	metrics *telemetry.Metrics,
+	observer schedule.Observer,
 	source forge.Source,
 	dispatcher webhook.Dispatcher,
 ) <-chan struct{} {
@@ -328,7 +362,7 @@ func startScheduler(
 			Filter:     flt,
 			Dispatcher: dispatcher,
 			Logger:     logger,
-			Observer:   metrics,
+			Observer:   observer,
 		})
 	}()
 

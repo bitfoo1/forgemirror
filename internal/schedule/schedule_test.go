@@ -361,3 +361,16 @@ func TestRunDispatchContextSurvivesCancel(t *testing.T) {
 		}
 	}
 }
+
+func TestObserversFanOut(t *testing.T) {
+	t.Parallel()
+
+	a, b := make(chanObserver, 1), make(chanObserver, 1)
+	schedule.Observers{a, b}.ScheduledRunFinished(t.Context(), 3, nil)
+
+	for i, o := range []chanObserver{a, b} {
+		if got := <-o; got.repos != 3 || got.err != nil {
+			t.Errorf("observer %d got %+v, want 3 repos without error", i, got)
+		}
+	}
+}

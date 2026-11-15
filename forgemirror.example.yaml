@@ -21,6 +21,14 @@ server:
   # Upper bound for a graceful shutdown, including running mirrors.
   shutdown_timeout: 60s
 
+# Read-only web UI: status, logs and this configuration (secrets redacted).
+# It has no login of its own: put a proxy or SSO in front of it.
+ui:
+  enabled: false
+  listen_address: ":8080"
+  # Log records kept in memory for the UI.
+  log_entries: 1000
+
 log:
   level: info # debug, info, warn, error
   format: json # json, text

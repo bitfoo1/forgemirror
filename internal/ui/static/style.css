@@ -1,0 +1,71 @@
+:root {
+  --bg: #f7f7f8;
+  --fg: #1d1d22;
+  --muted: #62626e;
+  --card: #ffffff;
+  --border: #dcdce2;
+  --accent: #7c5cdb;
+  --ok: #18794e;
+  --fail: #c8312a;
+  --warn: #a35c00;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141418;
+    --fg: #e8e8ee;
+    --muted: #9b9ba8;
+    --card: #1d1d23;
+    --border: #33333d;
+    --accent: #a48bf0;
+    --ok: #4cc38a;
+    --fail: #f2665e;
+    --warn: #f0a440;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem 1rem;
+  align-items: baseline;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+header h1 { margin: 0; font-size: 1.25rem; color: var(--accent); }
+header .meta { color: var(--muted); }
+main { max-width: 80rem; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; }
+section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  min-width: 0;
+}
+section h2 { margin: 0 0 .75rem; font-size: 1rem; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .35rem .5rem; border-top: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; border-top: 0; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+pre { margin: 0; overflow-x: auto; }
+.ok { color: var(--ok); }
+.fail { color: var(--fail); }
+.warn { color: var(--warn); }
+.muted { color: var(--muted); }
+.err { color: var(--fail); white-space: pre-wrap; word-break: break-word; }
+.badge { display: inline-block; padding: 0 .4rem; border-radius: 4px; border: 1px solid currentColor; font-size: 12px; }
+.logs td { white-space: nowrap; }
+.logs td.msg { white-space: normal; word-break: break-word; }
+.toolbar { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+select, button { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: .1rem .4rem; }
