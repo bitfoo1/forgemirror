@@ -161,9 +161,11 @@ func TestGetMapsAccessLevels(t *testing.T) {
 			want: forge.Repo{HasWiki: true},
 		},
 		{
-			name: "internal counts as private",
+			// Internal is visible to every instance user, so a private
+			// source must still turn it private.
+			name: "internal is not private",
 			body: `{"visibility":"internal"}`,
-			want: forge.Repo{Private: true},
+			want: forge.Repo{},
 		},
 	}
 
@@ -187,6 +189,23 @@ func TestGetMapsAccessLevels(t *testing.T) {
 				t.Errorf("Capabilities = %+v", caps)
 			}
 		})
+	}
+}
+
+func TestInternalProjectConvergesToPrivate(t *testing.T) {
+	t.Parallel()
+
+	f := newFake(t, map[string]http.HandlerFunc{"GET " + projPath: jsonReply(`{"visibility":"internal"}`)})
+	c := f.client(t)
+
+	current, err := c.Get(t.Context(), addr())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	diff := forge.Diff(current, forge.Repo{Private: true}, c.Capabilities())
+	if diff.Private == nil || !*diff.Private {
+		t.Errorf("Diff = %+v, want Private=true for an internal project", diff)
 	}
 }
 

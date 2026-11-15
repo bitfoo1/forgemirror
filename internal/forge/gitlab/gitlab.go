@@ -137,8 +137,9 @@ func (c *Client) Get(ctx context.Context, a forge.Address) (forge.Repo, error) {
 		Topics:        p.Topics,
 		DefaultBranch: p.DefaultBranch,
 		// Internal projects are visible to every user of the instance, so
-		// only "public" counts as not private.
-		Private:         p.Visibility != gl.PublicVisibility,
+		// only "private" counts as private: otherwise a private source would
+		// never turn an internal target private.
+		Private:         p.Visibility == gl.PrivateVisibility,
 		HasIssues:       enabled(p.IssuesAccessLevel),
 		HasWiki:         enabled(p.WikiAccessLevel),
 		HasPullRequests: enabled(p.MergeRequestsAccessLevel),
