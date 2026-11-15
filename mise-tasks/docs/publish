@@ -15,6 +15,13 @@ set -euo pipefail
 #                         alter the site
 : "${DOCS_DEPLOY_TARGET:?}" "${DOCS_SSH_KEY:?}" "${DOCS_SSH_KNOWN_HOSTS:?}"
 
+# Without a colon rsync silently copies into a local directory and reports
+# success, so a mistyped target would never reach the web host.
+if [[ "${DOCS_DEPLOY_TARGET}" != *:* ]]; then
+  echo "DOCS_DEPLOY_TARGET must be a remote rsync target (user@host:[path]), got a local path" >&2
+  exit 1
+fi
+
 ssh_dir="$(mktemp -d)"
 trap 'rm -rf "${ssh_dir}"' EXIT
 printf '%s' "${DOCS_SSH_KEY}" | base64 -d >"${ssh_dir}/id"
