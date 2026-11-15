@@ -219,7 +219,9 @@ working `/api/v1/org/{org}/repos` route.
 **Order of a run, per target:**
 1. Read the source repository and labels from Forgejo.
 2. Read the target repository; create it if it is missing and `create` is
-   set. The default branch is not sent, because it does not exist yet.
+   set. The default branch is not sent, because it does not exist yet. An
+   existing public repository that must be private is made private here, on
+   its own; if that fails, the target is not pushed.
 3. Scheduled runs only: skip the push if all branches and tags are equal.
 4. Mirror push.
 5. Compare settings and update only what differs; the default branch is set

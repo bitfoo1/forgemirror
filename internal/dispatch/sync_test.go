@@ -715,3 +715,75 @@ func TestSweepBoundsForgeAPIConcurrency(t *testing.T) {
 		t.Errorf("forge API calls in flight at once = %d, want 1..%d", got, maxConcurrent)
 	}
 }
+
+func TestRunPrivatisesBeforePush(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		private   bool
+		override  string
+		updateErr error
+		wantCalls []string
+	}{
+		{
+			name:      "source turned private",
+			private:   true,
+			wantCalls: []string{"Get", "Update", "push"},
+		},
+		{
+			name:      "override private",
+			override:  "    settings:\n      private: true\n",
+			wantCalls: []string{"Get", "Update", "push"},
+		},
+		{
+			name:      "privatising fails",
+			private:   true,
+			updateErr: errors.New("org policy"),
+			wantCalls: []string{"Get", "Update"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			src := sourceRepo()
+			src.repo.Private = tc.private
+			gh := &fakeForge{repo: forge.Repo{Description: "the app"}, updateErr: tc.updateErr}
+			forges := map[string]*fakeForge{"github": gh}
+			m := &fakeMirrorer{pushHook: pushRecorder(forges, nil)}
+			d, obs := newSyncDispatcher(t, githubTarget+tc.override, m, src, forges)
+
+			d.Dispatch(t.Context(), event("app"))
+			shutdown(t, d)
+
+			calls := gh.snapshot()
+			if len(calls) < len(tc.wantCalls) || !slices.Equal(calls[:len(tc.wantCalls)], tc.wantCalls) {
+				t.Fatalf("calls = %v, want prefix %v", calls, tc.wantCalls)
+			}
+			if first := gh.updates[0]; first != (forge.Settings{Private: first.Private}) ||
+				first.Private == nil || !*first.Private {
+				t.Errorf("first Update = %+v, want only Private=true", first)
+			}
+
+			if tc.updateErr != nil {
+				assertPrivatiseFailed(t, calls, obs)
+			}
+		})
+	}
+}
+
+func assertPrivatiseFailed(t *testing.T, calls []string, obs *recordingObserver) {
+	t.Helper()
+
+	if slices.Contains(calls, "push") {
+		t.Errorf("calls = %v, want no push after a failed privatisation", calls)
+	}
+	results, syncs := obs.snapshot()
+	if len(results) != 1 || results[0].err == nil || !strings.Contains(results[0].err.Error(), "org policy") {
+		t.Errorf("target results = %+v, want one failure with the update error", results)
+	}
+	if len(syncs) != 1 || syncs[0].operation != "settings" || syncs[0].err == nil {
+		t.Errorf("sync results = %+v, want one failed settings operation", syncs)
+	}
+}

@@ -195,7 +195,7 @@ func (d *Dispatcher) prepareTarget(
 	case err == nil:
 		tr.current = current
 
-		return nil
+		return d.privatise(ctx, logger, tr)
 	case !errors.Is(err, forge.ErrNotFound):
 		return fmt.Errorf("target %q: reading repository: %w", name, err)
 	case !tr.cfg.Create:
@@ -213,6 +213,27 @@ func (d *Dispatcher) prepareTarget(
 		return fmt.Errorf("target %q: creating repository: %w", name, err)
 	}
 	tr.created = true
+
+	return nil
+}
+
+// privatise makes an existing public target private before anything is
+// pushed to it. The settings step runs only after the push and may fail as a
+// whole (e.g. on another field), which would leave new commits of a private
+// source on a public repository; a failure here keeps the target out of the
+// push instead.
+func (d *Dispatcher) privatise(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
+	if !tr.desired.Private || tr.current.Private {
+		return nil
+	}
+
+	private := true
+	err := tr.api.Update(ctx, tr.addr, forge.Settings{Private: &private})
+	d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
+	if err != nil {
+		return fmt.Errorf("target %q: making repository private: %w", tr.cfg.Name, err)
+	}
+	tr.current.Private = true
 
 	return nil
 }
