@@ -115,5 +115,5 @@ or `TimeoutStopSec` (systemd).
 | `target … does not exist and create is false` | The target repository is missing; create it or set `create: true` on the typed target |
 | `cannot create repository in namespace …`  | GitHub or GitLab target: the namespace is neither an organisation or group nor the token's user |
 | Typed targets fail while Forgejo is down   | Expected: forgemirror starts anyway, connects on first use and waits 10 s after a failed attempt |
-| Private repository is not mirrored         | `filter.exclude_private` without a matching `filter.allow_private`, or a source token with public-only repository access |
+| Private repository is not mirrored         | No matching `filter.allow_private` (required with typed targets or `sync.schedule`; otherwise only with `filter.exclude_private`), or a source token with public-only repository access |
 | Pod evicted                                | Clones exceed the `/work` emptyDir `sizeLimit`; raise it        |

@@ -113,6 +113,18 @@ type Sync struct {
 	Schedule time.Duration `koanf:"schedule"`
 }
 
+// PrivatePolicy returns how the filter admits private repositories. Typed
+// targets and schedules make private repositories opt-in through
+// filter.allow_private; push-only setups with untyped targets keep relying on
+// filter.exclude_private, so existing deployments do not change silently.
+func (c *Config) PrivatePolicy() filter.PrivatePolicy {
+	if c.Typed() || c.Sync.Schedule > 0 {
+		return filter.PrivateOptIn
+	}
+
+	return filter.PrivateUnlessExcluded
+}
+
 // Typed reports whether any target talks to a forge API.
 func (c *Config) Typed() bool {
 	return slices.ContainsFunc(c.Targets, func(t Target) bool { return t.Type != "" })

@@ -194,9 +194,12 @@ target URL path (`/group/sub/name.git` → namespace `group/sub`, name `name`).
 
 ### Filter change
 
-`filter.allow_private` (regex on `owner/name`): a private repository that
-matches passes `exclude_private`. Private repositories are always created
-and kept private on every target regardless of overrides.
+`filter.allow_private` (regex on `owner/name`): with any typed target or a
+`sync.schedule`, a private repository is synced only if it matches, and
+`exclude_private` has no effect. Push-only configurations with only untyped
+targets keep the previous behaviour: `exclude_private` decides and a match
+passes it. Private repositories are always created and kept private on every
+target regardless of overrides.
 
 ### Components
 

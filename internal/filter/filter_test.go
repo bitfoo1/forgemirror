@@ -112,7 +112,7 @@ func TestDecide(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			f, err := filter.New(tc.rules)
+			f, err := filter.New(tc.rules, filter.PrivateUnlessExcluded)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -134,7 +134,10 @@ func TestDecide(t *testing.T) {
 func TestMatchesIgnoresBranches(t *testing.T) {
 	t.Parallel()
 
-	f, err := filter.New(filter.Rules{IncludeBranches: []string{"main"}, ExcludeForks: true})
+	f, err := filter.New(
+		filter.Rules{IncludeBranches: []string{"main"}, ExcludeForks: true},
+		filter.PrivateUnlessExcluded,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +161,7 @@ func TestNewInvalidPatterns(t *testing.T) {
 		IncludeBranches: []string{"ok", "", "*"},
 	}
 
-	_, err := filter.New(rules)
+	_, err := filter.New(rules, filter.PrivateUnlessExcluded)
 	if err == nil {
 		t.Fatal("New() error = nil, want error")
 	}
@@ -182,7 +185,7 @@ func TestNewInvalidPatterns(t *testing.T) {
 func TestAllowPrivate(t *testing.T) {
 	t.Parallel()
 
-	f, err := filter.New(filter.Rules{ExcludePrivate: true, AllowPrivate: "acme/notes"})
+	f, err := filter.New(filter.Rules{ExcludePrivate: true, AllowPrivate: "acme/notes"}, filter.PrivateUnlessExcluded)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -215,8 +218,56 @@ func TestAllowPrivate(t *testing.T) {
 func TestAllowPrivateInvalidPattern(t *testing.T) {
 	t.Parallel()
 
-	_, err := filter.New(filter.Rules{AllowPrivate: "("})
+	_, err := filter.New(filter.Rules{AllowPrivate: "("}, filter.PrivateUnlessExcluded)
 	if err == nil || !strings.Contains(err.Error(), "filter.allow_private") {
 		t.Errorf("New() error = %v, want filter.allow_private error", err)
+	}
+}
+
+func TestPrivateOptIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		rules      filter.Rules
+		fullName   string
+		private    bool
+		wantMirror bool
+	}{
+		{name: "private without allow_private is skipped", fullName: "acme/notes", private: true},
+		{
+			name:     "exclude_private off does not admit private",
+			rules:    filter.Rules{ExcludePrivate: false, AllowPrivate: "acme/other"},
+			fullName: "acme/notes", private: true,
+		},
+		{
+			name:     "allow_private admits without exclude_private",
+			rules:    filter.Rules{AllowPrivate: "acme/notes"},
+			fullName: "acme/notes", private: true, wantMirror: true,
+		},
+		{
+			name:     "allow_private admits with exclude_private",
+			rules:    filter.Rules{ExcludePrivate: true, AllowPrivate: "acme/notes"},
+			fullName: "acme/notes", private: true, wantMirror: true,
+		},
+		{name: "public passes", fullName: "acme/app", wantMirror: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f, err := filter.New(tc.rules, filter.PrivateOptIn)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			got := f.Decide(repo.Repository{Owner: "acme", FullName: tc.fullName, Private: tc.private}, "")
+			if got.Mirror != tc.wantMirror {
+				t.Errorf("Decide() = %+v, want mirror=%v", got, tc.wantMirror)
+			}
+			if !got.Mirror && !strings.Contains(got.Reason, "filter.allow_private") {
+				t.Errorf("Decide() reason = %q, want it to name filter.allow_private", got.Reason)
+			}
+		})
 	}
 }

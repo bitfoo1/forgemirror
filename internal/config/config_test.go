@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/filter"
 )
 
 const validYAML = `
@@ -593,5 +594,43 @@ func TestLoadTypedTargetFromYAMLAndEnv(t *testing.T) {
 	}
 	if cfg.Sync.OnPush || cfg.Sync.Schedule != 30*time.Minute {
 		t.Errorf("Sync = %+v, want env values", cfg.Sync)
+	}
+}
+
+func TestPrivatePolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  config.Config
+		want filter.PrivatePolicy
+	}{
+		{
+			name: "untyped push-only keeps exclude_private",
+			cfg:  config.Config{Targets: []config.Target{{Name: "plain"}}},
+			want: filter.PrivateUnlessExcluded,
+		},
+		{
+			name: "typed target requires allow_private",
+			cfg:  config.Config{Targets: []config.Target{{Name: "plain"}, {Name: "gh", Type: "github"}}},
+			want: filter.PrivateOptIn,
+		},
+		{
+			name: "schedule requires allow_private",
+			cfg: config.Config{
+				Targets: []config.Target{{Name: "plain"}},
+				Sync:    config.Sync{Schedule: time.Hour},
+			},
+			want: filter.PrivateOptIn,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tc.cfg.PrivatePolicy(); got != tc.want {
+				t.Errorf("PrivatePolicy() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

@@ -286,8 +286,8 @@ log.
 |--------------------|--------------------------------------------------------------------------------|
 | `include_branches` | Only pushes to these branches trigger a mirror. Tag pushes always do.          |
 | `require_topic`    | Only repositories with this Forgejo topic, for per-repository opt-in. Not an access control: every repository owner can set topics. |
-| `exclude_private`  | Skip private repositories.                                                     |
-| `allow_private`    | Private repositories whose `owner/name` matches pass `exclude_private`. They stay private on every target. |
+| `exclude_private`  | Skip private repositories. Only with untyped targets and no `sync.schedule`, see below. |
+| `allow_private`    | Private repositories whose `owner/name` matches are synced, see below. They stay private on every target. |
 | `exclude_forks`    | Skip forks.                                                                    |
 | `include_repos`    | Only repositories whose `owner/name` matches.                                  |
 | `exclude_repos`    | Skip repositories whose `owner/name` matches; this wins over `include_repos`.   |
@@ -307,8 +307,13 @@ filter:
   allow_private: "acme/notes"   # private, but mirrored anyway; stays private
 ```
 
-`allow_private` only has an effect together with `exclude_private`, and
-needs a source token with access to private repositories (see
+**Private repositories.** With any [typed target](#typed-targets) or a
+`sync.schedule`, a private repository is synced only if `allow_private`
+matches it, and `exclude_private` has no effect. With only untyped targets
+and no schedule, `exclude_private` skips private repositories and
+`allow_private` makes exceptions; without `exclude_private` they are
+mirrored, as before typed targets existed. Either way `allow_private` needs a
+source token with access to private repositories (see
 [Security](../security/#token-rights)). A filter only decides *whether* a push
 triggers a mirror. The mirror itself
 always copies all branches and tags.

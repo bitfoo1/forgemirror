@@ -101,8 +101,12 @@ Store tokens as files (`*_file`) from a secret manager rather than inline.
 - **Private stays private.** A private source repository is created and kept
   private on every target. `settings.private` accepts only `true`, so
   configuration can hide a public repository but never expose a private one.
-- **Private repositories are opt-in.** They are mirrored only if
-  `filter.exclude_private` is off or `filter.allow_private` matches them.
+- **Private repositories are opt-in.** With any typed target or a
+  `sync.schedule`, a private repository is synced only if
+  `filter.allow_private` matches it, and `filter.exclude_private` has no
+  effect. With only untyped targets and no schedule, `filter.exclude_private`
+  skips private repositories and `filter.allow_private` makes exceptions;
+  set `exclude_private: true` there to keep them out.
 - **Deletion is opt-in and narrow.** `delete` defaults to `false` and only a
   signed `repository` event with action `deleted` from Forgejo triggers it,
   after the filter. A filter or configuration change never deletes anything.

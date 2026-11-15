@@ -65,9 +65,12 @@ filter:
   exclude_repos: ""
   # Only pushes to these branches trigger a mirror; tag pushes always do.
   include_branches: [] # e.g. ["main", "release/.*"]
+  # Private repositories: with any typed target or a sync.schedule, a private
+  # repository is synced only if allow_private matches it, and exclude_private
+  # has no effect. With only untyped targets and no schedule, exclude_private
+  # skips private repositories and allow_private makes exceptions. Private
+  # repositories are created and kept private on every target.
   exclude_private: false
-  # Private repositories matching this pattern pass exclude_private. They are
-  # created and kept private on every target.
   allow_private: "" # e.g. "acme/notes"
   exclude_forks: false
   # Opt-in: only repositories with this Forgejo topic are mirrored. Not an

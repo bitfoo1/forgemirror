@@ -30,10 +30,12 @@ type Rules struct {
 	// Tag pushes always trigger, because `git push --mirror` transfers all
 	// refs and tags are part of the mirror by design.
 	IncludeBranches []string `koanf:"include_branches"`
-	// ExcludePrivate skips repositories that are private on Forgejo.
+	// ExcludePrivate skips repositories that are private on Forgejo. It has
+	// no effect under [PrivateOptIn], which skips them anyway.
 	ExcludePrivate bool `koanf:"exclude_private"`
 	// AllowPrivate: private repositories whose "owner/name" matches pass
-	// ExcludePrivate. Private repositories stay private on every target.
+	// ExcludePrivate, and under [PrivateOptIn] only they are synced. Private
+	// repositories stay private on every target.
 	AllowPrivate string `koanf:"allow_private"`
 	// ExcludeForks skips forks.
 	ExcludeForks bool `koanf:"exclude_forks"`
@@ -42,8 +44,23 @@ type Rules struct {
 	RequireTopic string `koanf:"require_topic"`
 }
 
+// PrivatePolicy decides how private repositories are admitted.
+type PrivatePolicy int
+
+const (
+	// PrivateUnlessExcluded admits private repositories unless
+	// ExcludePrivate is set and AllowPrivate does not match. It keeps
+	// push-only configurations behaving as they always did.
+	PrivateUnlessExcluded PrivatePolicy = iota
+	// PrivateOptIn admits a private repository only if AllowPrivate matches.
+	// Typed targets create repositories and a schedule syncs every repository
+	// the token can see, so private ones must be named explicitly.
+	PrivateOptIn
+)
+
 // Filter is a compiled, immutable set of [Rules], safe for concurrent use.
 type Filter struct {
+	policy       PrivatePolicy
 	rules        Rules
 	include      *regexp.Regexp
 	exclude      *regexp.Regexp
@@ -61,8 +78,8 @@ type Decision struct {
 // New compiles the rules. Patterns are compiled once here instead of per
 // event: compiling is far more expensive than matching, and invalid patterns
 // surface at startup rather than on the first push.
-func New(rules Rules) (*Filter, error) {
-	f := &Filter{rules: rules}
+func New(rules Rules, policy PrivatePolicy) (*Filter, error) {
+	f := &Filter{rules: rules, policy: policy}
 
 	var errs []error
 	compile := func(key, pattern string) *regexp.Regexp {
@@ -97,7 +114,7 @@ func New(rules Rules) (*Filter, error) {
 
 // Validate reports whether the rules compile.
 func (r Rules) Validate() error {
-	_, err := New(r)
+	_, err := New(r, PrivateUnlessExcluded)
 
 	return err
 }
@@ -113,8 +130,10 @@ func (f *Filter) Decide(r repo.Repository, ref string) Decision {
 		return reject("branch not in filter.include_branches")
 	case f.rules.RequireTopic != "" && !slices.Contains(r.Topics, f.rules.RequireTopic):
 		return reject(fmt.Sprintf("topic %q missing (filter.require_topic)", f.rules.RequireTopic))
-	case f.rules.ExcludePrivate && r.Private &&
-		(f.allowPrivate == nil || !f.allowPrivate.MatchString(r.FullName)):
+	case f.policy == PrivateOptIn && r.Private && !f.privateAllowed(r):
+		return reject("private repository not matched by filter.allow_private " +
+			"(required with typed targets or sync.schedule)")
+	case f.rules.ExcludePrivate && r.Private && !f.privateAllowed(r):
 		return reject("private repository (filter.exclude_private)")
 	case f.rules.ExcludeForks && r.Fork:
 		return reject("fork (filter.exclude_forks)")
@@ -131,6 +150,10 @@ func (f *Filter) Decide(r repo.Repository, ref string) Decision {
 // not considered).
 func (f *Filter) Matches(r repo.Repository) bool {
 	return f.Decide(r, "").Mirror
+}
+
+func (f *Filter) privateAllowed(r repo.Repository) bool {
+	return f.allowPrivate != nil && f.allowPrivate.MatchString(r.FullName)
 }
 
 func (f *Filter) branchAllowed(ref string) bool {

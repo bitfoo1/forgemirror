@@ -178,12 +178,12 @@
           "examples": [["main", "release/.*"]]
         },
         "exclude_private": {
-          "description": "Skip repositories that are private on Forgejo.",
+          "description": "Skip repositories that are private on Forgejo. Only applies with only untyped targets and no sync.schedule; otherwise private repositories are synced only if allow_private matches them.",
           "type": "boolean",
           "default": false
         },
         "allow_private": {
-          "description": "Private repositories whose \"owner/name\" matches this pattern pass exclude_private. They are created and kept private on every target.",
+          "description": "With any typed target or a sync.schedule, a private repository is synced only if this pattern matches its \"owner/name\", and exclude_private has no effect. With only untyped targets and no schedule, matching private repositories pass exclude_private. Private repositories are created and kept private on every target.",
           "type": "string",
           "default": "",
           "examples": ["acme/notes"]

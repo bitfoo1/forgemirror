@@ -118,7 +118,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 // run wires the service together and blocks until ctx is cancelled and the
 // graceful shutdown has finished.
 func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
-	flt, err := filter.New(cfg.Filter)
+	flt, err := filter.New(cfg.Filter, cfg.PrivatePolicy())
 	if err != nil {
 		return err
 	}
