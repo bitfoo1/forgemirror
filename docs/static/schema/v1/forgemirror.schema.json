@@ -256,7 +256,7 @@
         "api_url": {
           "description": "API base URL; derived from type and the host of url when empty (github.com uses https://api.github.com, other hosts <host>/api/v3 for GitHub, /api/v4 for GitLab, /api/v1 for Forgejo). Requires type.",
           "type": "string",
-          "pattern": "^https?://[^/@]+(/.*)?$",
+          "pattern": "^(https?://[^/@]+(/.*)?)?$",
           "examples": ["https://ghe.example.org/api/v3"]
         },
         "create": {

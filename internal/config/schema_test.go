@@ -291,6 +291,59 @@ func schemaDefaults(t *testing.T, doc *schemaDoc, n *schemaNode) map[string]any 
 	return out
 }
 
+// typedYAML uses every key of typed targets, sync and allow_private, so the
+// schema is checked to accept what Load accepts, not only to reject.
+const typedYAML = `
+webhook:
+  secret: s
+source:
+  base_url: https://git.example
+  token: src
+sync:
+  on_push: true
+  schedule: 1h
+filter:
+  exclude_private: true
+  allow_private: "acme/notes"
+targets:
+  - name: github
+    type: github
+    url: "https://github.com/acme/{{ .Name }}.git"
+    token: gh
+    api_url: ""
+    create: true
+    delete: true
+    prune_labels: true
+    settings:
+      description: mirror
+      website: https://example.org
+      topics: [go, mirror]
+      default_branch: main
+      private: true
+      has_issues: false
+      has_wiki: false
+      has_pull_requests: true
+      labels: false
+    overrides:
+      - repos: "acme/app"
+        settings:
+          has_issues: true
+          labels: true
+  - name: ghe
+    type: github
+    url: "https://ghe.example.org/acme/{{ .Name }}.git"
+    token: ghe
+    api_url: https://ghe.example.org/api/v3
+`
+
+func TestTypedConfigLoads(t *testing.T) {
+	t.Parallel()
+
+	if _, err := config.Load(config.Options{File: writeFile(t, "c.yaml", typedYAML), Environ: environ()}); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
 func TestSchemaAcceptsShippedConfigs(t *testing.T) {
 	t.Parallel()
 
@@ -319,6 +372,7 @@ func TestSchemaAcceptsShippedConfigs(t *testing.T) {
 		{name: "deploy/configmap.yaml", yaml: embedded},
 		{name: "valid test config", yaml: validYAML},
 		{name: "minimal test config", yaml: minimalYAML},
+		{name: "typed test config", yaml: typedYAML},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
