@@ -262,7 +262,7 @@ without a leading `#`.
 |---------------------|------------------|----------------|---------|
 | `website`           | synced           | ignored        | synced  |
 | `has_pull_requests` | ignored          | synced         | synced  |
-| `topics`            | lower-cased      | lower-cased    | lower-cased |
+| `topics`            | lower-cased; only `a-z`, `0-9` and `-`, starting with a letter or digit, at most 50 characters; others (e.g. `node.js`) are skipped with a warning | lower-cased    | lower-cased |
 | Create in           | organisation or own user | group or own user | organisation or own user |
 
 `delete: true` removes the target repository when Forgejo sends a

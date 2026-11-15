@@ -19,6 +19,8 @@ const (
 	// labelPageSize is GitHub's maximum, keeping the request count low.
 	labelPageSize = 100
 	orgType       = "Organization"
+	// maxTopicLen is GitHub's limit for one topic.
+	maxTopicLen = 50
 )
 
 type foreignNamespaceError struct{ namespace string }
@@ -75,10 +77,33 @@ func opName(verb string, a forge.Address) string {
 	return fmt.Sprintf("%s %s/%s", verb, a.Namespace, a.Name)
 }
 
-// Capabilities reports that GitHub stores a homepage but cannot disable pull
-// requests.
+// Capabilities reports that GitHub stores a homepage, cannot disable pull
+// requests and accepts only some topics.
 func (c *Client) Capabilities() forge.Capabilities {
-	return forge.Capabilities{Website: true, PullRequests: false}
+	return forge.Capabilities{Website: true, PullRequests: false, ValidTopic: validTopic}
+}
+
+// validTopic applies GitHub's topic rule: lower-case letters, digits and
+// hyphens, starting with a letter or digit, at most 50 characters. GitHub
+// rejects the whole topic list with 422 if one topic breaks it.
+func validTopic(t string) bool {
+	if t == "" || len(t) > maxTopicLen || t[0] == '-' {
+		return false
+	}
+
+	for _, r := range t {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (c *Client) topics(in []string) []string {
+	kept, _ := forge.RepresentableTopics(in, c.Capabilities())
+
+	return kept
 }
 
 // Get implements forge.Target.
@@ -91,7 +116,7 @@ func (c *Client) Get(ctx context.Context, a forge.Address) (forge.Repo, error) {
 	return forge.Repo{
 		Description:   r.GetDescription(),
 		Website:       r.GetHomepage(),
-		Topics:        r.Topics,
+		Topics:        c.topics(r.Topics),
 		DefaultBranch: r.GetDefaultBranch(),
 		Private:       r.GetPrivate(),
 		HasIssues:     r.GetHasIssues(),
@@ -170,7 +195,7 @@ func (c *Client) Update(ctx context.Context, a forge.Address, s forge.Settings) 
 	}
 
 	if s.Topics != nil {
-		_, resp, err := c.api.Repositories.ReplaceAllTopics(ctx, a.Namespace, a.Name, *s.Topics)
+		_, resp, err := c.api.Repositories.ReplaceAllTopics(ctx, a.Namespace, a.Name, c.topics(*s.Topics))
 		if err != nil {
 			return wrap(opName("set topics of", a), resp, err)
 		}

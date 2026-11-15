@@ -349,6 +349,67 @@ func TestTopicsReplace(t *testing.T) {
 	}
 }
 
+func TestValidTopic(t *testing.T) {
+	t.Parallel()
+
+	valid := (&github.Client{}).Capabilities().ValidTopic
+	if valid == nil {
+		t.Fatal("Capabilities().ValidTopic = nil")
+	}
+
+	tests := []struct {
+		topic string
+		want  bool
+	}{
+		{topic: "go", want: true},
+		{topic: "k8s-operator", want: true},
+		{topic: "0day", want: true},
+		{topic: strings.Repeat("a", 50), want: true},
+		{topic: strings.Repeat("a", 51)},
+		{topic: "node.js"},
+		{topic: "-leading"},
+		{topic: "Upper"},
+		{topic: "with space"},
+		{topic: "c++"},
+		{topic: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.topic, func(t *testing.T) {
+			t.Parallel()
+
+			if got := valid(tc.topic); got != tc.want {
+				t.Errorf("ValidTopic(%q) = %v, want %v", tc.topic, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTopicsUnrepresentableDropped(t *testing.T) {
+	t.Parallel()
+
+	f := newFake(t, map[string]http.HandlerFunc{
+		"GET /api/v3/repos/o/r":        jsonReply(`{"name":"r","topics":["go","node.js"]}`),
+		"PUT /api/v3/repos/o/r/topics": jsonReply(`{"names":["go"]}`),
+	})
+	c := f.client(t)
+
+	got, err := c.Get(t.Context(), addr())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !slices.Equal(got.Topics, []string{"go"}) {
+		t.Errorf("Get topics = %v, want [go]", got.Topics)
+	}
+
+	if err = c.Update(t.Context(), addr(), forge.Settings{Topics: &[]string{"go", "node.js"}}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	calls := f.recorded("PUT", "/api/v3/repos/o/r/topics")
+	if len(calls) != 1 || !strings.Contains(calls[0].Body, `"names":["go"]`) {
+		t.Errorf("topic calls = %+v, want one with only go", calls)
+	}
+}
+
 func TestLabelsPaged(t *testing.T) {
 	t.Parallel()
 

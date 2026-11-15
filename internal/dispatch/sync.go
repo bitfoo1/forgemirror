@@ -190,6 +190,16 @@ func (d *Dispatcher) prepareTarget(
 	tr.desired, tr.syncLabels = forge.Resolve(src.repo, tr.cfg.Layers(e.Repository.FullName)...)
 	tr.labels = src.labels
 
+	// Dropping topics the target rejects keeps one bad topic from failing
+	// every settings sync, and keeps it out of the diff so it is not retried
+	// on every run.
+	var dropped []string
+	tr.desired.Topics, dropped = forge.RepresentableTopics(tr.desired.Topics, tr.api.Capabilities())
+	for _, topic := range dropped {
+		logger.WarnContext(ctx, "topic not supported by the target forge; skipped",
+			slog.String("target", name), slog.String("topic", topic))
+	}
+
 	current, err := tr.api.Get(ctx, addr)
 	switch {
 	case err == nil:

@@ -79,6 +79,28 @@ func (s Settings) IsZero() bool {
 type Capabilities struct {
 	Website      bool
 	PullRequests bool
+	// ValidTopic reports whether the forge accepts a topic; nil accepts all.
+	// Topics it rejects are dropped instead of failing every settings sync.
+	ValidTopic func(topic string) bool
+}
+
+// RepresentableTopics splits topics into those caps can store and those it
+// cannot.
+func RepresentableTopics(topics []string, caps Capabilities) ([]string, []string) {
+	if caps.ValidTopic == nil {
+		return topics, nil
+	}
+
+	var kept, dropped []string
+	for _, t := range topics {
+		if caps.ValidTopic(t) {
+			kept = append(kept, t)
+		} else {
+			dropped = append(dropped, t)
+		}
+	}
+
+	return kept, dropped
 }
 
 // Source reads repositories and labels from the source forge.

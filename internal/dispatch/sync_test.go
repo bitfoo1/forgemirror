@@ -271,6 +271,19 @@ func newSyncDispatcher(
 ) (*dispatch.Dispatcher, *recordingObserver) {
 	t.Helper()
 
+	return newSyncDispatcherWithLogger(t, targetsYAML, m, src, forges, slog.New(slog.DiscardHandler))
+}
+
+func newSyncDispatcherWithLogger(
+	t *testing.T,
+	targetsYAML string,
+	m *fakeMirrorer,
+	src *fakeSource,
+	forges map[string]*fakeForge,
+	logger *slog.Logger,
+) (*dispatch.Dispatcher, *recordingObserver) {
+	t.Helper()
+
 	obs := &recordingObserver{}
 	targets := make(map[string]forge.Target, len(forges))
 	for name, f := range forges {
@@ -281,7 +294,7 @@ func newSyncDispatcher(
 		Source:        config.Source{Username: "oauth2", Token: "src-token"},
 		Targets:       loadTargets(t, targetsYAML),
 		MaxConcurrent: 4,
-		Logger:        slog.New(slog.DiscardHandler),
+		Logger:        logger,
 		Observer:      obs,
 		Forges:        targets,
 	}
@@ -785,5 +798,50 @@ func assertPrivatiseFailed(t *testing.T, calls []string, obs *recordingObserver)
 	}
 	if len(syncs) != 1 || syncs[0].operation != "settings" || syncs[0].err == nil {
 		t.Errorf("sync results = %+v, want one failed settings operation", syncs)
+	}
+}
+
+// syncBuffer is an [io.Writer] safe for the concurrent writes of a run.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
+func TestUnrepresentableTopicsDroppedWithWarning(t *testing.T) {
+	t.Parallel()
+
+	src := sourceRepo()
+	src.repo.Topics = []string{"Go", "node.js"}
+	gh := &fakeForge{
+		repo: forge.Repo{Description: "the app", DefaultBranch: "main", Topics: []string{"go"}, HasIssues: true},
+		caps: forge.Capabilities{ValidTopic: func(topic string) bool { return !strings.Contains(topic, ".") }},
+	}
+	var logs syncBuffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	d, _ := newSyncDispatcherWithLogger(t, githubTarget, &fakeMirrorer{}, src,
+		map[string]*fakeForge{"github": gh}, logger)
+
+	d.Dispatch(t.Context(), event("app"))
+	shutdown(t, d)
+
+	if slices.Contains(gh.snapshot(), "Update") {
+		t.Errorf("calls = %v, want no Update: the only difference cannot be stored", gh.snapshot())
+	}
+	if out := logs.String(); !strings.Contains(out, "level=WARN") || !strings.Contains(out, "node.js") {
+		t.Errorf("logs = %q, want a warning naming node.js", out)
 	}
 }
