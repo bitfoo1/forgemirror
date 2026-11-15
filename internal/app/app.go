@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -127,6 +128,7 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	logIgnoredSettings(ctx, cfg, logger, clients)
 
 	metrics, err := telemetry.New(version.Get().Version)
 	if err != nil {
@@ -290,6 +292,32 @@ func newForgeClients(cfg *config.Config, hc *http.Client) (forgeClients, error) 
 	}
 
 	return clients, nil
+}
+
+// logIgnoredSettings reports once at startup a has_pull_requests the target
+// forge cannot store (GitHub cannot disable pull requests). The settings sync
+// skips it silently on every run, so without this line the key would look
+// like it has an effect.
+func logIgnoredSettings(ctx context.Context, cfg *config.Config, logger *slog.Logger, clients forgeClients) {
+	for i := range cfg.Targets {
+		t := &cfg.Targets[i]
+		client, ok := clients.targets[t.Name]
+		if !ok || client.Capabilities().PullRequests || !setsHasPullRequests(t) {
+			continue
+		}
+		logger.InfoContext(ctx, "has_pull_requests is ignored: the target forge cannot disable pull requests",
+			slog.String("target", t.Name), slog.String("type", t.Type))
+	}
+}
+
+func setsHasPullRequests(t *config.Target) bool {
+	if t.Settings.HasPullRequests != nil {
+		return true
+	}
+
+	return slices.ContainsFunc(t.Overrides, func(o config.Override) bool {
+		return o.Settings.HasPullRequests != nil
+	})
 }
 
 // newTargetClient builds the client from the address of a sample repository.

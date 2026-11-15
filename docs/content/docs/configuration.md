@@ -243,7 +243,7 @@ previous layer.
 | `private`           | Only `true` is accepted: force a public source to be private here    |
 | `has_issues`        | Issue tracker on or off                                              |
 | `has_wiki`          | Wiki on or off                                                       |
-| `has_pull_requests` | Pull or merge requests on or off; ignored on GitHub, which cannot disable them |
+| `has_pull_requests` | Pull or merge requests on or off; ignored on GitHub, which cannot disable them (logged once at startup) |
 | `labels`            | `false` disables label sync for this scope; default `true`           |
 
 **Precedence, last wins:** the value from the Forgejo repository, then the
@@ -261,7 +261,7 @@ without a leading `#`.
 | Setting             | GitHub           | GitLab         | Forgejo |
 |---------------------|------------------|----------------|---------|
 | `website`           | synced           | ignored        | synced  |
-| `has_pull_requests` | ignored          | synced         | synced  |
+| `has_pull_requests` | ignored, logged once at startup | synced | synced |
 | `topics`            | lower-cased; only `a-z`, `0-9` and `-`, starting with a letter or digit, at most 50 characters; others (e.g. `node.js`) are skipped with a warning | lower-cased    | lower-cased |
 | Create in           | organisation or own user | group or own user | organisation or own user |
 

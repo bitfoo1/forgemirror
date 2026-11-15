@@ -434,6 +434,13 @@ func postPush(ctx context.Context, t *testing.T, addr, body string) {
 func typedConfig(t *testing.T, f *forgeFake, fakeGit, dir string) string {
 	t.Helper()
 
+	return typedConfigWith(t, f, fakeGit, dir, "")
+}
+
+// typedConfigWith appends targetExtra (indented YAML) to the typed target.
+func typedConfigWith(t *testing.T, f *forgeFake, fakeGit, dir, targetExtra string) string {
+	t.Helper()
+
 	return writeConfig(t, `
 webhook:
   secret: s
@@ -448,6 +455,7 @@ targets:
     url: "`+f.srv.URL+`/acme/{{ .Name }}.git"
     token: gh-token
     create: true
+`+targetExtra+`
 server:
   listen_address: "127.0.0.1:0"
   shutdown_timeout: 5s
@@ -537,6 +545,41 @@ func TestEndToEndTypedTarget(t *testing.T) {
 	}
 	if logs := svc.logs.String(); strings.Contains(logs, "gh-token") || strings.Contains(logs, "src-token") {
 		t.Errorf("logs contain a token:\n%s", logs)
+	}
+}
+
+func TestLogsIgnoredHasPullRequests(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		extra   string
+		wantLog bool
+	}{
+		{name: "settings", extra: "    settings:\n      has_pull_requests: false\n", wantLog: true},
+		{
+			name:    "override",
+			extra:   "    overrides:\n      - repos: acme/app\n        settings:\n          has_pull_requests: true\n",
+			wantLog: true,
+		},
+		{name: "unset", extra: "    settings:\n      has_wiki: false\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newForgeFake(t)
+			dir := t.TempDir()
+			fakeGit, _ := fakeGitBinary(t, dir)
+
+			svc := startService(t.Context(), t, typedConfigWith(t, f, fakeGit, dir, tc.extra))
+			svc.stop(t)
+
+			re := regexp.MustCompile(`level=INFO msg="has_pull_requests is ignored.*" target=gh type=github`)
+			if got := re.MatchString(svc.logs.String()); got != tc.wantLog {
+				t.Errorf("startup log present = %v, want %v:\n%s", got, tc.wantLog, svc.logs.String())
+			}
+		})
 	}
 }
 
