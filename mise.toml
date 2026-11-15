@@ -18,6 +18,11 @@ helm = "4.3.2"
 yq = "4.54.3"
 hugo = "0.170.0"
 lychee = "0.24.2"
+# test:e2e runs Forgejo in Docker; CI job images ship neither CLI. The
+# standalone compose binary is used because a CLI plugin would need
+# per-machine docker config to be found.
+docker-cli = "29.9.2"
+docker-compose = "5.6.1"
 
 [hooks]
 # Point git at the versioned hooks in .githooks/. `enter` covers developers

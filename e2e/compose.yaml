@@ -1,0 +1,37 @@
+# Throwaway Forgejo for the end-to-end test (mise run test:e2e). The task
+# owns its lifecycle and always tears it down with its volume.
+#
+# Constraints:
+# - No bind mounts and no config files: in CI the Docker daemon is remote to
+#   the job container (DOCKER_HOST), so it cannot see the job's filesystem.
+#   Everything is configured through FORGEJO__section__KEY variables, which
+#   the image writes into app.ini on start.
+# - ROOT_URL must be the address forgemirror uses, because Forgejo puts it
+#   into the clone_url of webhook payloads and forgemirror checks that against
+#   source.base_url.
+# - The release is pinned by digest, so a re-tagged image cannot change what
+#   the test runs against. Update tag and digest together.
+name: forgemirror-e2e
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:15.0.11@sha256:5d050e6d623e540923ff54b1c0c7acf41c3f9174a6c7ad515cc0c63d703fcd22
+    environment:
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:${E2E_FORGEJO_PORT:-3300}/
+      FORGEJO__server__OFFLINE_MODE: "true"
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__mailer__ENABLED: "false"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      # forgemirror runs next to the daemon, which Forgejo's default
+      # (external hosts only) would refuse to deliver to.
+      FORGEJO__webhook__ALLOWED_HOST_LIST: "*"
+      FORGEJO__log__LEVEL: Warn
+    # host-gateway gives the same name on macOS (Docker VM) and on Linux,
+    # including a DinD daemon whose network namespace the job shares.
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    # Loopback only: the instance has a well-known admin and no TLS.
+    ports:
+      - 127.0.0.1:${E2E_FORGEJO_PORT:-3300}:3000

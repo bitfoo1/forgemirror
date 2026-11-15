@@ -8,7 +8,8 @@
 #   gcc and libc6-dev, so no apt step is needed.
 # - actions/cache talks to the runner's cache server (runner-cache in the
 #   forgejo-runner namespace); pull requests get write-isolated entries.
-# - No Docker daemon for jobs; images are built daemonless by ko.
+# - Images are built daemonless by ko. The runner provides a Docker daemon
+#   through DOCKER_HOST, which only the e2e job uses (Forgejo in compose).
 #
 # Secrets:
 #   RELEASE_TOKEN       PAT (write:repository) — pushes release/next, opens
@@ -83,6 +84,46 @@ jobs:
 
       - name: Snapshot build
         run: mise run snapshot
+
+  # Runs forgemirror against a real Forgejo (e2e/compose.yaml). The docker
+  # and compose CLIs come from mise; the daemon is the runner's (DOCKER_HOST).
+  e2e:
+    name: e2e
+    needs: verify
+    if: github.ref_type != 'tag'
+    runs-on: docker
+    container:
+      image: node:24-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1
+    steps:
+      - name: Checkout
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
+          git checkout --quiet "${GITHUB_SHA}"
+
+      # Caches mise's data dir in the runner's cache server, keyed on
+      # mise.toml/mise.lock. github_token must be a GitHub token: the default
+      # (github.token) is the Forgejo token and GitHub would reject it.
+      - name: Install mise and tools
+        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.11.7 # keep in step with the local mise version
+          github_token: ${{ secrets.GH_TOKEN }}
+
+      - name: Go caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-
+
+      - name: End-to-end test
+        run: mise run test:e2e
 
   changelog:
     name: changelog

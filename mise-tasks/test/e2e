@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#MISE description="End-to-end test against a real Forgejo in Docker (needs a reachable Docker daemon)"
+#MISE depends=["build"]
+set -euo pipefail
+
+# The daemon is taken from the environment (DOCKER_HOST or the docker
+# context): CI runners and developer machines reach it in different ways.
+if ! docker_err="$(docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null)"; then
+  echo "test:e2e needs a Docker daemon, but none is reachable:" >&2
+  echo "${docker_err}" >&2
+  echo "Start one or point DOCKER_HOST at it." >&2
+  exit 1
+fi
+
+export E2E_FORGEJO_PORT="${E2E_FORGEJO_PORT:-3300}"
+forgejo_url="http://127.0.0.1:${E2E_FORGEJO_PORT}"
+compose=(docker-compose --file e2e/compose.yaml)
+
+cleanup() {
+  status=$?
+  if [ "${status}" -ne 0 ]; then
+    echo "--- Forgejo logs ---" >&2
+    "${compose[@]}" logs --no-color --tail 200 forgejo >&2 || true
+  fi
+  "${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
+  exit "${status}"
+}
+trap cleanup EXIT
+
+# A leftover instance from an aborted run would hold the port and the data.
+"${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
+"${compose[@]}" up --detach --quiet-pull --wait
+
+echo "waiting for Forgejo at ${forgejo_url}"
+for _ in $(seq 1 120); do
+  if curl --silent --fail --output /dev/null "${forgejo_url}/api/v1/version"; then
+    break
+  fi
+  sleep 1
+done
+curl --silent --show-error --fail --output /dev/null "${forgejo_url}/api/v1/version"
+
+# Forgejo refuses to run its CLI as root, hence -u git. The generated password
+# is printed by the CLI and discarded: the test only uses the token.
+forgejo_cli=("${compose[@]}" exec --no-TTY --user git forgejo forgejo)
+"${forgejo_cli[@]}" admin user create --admin --username e2e-admin \
+  --email e2e-admin@example.invalid --random-password --must-change-password=false >/dev/null
+
+# Captured into a variable and handed over through the environment only, so
+# the token never appears in output or process arguments.
+token="$("${forgejo_cli[@]}" admin user generate-access-token --username e2e-admin --token-name e2e --raw \
+  --scopes "read:repository,read:issue,write:repository,write:issue,write:organization")"
+
+E2E_FORGEJO_URL="${forgejo_url}" \
+  E2E_FORGEJO_TOKEN="${token}" \
+  E2E_FORGEJO_USER="e2e-admin" \
+  E2E_WEBHOOK_HOST="${E2E_WEBHOOK_HOST:-host.docker.internal}" \
+  E2E_FORGEMIRROR_BINARY="${PWD}/bin/forgemirror" \
+  go test -tags e2e -count=1 -timeout 5m -v "$@" ./e2e/...
