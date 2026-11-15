@@ -4,20 +4,75 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-15
+
+### Features
+
+- **server:** [**breaking**] Split webhook, ops and web listeners (ec864f9)
+- **ui:** Add a read-only web UI (b9d301f)
+
+### Documentation
+
+- **spec:** Design the web UI and the port split (7438e44)
+
+### Tests
+
+- Create fake git scripts without an open write descriptor (3ffeb26)
+
+### CI
+
+- **e2e:** Point the e2e job at the runner pod's DinD daemon (832cb3c)
+
 ## [0.2.0] - 2026-11-15
 
 ### Features
 
 - **source:** Restrict clone URLs to source.base_url (ba557a3)
+- **forge:** Add forge-neutral repository model and settings resolution (255b7e5)
+- **forge:** Add hardened HTTP client for forge APIs (99e0aa5)
+- **forge:** Add Forgejo adapter (40b87b7)
+- **forge:** Add GitHub adapter (c74367a)
+- **forge:** Add GitLab adapter (1c29598)
+- **config:** Add sync settings, typed targets and overrides (d8c48ea)
+- **mirror:** List remote branches and tags (c478e01)
+- **dispatch:** Create repositories and sync settings and labels (e51b11a)
+- **webhook:** Handle repository deletions and allow disabling push events (468635f)
+- **schedule:** Sync repositories on a schedule (3a2f8f6)
 
 ### Bug fixes
 
 - **release:** Publish the CHANGELOG section as release notes (24042cb)
+- **forge:** Validate forge type unconditionally and keep URLs out of parse errors (9c12afd)
+- **forge:** Exclude ancestor group labels from GitLab label listing (ac15079)
+- **dispatch:** Re-read created repositories and connect to Forgejo lazily (ac47390)
+- **forge:** Make the lazy Forgejo connection context-aware with failure backoff (6f2a657)
+- **schedule:** Let scheduled mirrors drain on shutdown instead of cancelling them (e7da7a0)
+- **dispatch:** Bound forge API calls by mirror.max_concurrent (a4f3013)
+- **dispatch:** Make a public target private before pushing to it (319e9c9)
+- **filter:** Make private repositories opt-in for typed targets and schedules (a50f0cd)
+- **forgejo:** Refuse to create repositories in a foreign user namespace (1df7f21)
+- **schema:** Accept an empty api_url and cover typed configs positively (df15699)
+- **httpclient:** Refuse redirects that change the scheme (0235fd3)
+- **gitlab:** Treat internal projects as not private (6a7eb71)
+- **webhook:** Require consistent repository fields on repository events (d719eb4)
+- **github:** Skip topics GitHub cannot store (4e04b7d)
+- **forgejo:** Page through listings until X-Total-Count is reached (4495f6b)
+- **app:** Log at startup that GitHub ignores has_pull_requests (7869bed)
 
 ### Documentation
 
 - **ci:** Drop the release/* branch protection advice (c04afb6)
 - **readme:** Turn the README into a proper landing page (bda99bf)
+- **spec:** Add forge sync design and implementation plan (2c98baa)
+- **spec:** Switch forge sync to client libraries, add prune_labels and e2e test (6ef2cce)
+- Document repository creation, settings sync, schedule and deletion (5759e77)
+- **config:** Suggest type forgejo for the Codeberg example target (5a39359)
+
+### Tests
+
+- **e2e:** Add end-to-end test against a real Forgejo (74998e4)
+- **e2e:** Isolate e2e runs on a shared docker daemon (82d30d7)
+- **e2e:** Avoid project name collisions and keep logs of a failed start (fad0082)
 
 ## [0.1.0] - 2026-11-15
 
