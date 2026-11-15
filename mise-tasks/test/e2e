@@ -13,8 +13,9 @@ if ! docker_err="$(docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null)"; 
 fi
 
 # One project per run: CI jobs may share a daemon, and a fixed name would let
-# one run's teardown remove another run's Forgejo.
-project="forgemirror-e2e-$(date +%s)-$$"
+# one run's teardown remove another run's Forgejo. Time and PID alone collide
+# across CI containers (each starts with low PIDs), hence the random suffix.
+project="forgemirror-e2e-$(date +%s)-$$-${RANDOM}${RANDOM}"
 compose=(docker-compose --file e2e/compose.yaml --project-name "${project}")
 
 cleanup() {
@@ -40,11 +41,13 @@ for attempt in $(seq 1 10); do
   if up_out="$("${compose[@]}" up --detach --quiet-pull --wait 2>&1)"; then
     break
   fi
-  "${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
+  # Any other failure exits before the teardown below, so the EXIT trap can
+  # still print the Forgejo logs before it removes the containers.
   if [ "${attempt}" -eq 10 ] || ! grep -Eqi 'port is already allocated|address already in use' <<<"${up_out}"; then
     echo "${up_out}" >&2
     exit 1
   fi
+  "${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
   echo "port ${E2E_FORGEJO_PORT} is taken, trying another one"
 done
 forgejo_url="http://127.0.0.1:${E2E_FORGEJO_PORT}"
