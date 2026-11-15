@@ -30,15 +30,20 @@ fi
 
 # Publishing credentials are only required past this point, so ordinary
 # pushes to main succeed before the release secrets are configured.
-: "${PACKAGE_RW_TOKEN:?}" "${COSIGN_PRIVATE_KEY:?}" "${COSIGN_PASSWORD?}"
+: "${PACKAGE_RW_TOKEN:?}" "${RELEASE_TOKEN:?}" "${COSIGN_PRIVATE_KEY:?}" "${COSIGN_PASSWORD?}"
 
 git fetch --quiet --tags --force origin
 if ! git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
   git -c user.name="forgemirror release bot" -c user.email="release-bot@noreply.git.bitfoo.de" \
     tag --annotate "${tag}" --message "${tag}"
-  # Pushed with the automatic token on purpose: tags pushed that way start no
-  # new pipeline, so this run stays the only one that publishes the release.
-  git push --quiet origin "refs/tags/${tag}"
+  # Pushed with RELEASE_TOKEN: v* tags are protected, and Forgejo's tag
+  # allow-list cannot name the automatic Actions token (nor do admins bypass
+  # it). The tag push starts a second pipeline; it waits for this job (shared
+  # concurrency group), finds the release published and exits, or finishes
+  # the release if this run failed after tagging.
+  git push --quiet --no-verify \
+    "https://oauth2:${RELEASE_TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" \
+    "refs/tags/${tag}"
   echo "created tag ${tag}"
 fi
 # A re-run after a failed publish may find the tag on an older commit.

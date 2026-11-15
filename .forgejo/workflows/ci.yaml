@@ -11,8 +11,9 @@
 # - No Docker daemon for jobs; images are built daemonless by ko.
 #
 # Secrets:
-#   RELEASE_TOKEN       PAT (write:repository) — pushes release/next and
-#                       opens the release PR so that CI runs on it.
+#   RELEASE_TOKEN       PAT (write:repository) — pushes release/next, opens
+#                       the release PR so that CI runs on it, and pushes the
+#                       protected v* release tags.
 #   PACKAGE_RW_TOKEN    PAT (write:package) — pushes the container image.
 #   COSIGN_PRIVATE_KEY  cosign key (PEM) — signs checksums and the image.
 #   COSIGN_PASSWORD     password of the cosign key.
@@ -140,6 +141,7 @@ jobs:
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGE_RW_TOKEN: ${{ secrets.PACKAGE_RW_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: mise run release:publish

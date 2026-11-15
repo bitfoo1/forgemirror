@@ -51,12 +51,17 @@ Releases are never tagged by hand.
    chart with the same version, pushes it to
    `oci://git.bitfoo.de/dvonessen/charts/forgemirror` and signs it with cosign.
 
-Why the tag and the release happen in one job: tags and pushes made with the
-automatic Actions token start no new workflow run
-([forgejo#11446](https://codeberg.org/forgejo/forgejo/issues/11446)). The same
-rule keeps the changelog from triggering an extra pipeline. For the same
-reason, `release/next` is pushed with `RELEASE_TOKEN`. Pushed with the
-automatic token, the release PR would get no checks.
+Why the tag and the release happen in one job: the merge commit is already
+verified, so the release job tags it and publishes right away. The tag is
+pushed with `RELEASE_TOKEN`, because protected tags cannot allow the automatic
+Actions token. That push starts a tag pipeline, which waits for the release
+job (they share a concurrency group), sees the release and exits; if the
+release job failed after tagging, the tag pipeline finishes the release.
+
+`release/next` is pushed with `RELEASE_TOKEN` too: pushes made with the
+automatic Actions token start no workflow run
+([forgejo#11446](https://codeberg.org/forgejo/forgejo/issues/11446)), so the
+release PR would get no checks.
 
 Version bumps (git-cliff, `cliff.toml`): `feat` → minor, breaking change
 (`!` or `BREAKING CHANGE:`) → major, everything else → patch. The first
@@ -68,7 +73,7 @@ release is `v0.1.0`.
 
 | Secret               | Purpose                                                                         |
 |----------------------|---------------------------------------------------------------------------------|
-| `RELEASE_TOKEN`      | PAT with `write:repository`; pushes `release/next` and opens the release PR     |
+| `RELEASE_TOKEN`      | PAT with `write:repository`; pushes `release/next`, opens the release PR and pushes release tags |
 | `PACKAGE_RW_TOKEN`   | PAT with `write:package`; pushes image and chart                               |
 | `COSIGN_PRIVATE_KEY` | contents of `cosign.key`                                                        |
 | `COSIGN_PASSWORD`    | password of `cosign.key`                                                        |
@@ -115,8 +120,10 @@ Rule for `release/*`:
 - Allow force pushes only for the account that owns `RELEASE_TOKEN`; the bot
   regenerates the branch on every run.
 
-Tags: protect `v*` so that only the Actions token (release job) and
-administrators can create release tags.
+Tags (repository → Settings → Tags): protect `v*` and allow only the account
+that owns `RELEASE_TOKEN`. A protected tag with an empty allow-list blocks
+everyone, administrators included, and the automatic Actions token cannot be
+added to the list.
 
 ## Verifying a release
 
