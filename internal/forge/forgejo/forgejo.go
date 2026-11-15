@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	sdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v4"
@@ -16,9 +17,11 @@ import (
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
 
-// pageSize is below Forgejo's default MAX_RESPONSE_ITEMS (50) so a short page
-// reliably signals the last one.
+// pageSize is Forgejo's default MAX_RESPONSE_ITEMS. An instance may cap pages
+// lower, so a page shorter than pageSize does not mean it is the last one.
 const pageSize = 50
+
+const headerTotalCount = "X-Total-Count"
 
 const apiSuffix = "/api/v1"
 
@@ -112,7 +115,10 @@ func opName(verb, owner, name string) string {
 	return fmt.Sprintf("%s %s/%s", verb, owner, name)
 }
 
-// paginate fetches pages until a short one; the SDK exposes no total count.
+// paginate fetches pages until X-Total-Count items have arrived or a page is
+// empty. Stopping at the first short page would silently truncate listings on
+// instances with a MAX_RESPONSE_ITEMS below pageSize; with prune_labels that
+// would delete the missing source labels on every target.
 func paginate[T any](fetch func(page int) ([]T, *sdk.Response, error)) ([]T, *sdk.Response, error) {
 	var all []T
 
@@ -124,10 +130,21 @@ func paginate[T any](fetch func(page int) ([]T, *sdk.Response, error)) ([]T, *sd
 
 		all = append(all, items...)
 
-		if len(items) < pageSize {
+		total, known := totalCount(resp)
+		if len(items) == 0 || (known && len(all) >= total) {
 			return all, resp, nil
 		}
 	}
+}
+
+func totalCount(resp *sdk.Response) (int, bool) {
+	if resp == nil || resp.Response == nil {
+		return 0, false
+	}
+
+	total, err := strconv.Atoi(resp.Header.Get(headerTotalCount))
+
+	return total, err == nil
 }
 
 func (c *Client) getRepo(ctx context.Context, owner, name string) (forge.Repo, error) {

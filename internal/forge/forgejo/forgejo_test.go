@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -105,6 +106,39 @@ func jsonReply(body string) http.HandlerFunc {
 	}
 }
 
+// listReply answers a list request with one complete page, announcing its
+// size in X-Total-Count like Forgejo does.
+func listReply(body string, total int) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Total-Count", strconv.Itoa(total))
+		fmt.Fprint(w, body)
+	}
+}
+
+// pagedReply serves items in pages of at most perPage, like a Forgejo whose
+// MAX_RESPONSE_ITEMS is below the requested page size. Without withTotal the
+// X-Total-Count header is left out, so only an empty page ends the listing.
+func pagedReply(items []string, perPage int, withTotal bool, wrap func(list string) string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		from := min((page-1)*perPage, len(items))
+		to := min(from+perPage, len(items))
+
+		w.Header().Set("Content-Type", "application/json")
+		if withTotal {
+			w.Header().Set("X-Total-Count", strconv.Itoa(len(items)))
+		}
+		fmt.Fprint(w, wrap("["+strings.Join(items[from:to], ",")+"]"))
+	}
+}
+
+func asIs(list string) string { return list }
+
 func status(code int) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }
 }
@@ -154,7 +188,7 @@ func TestRepo(t *testing.T) {
 	f := newFake(t, map[string]http.HandlerFunc{
 		"GET /api/v1/repos/acme/app": jsonReply(`{"name":"app","description":"desc","website":"https://x.example",
 			"private":true,"default_branch":"trunk","has_issues":true,"has_wiki":false,"has_pull_requests":true}`),
-		"GET /api/v1/repos/acme/app/topics": jsonReply(`{"topics":["go","mirror"]}`),
+		"GET /api/v1/repos/acme/app/topics": listReply(`{"topics":["go","mirror"]}`, 2),
 	})
 
 	want := forge.Repo{
@@ -186,48 +220,48 @@ func TestRepo(t *testing.T) {
 func TestLabelsPaged(t *testing.T) {
 	t.Parallel()
 
-	page := func(from, n int) string {
-		items := make([]string, 0, n)
-		for i := from; i < from+n; i++ {
-			items = append(
-				items,
-				fmt.Sprintf(`{"id":%d,"name":"l%d","color":"#AABB%02d","description":"d%d"}`, i, i, i%100, i),
-			)
-		}
-
-		return "[" + strings.Join(items, ",") + "]"
+	labels := make([]string, 0, 53)
+	for i := range 53 {
+		labels = append(
+			labels,
+			fmt.Sprintf(`{"id":%d,"name":"l%d","color":"#AABB%02d","description":"d%d"}`, i, i, i, i),
+		)
 	}
 
-	f := newFake(t, map[string]http.HandlerFunc{
-		"GET /api/v1/repos/acme/app/labels": func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Query().Get("page") == "1" {
-				fmt.Fprint(w, page(0, 50))
+	tests := []struct {
+		name      string
+		withTotal bool
+	}{
+		{name: "with X-Total-Count", withTotal: true},
+		{name: "without X-Total-Count", withTotal: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-				return
+			f := newFake(t, map[string]http.HandlerFunc{
+				"GET /api/v1/repos/acme/app/labels": pagedReply(labels, 30, tc.withTotal, asIs),
+			})
+			c := f.client(t, "")
+
+			for name, get := range map[string]func() ([]forge.Label, error){
+				"source": func() ([]forge.Label, error) { return c.Source().Labels(t.Context(), "acme", "app") },
+				"target": func() ([]forge.Label, error) { return c.Labels(t.Context(), addr()) },
+			} {
+				got, err := get()
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+
+				if len(got) != 53 {
+					t.Fatalf("%s: len = %d, want 53", name, len(got))
+				}
+
+				if got[0].Color != "aabb00" || got[0].Description != "d0" || got[52].Name != "l52" {
+					t.Errorf("%s: first/last label = %+v / %+v", name, got[0], got[52])
+				}
 			}
-
-			fmt.Fprint(w, page(50, 3))
-		},
-	})
-
-	c := f.client(t, "")
-
-	for name, get := range map[string]func() ([]forge.Label, error){
-		"source": func() ([]forge.Label, error) { return c.Source().Labels(t.Context(), "acme", "app") },
-		"target": func() ([]forge.Label, error) { return c.Labels(t.Context(), addr()) },
-	} {
-		got, err := get()
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-
-		if len(got) != 53 {
-			t.Fatalf("%s: len = %d, want 53", name, len(got))
-		}
-
-		if got[0].Color != "aabb00" || got[0].Description != "d0" {
-			t.Errorf("%s: first label = %+v", name, got[0])
-		}
+		})
 	}
 }
 
@@ -239,26 +273,20 @@ func TestRepos(t *testing.T) {
 			"clone_url":"https://git.example/acme/r%d.git","private":%t,"fork":%t}`, i, i, i, i%2 == 0, i == 1)
 	}
 
-	var first []string
-	for i := range 50 {
-		first = append(first, item(i))
+	items := make([]string, 0, 52)
+	for i := range 52 {
+		items = append(items, item(i))
 	}
 
 	routes := map[string]http.HandlerFunc{
-		"GET /api/v1/repos/search": func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Query().Get("page") == "1" {
-				fmt.Fprintf(w, `{"data":[%s]}`, strings.Join(first, ","))
-
-				return
-			}
-
-			fmt.Fprintf(w, `{"data":[%s,%s]}`, item(50), item(51))
-		},
+		"GET /api/v1/repos/search": pagedReply(items, 30, true, func(list string) string {
+			return `{"data":` + list + `}`
+		}),
 	}
 	// The SDK's Repository model has no topics field, so each repo costs one
 	// extra topics request.
 	for i := range 52 {
-		routes[fmt.Sprintf("GET /api/v1/repos/acme/r%d/topics", i)] = jsonReply(fmt.Sprintf(`{"topics":["t%d"]}`, i))
+		routes[fmt.Sprintf("GET /api/v1/repos/acme/r%d/topics", i)] = listReply(fmt.Sprintf(`{"topics":["t%d"]}`, i), 1)
 	}
 
 	f := newFake(t, routes)
@@ -452,8 +480,8 @@ func TestLabelCreateUpdateDelete(t *testing.T) {
 	t.Parallel()
 
 	f := newFake(t, map[string]http.HandlerFunc{
-		"GET /api/v1/repos/acme/app/labels": jsonReply(
-			`[{"id":7,"name":"Bug","color":"ff0000"},{"id":8,"name":"other","color":"00ff00"}]`,
+		"GET /api/v1/repos/acme/app/labels": listReply(
+			`[{"id":7,"name":"Bug","color":"ff0000"},{"id":8,"name":"other","color":"00ff00"}]`, 2,
 		),
 		"POST /api/v1/repos/acme/app/labels":     jsonReply(`{"id":9}`),
 		"PATCH /api/v1/repos/acme/app/labels/7":  jsonReply(`{"id":7}`),

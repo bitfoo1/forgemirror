@@ -371,6 +371,11 @@ func newForgeFake(t *testing.T) *forgeFake {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if key == "GET /api/v1/repos/search" {
+			// Forgejo announces the list size; the client pages until it has
+			// that many items.
+			w.Header().Set("X-Total-Count", "1")
+		}
 		_, _ = io.WriteString(w, body)
 	}))
 	t.Cleanup(f.srv.Close)
