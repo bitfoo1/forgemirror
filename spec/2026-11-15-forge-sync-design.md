@@ -51,6 +51,15 @@ copied.
   branches and tags as the source.
 - `delete: true` on a target (default `false`) deletes the target repository
   when Forgejo reports the source repository as deleted.
+- Labels are created and updated; with `prune_labels: true` on a target
+  (default `false`) labels missing on the source are deleted there too.
+  Off by default because deleting a label strips it from every issue and PR
+  on that forge, and new GitHub repositories start with default labels.
+- An end-to-end test runs forgemirror against a real Forgejo container that
+  acts as source and as a `forgejo`-type target.
+- The JSON schema (`docs/static/schema/v1/forgemirror.schema.json`) covers
+  every new key and stays `v1` (all changes are additive); the docs'
+  editor-support section lists the new keys.
 - All existing guarantees stay: secrets never in logs/errors/argv/disk,
   ≥ 80 % coverage, table-driven tests with fakes (httptest servers for the
   APIs), strict config validation, JSON schema in sync.
@@ -60,9 +69,6 @@ copied.
 - Copying issues, PRs, comments, releases, release assets, wikis.
 - Branch protection sync. Merges happen on Forgejo only; protection on a
   mirror would block forgemirror's own force pushes.
-- Deleting labels on targets that do not exist on the source (contributors
-  or maintainers may add labels on GitHub). Labels are created and updated
-  only.
 - Deletion triggered by a repository becoming excluded, private, or by a
   config change. Only a source deletion counts.
 - Scheduled deletion detection (needs a marker or state; see "Left open").
@@ -100,9 +106,14 @@ copied.
   are refused (custom auth headers would otherwise follow them); auth via
   `Authorization` header only; error messages carry status and the API's
   message, never request headers.
-- No new heavy SDK dependencies: small hand-written REST clients over
-  `net/http`, tested against `httptest` fakes. (Keeps the dependency and
-  vulnerability surface small, and the code testable without network.)
+- API clients use the forges' Go libraries, pinned to releases older than
+  two weeks at planning time: `github.com/google/go-github/v93` v93.0.0,
+  `gitlab.com/gitlab-org/api/client-go/v3` v3.40.0,
+  `codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v4` v4.0.0 (community SDK; no
+  official Forgejo SDK exists). Each library gets forgemirror's own
+  `http.Client`, so the redirect policy applies; tests point the libraries at
+  `httptest` fakes. (Owner's decision: typed models and maintained field
+  mappings over a smaller dependency footprint.)
 
 ## Approaches considered
 
@@ -142,6 +153,7 @@ targets:
     token_file: /run/secrets/forgemirror/github-token
     create: true                     # default false
     delete: false                    # default false
+    prune_labels: false              # default false
     settings:                        # target defaults, override source values
       has_issues: false
       has_wiki: false
@@ -162,7 +174,8 @@ disables label sync for that scope).
 
 Validation rules (all reported together, as today):
 - `type` ∈ {"", github, gitlab, forgejo}.
-- `create`, `delete`, `settings`, `overrides`, `api_url` require a `type`.
+- `create`, `delete`, `prune_labels`, `settings`, `overrides`, `api_url`
+  require a `type`.
 - `settings.private: false` is an error ("can only force private").
 - `overrides[].repos` must compile (same anchored regex semantics as
   filters).
@@ -202,11 +215,11 @@ and kept private on every target regardless of overrides.
     — the precedence merge including the visibility rule, pure and fully
     unit-tested.
   - `Diff(current, desired) Settings` — only fields that differ.
-- `internal/forge/httpapi` — shared JSON-over-HTTP helper: auth header
-  injection, cross-host redirect refusal, status → error mapping
-  (`ErrNotFound`), pagination helper, bounded error-body reading.
+- `internal/forge/httpclient` — the shared `http.Client` (timeout,
+  cross-host redirect refusal) handed to every library.
 - `internal/forge/forgejo`, `internal/forge/github`, `internal/forge/gitlab`
-  — clients. Forgejo implements both `Source` and `Target`.
+  — thin adapters over the libraries, mapping to the forge-neutral model and
+  `ErrNotFound`. Forgejo implements both `Source` and `Target`.
 - `internal/dispatch` — a run becomes: (1) if any typed target: load source
   state + labels; (2) per typed target: get; if missing and `create` →
   create (without default branch); if missing and not `create` → target
@@ -244,14 +257,22 @@ JSON schema, README feature list. Record "scheduled deletion detection" in
 
 ### Token scopes (to document)
 
-- Forgejo source: `read:repository` (+ `read:organization` to list org
-  repos via search).
+- Forgejo source (verified in the Forgejo v15 API routes):
+  - `read:repository`: repository details, topics, `GET /repos/search` (the
+    schedule's repository list), cloning.
+  - `read:issue`: labels (Forgejo files label routes under the issue scope).
+  - Repository access "all (public, private and limited)"; a public-only
+    token hides private repositories, so `allow_private` cannot work.
+  - The repository list contains what the token's user can read; an admin
+    user sees every repository. Recommended: a dedicated bot user with read
+    access to the mirrored organisations. No write scope on the source.
 - GitHub: fine-grained token on the owner with Administration (create,
   delete, settings) and Contents read/write; classic: `repo` (+
   `delete_repo` for delete).
 - GitLab: `api` scope.
-- Forgejo target: `write:repository` (+ `write:organization` / `write:user`
-  to create).
+- Forgejo target: `write:repository`, `write:issue` (labels),
+  `write:organization` to create in an organisation or `write:user` to create
+  in a user account (Forgejo checks these at creation).
 
 ## Decided by the owner
 
@@ -269,9 +290,8 @@ JSON schema, README feature list. Record "scheduled deletion detection" in
 
 ## Calls made by the builder-side (owner may revise)
 
-- Labels never deleted on targets.
+- `prune_labels` opt-in per target (owner agreed).
 - Branch protection out of scope.
-- Hand-written REST clients, no SDKs.
 - Deletion only via the Forgejo repository-deleted webhook event in this
   iteration; schedule-only deployments do not delete.
 - `has_pull_requests` ignored on GitHub, `website` ignored on GitLab.
