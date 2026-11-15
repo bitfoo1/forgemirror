@@ -29,5 +29,9 @@ data:
       exclude_private: true
     targets:
       - name: github
+        # With a type, forgemirror also uses the GitHub API (needs the
+        # source token above); create makes missing repositories.
+        type: github
         url: "https://github.com/acme/{{ .Name }}.git"
         token_file: /run/secrets/forgemirror/github-token
+        create: true

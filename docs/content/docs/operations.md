@@ -7,7 +7,7 @@ weight: 5
 
 | Endpoint        | Purpose                                                                 |
 |-----------------|-------------------------------------------------------------------------|
-| `POST /webhook` | Forgejo push events                                                     |
+| `POST /webhook` | Forgejo push and repository events; `404` when no `webhook.secret` is set (schedule-only) |
 | `GET /healthz`  | Liveness: `200` while the process serves HTTP                            |
 | `GET /readyz`   | Readiness: `503` before serving and once shutdown begins, so load balancers stop sending webhooks |
 | `GET /metrics`  | Prometheus metrics                                                      |
@@ -24,10 +24,13 @@ included as well.
 | `forge_mirror_duration_seconds`         | histogram | `target`           | Duration of each push to a target; buckets from 0.5 s to 10 min |
 | `forge_mirror_webhook_requests_total`   | counter   | `outcome`          | Webhook requests by [outcome](../forgejo-webhook/#responses) |
 | `forge_mirror_active_operations`        | gauge     |                    | Mirror runs in progress                          |
+| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Forge API operations of typed targets; `operation` is `create`, `settings`, `labels` or `delete`, `status` is `success` or `failure`. Runs without settings or label changes are not counted |
+| `forgemirror_scheduled_runs_total`      | counter   | `status`           | Scheduled sweeps; `failure` means the source repositories could not be listed |
 | `target_info`                           | gauge     | `service_name`, `service_version` | Build information                 |
 
 A failed clone counts as a failure for every target, because none of them
-could be updated.
+could be updated. A typed target whose repository could not be read or
+created counts as a failed mirror operation as well.
 
 Example alerts:
 
@@ -40,6 +43,16 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Mirroring to {{ $labels.target }} fails"
+      - alert: ForgemirrorSyncFailing
+        expr: increase(forgemirror_sync_operations_total{status="failure"}[30m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.operation }} on {{ $labels.target }} fails"
+      - alert: ForgemirrorScheduledRunFailing
+        expr: increase(forgemirror_scheduled_runs_total{status="failure"}[2h]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Scheduled sync cannot list Forgejo repositories"
       - alert: ForgemirrorWebhookUnauthorized
         expr: increase(forge_mirror_webhook_requests_total{outcome="unauthorized"}[15m]) > 0
         labels: { severity: warning }
@@ -62,6 +75,12 @@ forgemirror writes structured logs to stderr. They are JSON by default; set
 | `mirror already running; queued one follow-up run`| info  | Push arrived during a run, so a follow-up run is coalesced |
 | `shutting down; event dropped`                    | warn  | Push arrived after shutdown began                   |
 | `shutting down; queued follow-up run dropped` | warn | A coalesced follow-up run was not started because of shutdown |
+| `scheduled sync enabled`                          | info  | The schedule is active; carries `interval`          |
+| `scheduled run dispatched`                        | info  | A sweep queued runs; carries `repositories` and `listed` |
+| `scheduled run failed`                            | error | The source repositories could not be listed; retried on the next tick |
+| `already in sync; clone and push skipped`         | info  | Scheduled run found identical branches and tags on all targets |
+| `forge operation succeeded` / `forge operation failed` | info / error | One create, settings, labels or delete step; carries `target` and `operation` |
+| `deletion started` / `deletion finished`          | info  | A repository deletion event was handled; `deletion finished with errors` is logged at error level |
 
 git output in logs and errors is redacted: tokens and authorization headers
 show up as `[REDACTED]`.
@@ -70,6 +89,7 @@ show up as `[REDACTED]`.
 
 On `SIGTERM` or `SIGINT`:
 1. `/readyz` returns `503` and the listener stops accepting connections.
+   The scheduler stops, so no new scheduled runs start.
 2. Open webhook requests are answered.
 3. Running mirrors finish. Queued follow-up runs and new pushes are dropped
    and logged; the next push after the restart mirrors the latest state.
@@ -92,4 +112,8 @@ or `TimeoutStopSec` (systemd).
 | `target failed` … `403` / `Authentication failed` | Token lacks push permission or has expired; GitHub fine-grained tokens need *Contents: read and write* |
 | `target failed` … `protected branch`       | Force pushes are blocked on the target; allow them for the mirror account, because mirroring rewrites history like the source |
 | `mirror failed` on private repositories    | `source.token` is missing or lacks read access                  |
+| `target … does not exist and create is false` | The target repository is missing; create it or set `create: true` on the typed target |
+| `cannot create repository in namespace …`  | GitHub or GitLab target: the namespace is neither an organisation or group nor the token's user |
+| Typed targets fail while Forgejo is down   | Expected: forgemirror starts anyway, connects on first use and waits 10 s after a failed attempt |
+| Private repository is not mirrored         | `filter.exclude_private` without a matching `filter.allow_private`, or a source token with public-only repository access |
 | Pod evicted                                | Clones exceed the `/work` emptyDir `sizeLimit`; raise it        |

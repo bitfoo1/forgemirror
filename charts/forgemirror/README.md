@@ -1,8 +1,8 @@
 # forgemirror Helm chart
 
 Deploys [forgemirror](https://git.bitfoo.de/dvonessen/forgemirror). It
-receives Forgejo push webhooks and mirrors each repository to GitHub,
-Codeberg, GitLab and similar forges.
+receives Forgejo push webhooks (or runs on a schedule) and mirrors each
+repository to GitHub, Codeberg, GitLab and similar forges.
 
 The chart is built on the
 [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/docs/common-library/)
@@ -29,17 +29,27 @@ A minimal `my-values.yaml`:
 
 ```yaml
 config:
+  source:
+    base_url: https://git.example.org/
+    token_file: /run/secrets/forgemirror/source-token
   filter:
     include_repos: "acme/.*"
     exclude_private: true
   targets:
     - name: github
+      type: github # API access: create repositories, sync settings and labels
+      create: true
       url: "https://github.com/acme/{{ .Name }}.git"
       token_file: /run/secrets/forgemirror/github-token
 
 credentials:
-  existingSecret: forgemirror # keys: webhook-secret, github-token, ...
+  existingSecret: forgemirror # keys: webhook-secret, source-token, github-token, ...
 ```
+
+A `type` makes forgemirror use the forge's API, which needs
+`source.base_url` and a source token. Without a `type` a target is a plain
+git push destination and its repository must already exist. Token rights are
+listed in the [security docs](https://forgemirror.bitfoo.de/docs/security/#token-rights).
 
 Rendering fails if `config.targets` is empty or if no credentials are given,
 so a pod is never deployed in a state where it would just crash-loop.

@@ -57,12 +57,59 @@ the webhook payload; with `base_url`, forgemirror rejects payloads whose
 clone URL points anywhere else, so not even a leaked webhook secret can send
 the Forgejo token to another host.
 
-Use tokens with the narrowest scope:
-- **Forgejo:** `read:repository`.
-- **GitHub:** a fine-grained token limited to the mirror repositories, with
-  *Contents: read and write*.
+Use tokens with the narrowest scope; see [Token rights](#token-rights).
+
+## Token rights
+
+Grant only what the features you enable need. All tokens are sent as an
+`Authorization` header and only to their own host; redirects to another host
+are refused.
+
+### Forgejo source (`source.token`)
+
+Needed for cloning, and for the API reads of typed targets and the schedule.
+It never needs a write scope.
+
+| Scope             | Why                                                                  |
+|-------------------|----------------------------------------------------------------------|
+| `read:repository` | Repository details, topics, `GET /repos/search` (the schedule's repository list) and cloning |
+| `read:issue`      | Labels: Forgejo files its label routes under the issue scope          |
+| Repository access: all (public, private and limited) | A public-only token hides private repositories, so `filter.allow_private` cannot work |
+
+The repository list contains what the token's user can read, and an admin
+user sees every repository. Use a dedicated bot user with read access to the
+organisations you mirror rather than an admin or personal account.
+
+With only public repositories, no typed target and no schedule, the token is
+optional.
+
+### Targets (`targets[].token`)
+
+Plain git targets (no `type`) need push permission only. Typed targets need
+API rights as well:
+
+| Target  | Token                                                                 |
+|---------|-----------------------------------------------------------------------|
+| GitHub  | Fine-grained token on the owner: *Administration: read and write* (create, delete, settings) and *Contents: read and write*. Classic token: `repo`, plus `delete_repo` when `delete: true`. |
+| GitLab  | `api` scope                                                           |
+| Forgejo | `write:repository`, `write:issue` (labels), and `write:organization` to create in an organisation or `write:user` to create in a user account |
 
 Store tokens as files (`*_file`) from a secret manager rather than inline.
+
+### Safety rules for typed targets
+
+- **Private stays private.** A private source repository is created and kept
+  private on every target. `settings.private` accepts only `true`, so
+  configuration can hide a public repository but never expose a private one.
+- **Private repositories are opt-in.** They are mirrored only if
+  `filter.exclude_private` is off or `filter.allow_private` matches them.
+- **Deletion is opt-in and narrow.** `delete` defaults to `false` and only a
+  signed `repository` event with action `deleted` from Forgejo triggers it,
+  after the filter. A filter or configuration change never deletes anything.
+  Because deletion is destructive, give the target token delete rights only
+  on targets where you set `delete: true`.
+- **Label pruning is opt-in.** `prune_labels` defaults to `false`, because a
+  deleted label disappears from every issue and pull request.
 
 ## Runtime hardening
 

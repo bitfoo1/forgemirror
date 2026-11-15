@@ -41,6 +41,14 @@ internet. Every push leads to one clone and parallel pushes to all targets.
   are coalesced into one follow-up run.
 - 🧩 **One target, many repositories:** target URLs are Go templates, so
   `https://codeberg.org/{{ .Owner }}/{{ .Name }}.git` covers every repository.
+- 🏗️ **Creates and syncs repositories:** typed targets (GitHub, GitLab,
+  Forgejo) create missing repositories and keep description, topics, default
+  branch, visibility, issues/wiki/pull requests and labels in line, with
+  per-target defaults and per-repository overrides. A private repository
+  never becomes public.
+- ⏱️ **Scheduled sync:** run on an interval instead of, or besides, push
+  webhooks; unchanged repositories are skipped. Optionally delete a mirror
+  when its Forgejo repository is deleted.
 - 🎯 **Filters:** include or exclude repositories by pattern, restrict
   branches, skip private repositories and forks, or opt in per repository
   with a topic.
@@ -78,7 +86,8 @@ docker run --rm -p 8080:8080 \
 `http://<forgemirror-host>:8080/webhook`, content type `application/json`, the
 secret from step 1, and push events. Then push.
 
-Target repositories must already exist. For every option, see
+Target repositories must already exist, unless the target has a `type` and
+`create: true`. For every option, see
 [`forgemirror.example.yaml`](forgemirror.example.yaml) and the
 [configuration docs](https://forgemirror.bitfoo.de/docs/configuration/).
 

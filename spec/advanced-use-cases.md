@@ -33,3 +33,21 @@ focused. Do not start these until the initial phases are complete.
 - [ ] If a reloaded config is invalid, keep running on the last-known-good config
       and log the error — never crash on a bad reload
 - [ ] Write tests that simulate a config change and assert the new values take effect
+
+---
+
+## Scheduled deletion detection
+
+> **Why deferred:** deletion only happens on Forgejo's `repository` deleted
+> webhook event. A schedule-only deployment (or a lost delivery) never
+> deletes, because a repository missing from the source list is
+> indistinguishable from one that was never mirrored, excluded by the filter,
+> or hidden by a token with reduced access. Deleting on that evidence could
+> destroy a target repository because of a filter or token mistake. Safe
+> detection needs a marker (e.g. a topic or description tag forgemirror sets
+> on repositories it created) or persistent state.
+
+- [ ] Mark target repositories created by forgemirror (topic or state file)
+- [ ] Delete only marked repositories that are absent from the source list
+- [ ] Refuse to delete when the source listing is empty, truncated or failed
+- [ ] Keep it opt-in per target, on top of `delete: true`

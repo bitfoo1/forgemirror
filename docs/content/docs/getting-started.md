@@ -15,8 +15,9 @@ repository. For production, see [Deployment](../deployment/).
   destination repositories.
 - **Source token:** a Forgejo token with read access, if private repositories
   should be mirrored.
-- **Existing target repositories:** forgemirror pushes to repositories that
-  already exist. It does not create them.
+- **Existing target repositories:** a plain target pushes to repositories
+  that already exist. Only a [typed target](../configuration/#typed-targets)
+  with `create: true` creates them.
 
 {{% steps %}}
 

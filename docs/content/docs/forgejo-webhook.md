@@ -24,8 +24,27 @@ repository owners opt in by adding a topic.
 | HTTP method      | `POST`                                                   |
 | POST content type| `application/json` (other types are rejected with 415)   |
 | Secret           | the value of `webhook.secret`                            |
-| Trigger on       | Push events                                              |
+| Trigger on       | Push events; add Repository events to propagate deletions |
 | Branch filter    | leave empty, and use forgemirror's `include_branches` instead |
+
+## Repository events
+
+Tick *Repository* events as well when a target sets
+[`delete: true`](../configuration/#typed-targets). forgemirror reacts to the
+action `deleted` only: it passes the repository through the
+[filter](../configuration/#filter) and then deletes the repository on every
+target with `delete: true`. A target repository that no longer exists counts
+as success. The action `created` is ignored with `200`; the repository is
+created on the first push or scheduled run instead. Other event types are
+ignored with `200` as well.
+
+## Schedule-only needs no webhook
+
+With `sync.on_push: false` and a `sync.schedule`, forgemirror pulls the
+repository list from Forgejo and no webhook is required. Without a
+`webhook.secret` the `/webhook` endpoint answers `404`. A secret is only
+needed if a target sets `delete`, because deletions arrive as webhook events;
+scheduled runs never delete. See [Sync](../configuration/#sync).
 
 ## Allow Forgejo to reach forgemirror
 
@@ -50,13 +69,14 @@ forgemirror answers right away, and mirroring happens in the background. A
 
 | Status | Outcome (`outcome` label)  | Meaning                                                        |
 |--------|----------------------------|----------------------------------------------------------------|
-| 202    | `accepted`                 | Mirror queued, or coalesced into a running one                 |
-| 200    | `filtered`                 | Valid push, but a filter rule excludes it; the body names the rule |
-| 200    | `ignored`                  | Not a push event (for example the test delivery of another event type) |
+| 202    | `accepted`                 | Mirror queued, or coalesced into a running one (`mirror queued`); or a repository deletion queued (`delete queued`) |
+| 200    | `filtered`                 | Valid push or deletion, but a filter rule excludes it; the body names the rule |
+| 200    | `ignored`                  | Not a push or repository event, a repository event other than `deleted`, or a push while `sync.on_push` is `false` (`push events disabled (sync.on_push is false)`) |
 | 400    | `bad_request`              | Malformed JSON, required fields missing, or a clone URL outside `source.base_url` |
 | 401    | `unauthorized`             | Missing or wrong signature, so the secrets differ              |
 | 413    | `too_large`                | Body exceeds `webhook.max_body_bytes` (default 5 MiB)          |
 | 415    | `unsupported_media_type`   | Content type is not `application/json`                         |
+| 404    |                            | No `webhook.secret` is configured, so the endpoint does not exist (not counted in the metric) |
 
 ## Signature
 

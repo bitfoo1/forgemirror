@@ -82,7 +82,48 @@ below that URL (same scheme, host, port and path prefix) are rejected with
 leaks. Without it, every clone URL is accepted.
 
 The token is only needed for private repositories; leave it unset if only
-public ones are mirrored.
+public ones are mirrored. It becomes required, together with `base_url`, as
+soon as a target has a `type` or `sync.schedule` is set, because forgemirror
+then reads repositories, settings and labels through the Forgejo API
+(`base_url` + `api/v1`). The rights it needs are listed under
+[Security](../security/#token-rights).
+
+Forgejo clients connect on first use, not at startup, and a failed connection
+attempt is not repeated for 10 seconds. forgemirror therefore starts even
+when Forgejo is unreachable, and a scheduled sweep does not hammer an
+unreachable instance once per repository.
+
+## Sync
+
+`sync` selects what starts a mirror run.
+
+```yaml
+sync:
+  on_push: true   # default; Forgejo push webhooks start runs
+  schedule: 1h    # Go duration; 0s (default) disables scheduled runs
+```
+
+| Mode               | Configuration                          | Needs                                  |
+|--------------------|----------------------------------------|----------------------------------------|
+| Push only          | default                                | `webhook.secret`                       |
+| Push and schedule  | `schedule: 1h`                         | `webhook.secret`, `source.base_url`, source token |
+| Schedule only      | `on_push: false`, `schedule: 1h`       | `source.base_url`, source token; no webhook |
+
+- **Schedule:** the first run starts right after startup, then one per
+  interval. Each run covers every repository the source token can see that
+  passes the [filter](#filter); branch rules do not apply. Runs are named
+  `schedule-<RFC3339 time>` in the logs (`delivery`). A repository that is
+  still being mirrored is not mirrored twice in parallel.
+- **Skip when equal:** a scheduled run first compares branches and tags
+  (`git ls-remote`) of the source and every target. When all are identical,
+  the clone and push are skipped. Settings and labels are still synchronised.
+- **Schedule-only:** with `on_push: false`, `webhook.secret` is only
+  required if a target sets `delete`. Without a secret, `/webhook` answers
+  `404`. With a secret but `on_push: false`, push events are answered with
+  `200` and ignored.
+- `on_push: false` without a schedule is an error.
+- **Deletions need a webhook.** Scheduled runs never delete; see
+  [`delete`](#typed-targets).
 
 ## Targets
 
@@ -120,11 +161,118 @@ Each URL is checked at startup:
 - It must not contain credentials. Those belong in `token`.
 
 {{< callout type="info" >}}
-Target repositories must already exist. forgemirror pushes all branches and
-tags with `--prune`, so the target becomes an exact copy and branches deleted
-on Forgejo disappear there too. Pull request refs are not pushed, because
-GitHub rejects them.
+Without a `type`, target repositories must already exist (or be created by
+[`create`](#typed-targets) on a typed target). forgemirror pushes all
+branches and tags with `--prune`, so the target becomes an exact copy and
+branches deleted on Forgejo disappear there too. Pull request refs are not
+pushed, because GitHub rejects them.
 {{< /callout >}}
+
+### Typed targets
+
+A target without `type` is a plain git push destination, exactly as before.
+With a `type`, forgemirror also talks to the forge's API: it can create the
+repository, keep its settings and labels in line with Forgejo, and delete it.
+
+```yaml
+targets:
+  - name: github
+    type: github                       # github | gitlab | forgejo
+    url: "https://github.com/acme/{{ .Name }}.git"
+    token_file: /run/secrets/forgemirror/github-token
+    create: true                       # default false
+    settings:                          # defaults for this target
+      has_issues: false
+      has_wiki: false
+    overrides:                         # per repository, in order
+      - repos: "acme/forgemirror"
+        settings:
+          has_issues: true
+      - repos: "acme/homelab"
+        settings:
+          private: true
+```
+
+| Key            | Default | Meaning                                                                 |
+|----------------|---------|-------------------------------------------------------------------------|
+| `type`         |         | `github`, `gitlab` or `forgejo`; enables the keys below                  |
+| `api_url`      | derived | API base URL. Derived from `type` and the host of `url`: `https://api.github.com` for github.com, `https://<host>/api/v3` for other GitHub hosts, `https://<host>/api/v4` for GitLab, `https://<host>/api/v1` for Forgejo |
+| `create`       | `false` | Create the repository when it is missing; otherwise a missing repository fails the target |
+| `delete`       | `false` | Delete the repository when Forgejo reports the source as deleted        |
+| `prune_labels` | `false` | Delete labels that do not exist on the source                           |
+| `settings`     |         | Target-wide settings, see below                                         |
+| `overrides`    |         | Settings for matching repositories, see below                           |
+
+`create`, `delete`, `prune_labels`, `api_url`, `settings` and `overrides`
+require a `type`; the namespace and name of the repository come from the
+rendered `url` (`/group/sub/name.git` is namespace `group/sub`, name `name`).
+
+**Creating repositories:** forgemirror creates a repository in an
+organisation or group, or in the token's own account. GitHub and GitLab
+refuse any other namespace with `cannot create repository in namespace …:
+not an organisation and not the token's user`, because they would otherwise
+create it somewhere else. Forgejo targets have no such check: a namespace
+that is not an organisation is created in the token's own account.
+On Forgejo, organisation repositories are created through the deprecated but
+working `/api/v1/org/{org}/repos` route.
+
+**Order of a run, per target:**
+1. Read the source repository and labels from Forgejo.
+2. Read the target repository; create it if it is missing and `create` is
+   set. The default branch is not sent, because it does not exist yet.
+3. Scheduled runs only: skip the push if all branches and tags are equal.
+4. Mirror push.
+5. Compare settings and update only what differs; the default branch is set
+   here, after the push.
+6. Synchronise labels (created and updated; deleted only with
+   `prune_labels: true`). `settings.labels: false` disables this step.
+
+A failed create, settings or label step is logged with the target and counted
+in [metrics](../operations/#metrics).
+
+**Settings.** All keys are optional; an unset key keeps the value of the
+previous layer.
+
+| Key                 | Meaning                                                              |
+|---------------------|----------------------------------------------------------------------|
+| `description`       | Repository description                                               |
+| `website`           | Website; ignored on GitLab, which has no such field                  |
+| `topics`            | List of topics; always lower-cased, because GitHub requires it       |
+| `default_branch`    | Default branch                                                       |
+| `private`           | Only `true` is accepted: force a public source to be private here    |
+| `has_issues`        | Issue tracker on or off                                              |
+| `has_wiki`          | Wiki on or off                                                       |
+| `has_pull_requests` | Pull or merge requests on or off; ignored on GitHub, which cannot disable them |
+| `labels`            | `false` disables label sync for this scope; default `true`           |
+
+**Precedence, last wins:** the value from the Forgejo repository, then the
+target's `settings`, then every entry of `overrides` whose `repos` pattern
+matches `owner/name`, in the order listed. `repos` uses the same whole-value
+regular expression semantics as the [filter](#filter).
+
+**Visibility only gets more private.** A private source repository is private
+on every target, whatever the configuration says; `settings.private: false`
+is rejected at startup. Label colours are compared case-insensitively
+without a leading `#`.
+
+**Forge differences:**
+
+| Setting             | GitHub           | GitLab         | Forgejo |
+|---------------------|------------------|----------------|---------|
+| `website`           | synced           | ignored        | synced  |
+| `has_pull_requests` | ignored          | synced         | synced  |
+| `topics`            | lower-cased      | lower-cased    | lower-cased |
+| Create in           | organisation or own user | group or own user | organisation or token's account |
+
+`delete: true` removes the target repository when Forgejo sends a
+`repository` event with action `deleted`. Only that event deletes: not an
+exclusion by the filter, not a repository turning private, not a
+configuration change, and not a scheduled run. The event goes through the
+[filter](#filter) first, and a target repository that is already gone counts
+as success. See [Forgejo webhook](../forgejo-webhook/#repository-events).
+`prune_labels` is off by default because deleting a label strips it from every
+issue and pull request, and new GitHub repositories start with default
+labels.
 
 ## Filter
 
@@ -137,6 +285,7 @@ log.
 | `include_branches` | Only pushes to these branches trigger a mirror. Tag pushes always do.          |
 | `require_topic`    | Only repositories with this Forgejo topic, for per-repository opt-in. Not an access control: every repository owner can set topics. |
 | `exclude_private`  | Skip private repositories.                                                     |
+| `allow_private`    | Private repositories whose `owner/name` matches pass `exclude_private`. They stay private on every target. |
 | `exclude_forks`    | Skip forks.                                                                    |
 | `include_repos`    | Only repositories whose `owner/name` matches.                                  |
 | `exclude_repos`    | Skip repositories whose `owner/name` matches; this wins over `include_repos`.   |
@@ -152,9 +301,14 @@ filter:
   include_branches: ["main", "release/.*"]
   exclude_forks: true
   require_topic: mirror
+  exclude_private: true
+  allow_private: "acme/notes"   # private, but mirrored anyway; stays private
 ```
 
-A filter only decides *whether* a push triggers a mirror. The mirror itself
+`allow_private` only has an effect together with `exclude_private`, and
+needs a source token with access to private repositories (see
+[Security](../security/#token-rights)). A filter only decides *whether* a push
+triggers a mirror. The mirror itself
 always copies all branches and tags.
 
 ## Concurrency and timeouts
@@ -210,7 +364,14 @@ check-jsonschema --schemafile {{< schema-url >}} forgemirror.yaml
 ```
 
 The `v1` in the path stays compatible: new optional keys may be added, and a
-breaking change gets a new path.
+breaking change gets a new path. The forge-sync keys were added this way
+without a new version, so existing files keep validating. The schema
+describes `sync` (`on_push`, `schedule`), `filter.allow_private`, and for
+targets `type`, `api_url`, `create`, `delete`, `prune_labels`, `settings`
+(`description`, `website`, `topics`, `default_branch`, `private`,
+`has_issues`, `has_wiki`, `has_pull_requests`, `labels`) and `overrides`
+(`repos`, `settings`). `type` is limited to `github`, `gitlab` and `forgejo`,
+and `settings.private` accepts only `true`.
 
 ## Full reference
 
