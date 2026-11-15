@@ -8,18 +8,20 @@
 #   the image writes into app.ini on start.
 # - ROOT_URL must be the address forgemirror uses, because Forgejo puts it
 #   into the clone_url of webhook payloads and forgemirror checks that against
-#   source.base_url.
+#   source.base_url. That is why the host port is chosen by the task and
+#   passed in (E2E_FORGEJO_PORT) instead of letting Docker pick one: the URL
+#   must be known before Forgejo starts.
+# - No fixed project name: the task gives every run its own, so runs sharing
+#   one daemon (CI jobs) neither collide nor tear down each other.
 # - The release is pinned by digest, so a re-tagged image cannot change what
 #   the test runs against. Update tag and digest together.
-name: forgemirror-e2e
-
 services:
   forgejo:
     image: codeberg.org/forgejo/forgejo:15.0.11@sha256:5d050e6d623e540923ff54b1c0c7acf41c3f9174a6c7ad515cc0c63d703fcd22
     environment:
       FORGEJO__database__DB_TYPE: sqlite3
       FORGEJO__security__INSTALL_LOCK: "true"
-      FORGEJO__server__ROOT_URL: http://127.0.0.1:${E2E_FORGEJO_PORT:-3300}/
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:${E2E_FORGEJO_PORT:?set by mise run test:e2e}/
       FORGEJO__server__OFFLINE_MODE: "true"
       FORGEJO__server__DISABLE_SSH: "true"
       FORGEJO__mailer__ENABLED: "false"
@@ -34,4 +36,4 @@ services:
       - host.docker.internal:host-gateway
     # Loopback only: the instance has a well-known admin and no TLS.
     ports:
-      - 127.0.0.1:${E2E_FORGEJO_PORT:-3300}:3000
+      - 127.0.0.1:${E2E_FORGEJO_PORT:?set by mise run test:e2e}:3000

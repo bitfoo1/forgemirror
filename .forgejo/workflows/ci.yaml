@@ -118,7 +118,6 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.cache/golangci-lint
           key: go-${{ hashFiles('go.sum', 'mise.toml') }}
           restore-keys: go-
 

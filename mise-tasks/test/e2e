@@ -12,12 +12,13 @@ if ! docker_err="$(docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null)"; 
   exit 1
 fi
 
-export E2E_FORGEJO_PORT="${E2E_FORGEJO_PORT:-3300}"
-forgejo_url="http://127.0.0.1:${E2E_FORGEJO_PORT}"
-compose=(docker-compose --file e2e/compose.yaml)
+# One project per run: CI jobs may share a daemon, and a fixed name would let
+# one run's teardown remove another run's Forgejo.
+project="forgemirror-e2e-$(date +%s)-$$"
+compose=(docker-compose --file e2e/compose.yaml --project-name "${project}")
 
 cleanup() {
-  status=$?
+  local status=$?
   if [ "${status}" -ne 0 ]; then
     echo "--- Forgejo logs ---" >&2
     "${compose[@]}" logs --no-color --tail 200 forgejo >&2 || true
@@ -26,10 +27,27 @@ cleanup() {
   exit "${status}"
 }
 trap cleanup EXIT
+# Turn signals into a normal exit so the EXIT trap tears the project down.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-# A leftover instance from an aborted run would hold the port and the data.
-"${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
-"${compose[@]}" up --detach --quiet-pull --wait
+# ROOT_URL has to contain the host port before Forgejo starts (see
+# e2e/compose.yaml), so Docker cannot pick it. A random port is tried and the
+# daemon arbitrates: if another run holds it, `up` fails on the bind and the
+# next port is tried.
+for attempt in $(seq 1 10); do
+  export E2E_FORGEJO_PORT="$((20000 + RANDOM % 30000))"
+  if up_out="$("${compose[@]}" up --detach --quiet-pull --wait 2>&1)"; then
+    break
+  fi
+  "${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
+  if [ "${attempt}" -eq 10 ] || ! grep -Eqi 'port is already allocated|address already in use' <<<"${up_out}"; then
+    echo "${up_out}" >&2
+    exit 1
+  fi
+  echo "port ${E2E_FORGEJO_PORT} is taken, trying another one"
+done
+forgejo_url="http://127.0.0.1:${E2E_FORGEJO_PORT}"
 
 echo "waiting for Forgejo at ${forgejo_url}"
 for _ in $(seq 1 120); do
