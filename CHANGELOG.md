@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-15
+
+### Features
+
+- **source:** Restrict clone URLs to source.base_url (ba557a3)
+
+### Bug fixes
+
+- **release:** Publish the CHANGELOG section as release notes (24042cb)
+
+### Documentation
+
+- **ci:** Drop the release/* branch protection advice (c04afb6)
+- **readme:** Turn the README into a proper landing page (bda99bf)
+
 ## [0.1.0] - 2026-11-15
 
 ### Features
@@ -26,6 +41,7 @@ All notable changes to this project are documented here. The format follows
 - **docs:** Reject local rsync targets when publishing the docs (2f552f9)
 - **release:** Keep git hooks out of CI and the release bot push (15a8ffa)
 - **docs:** Stop the template URL from splitting a home page card (1784dca)
+- **release:** Push protected release tags with RELEASE_TOKEN (d4c2ed1)
 
 ### Documentation
 
