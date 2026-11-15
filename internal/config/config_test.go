@@ -48,6 +48,13 @@ targets:
     token: x
 `
 
+const (
+	typedBase = "webhook:\n  secret: s\ntargets:\n  - name: t\n    url: \"https://github.com/a/{{ .Name }}.git\"\n    token: x\n"
+
+	sourceYAML  = "source:\n  base_url: https://git.example.org/\n  token: st\ntargets:\n"
+	typedTarget = "  - name: t\n    type: github\n    url: \"https://github.com/a/{{ .Name }}.git\"\n    token: x\n"
+)
+
 func writeFile(t *testing.T, name, content string) string {
 	t.Helper()
 
@@ -253,6 +260,91 @@ mirror:
 			},
 		},
 		{
+			name: "typed target fields",
+			yaml: typedBase + `    type: bitbucket
+`,
+			wantErr: []string{"targets[0].type: must be one of github, gitlab, forgejo"},
+		},
+		{
+			name: "type-only fields without type",
+			yaml: typedBase + `    create: true
+    delete: true
+    prune_labels: true
+    api_url: https://x.example/api
+    settings: {has_issues: true}
+    overrides:
+      - repos: "a/b"
+`,
+			wantErr: []string{
+				"targets[0].create: requires type", "targets[0].delete: requires type",
+				"targets[0].prune_labels: requires type", "targets[0].api_url: requires type",
+				"targets[0].settings: requires type", "targets[0].overrides: requires type",
+			},
+		},
+		{
+			name: "private false rejected",
+			yaml: typedBase + `    type: github
+    settings: {private: false}
+    overrides:
+      - repos: "a/b"
+        settings: {private: false}
+`,
+			wantErr: []string{
+				"targets[0].settings: private: only true is allowed",
+				"targets[0].overrides[0].settings: private: only true is allowed",
+			},
+		},
+		{
+			name: "override repos invalid or missing",
+			yaml: typedBase + `    type: github
+    overrides:
+      - repos: "("
+      - settings: {has_issues: true}
+`,
+			wantErr: []string{"targets[0].overrides[0].repos: ", "targets[0].overrides[1].repos: required"},
+		},
+		{
+			name: "typed target needs source",
+			yaml: "webhook:\n  secret: s\ntargets:\n  - name: t\n    url: \"https://github.com/a/{{ .Name }}.git\"\n    token: x\n    type: github\n",
+			wantErr: []string{
+				"source.base_url: required when a target has a type or sync.schedule is set",
+				"source.token: required when a target has a type or sync.schedule is set",
+			},
+		},
+		{
+			name: "schedule needs source",
+			yaml: minimalYAML + "sync:\n  schedule: 1h\n",
+			wantErr: []string{
+				"source.base_url: required when a target has a type or sync.schedule is set",
+				"source.token: required when a target has a type or sync.schedule is set",
+			},
+		},
+		{
+			name:    "no trigger",
+			yaml:    minimalYAML + "sync:\n  on_push: false\n",
+			wantErr: []string{"sync: on_push is false and no schedule is set"},
+		},
+		{
+			name:    "negative schedule",
+			yaml:    minimalYAML + "sync:\n  schedule: -1h\n",
+			wantErr: []string{"sync.schedule: must not be negative"},
+		},
+		{
+			name:    "secret required for delete",
+			yaml:    "sync:\n  on_push: false\n  schedule: 1h\n" + sourceYAML + typedTarget + "    delete: true\n",
+			wantErr: []string{"webhook.secret: required"},
+		},
+		{
+			name:    "secret required for on_push",
+			yaml:    sourceYAML + typedTarget,
+			wantErr: []string{"webhook.secret: required"},
+		},
+		{
+			name:    "invalid allow_private",
+			yaml:    minimalYAML + "filter:\n  allow_private: \"(\"\n",
+			wantErr: []string{"filter.allow_private"},
+		},
+		{
 			name: "target problems",
 			yaml: `
 webhook:
@@ -451,5 +543,55 @@ func TestDefaultFiles(t *testing.T) {
 	files := config.DefaultFiles()
 	if len(files) == 0 || files[0] != config.FileName {
 		t.Errorf("DefaultFiles() = %v, want %q first", files, config.FileName)
+	}
+}
+
+func TestSyncDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(config.Options{File: writeFile(t, "c.yaml", minimalYAML), Environ: environ()})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Sync.OnPush || cfg.Sync.Schedule != 0 {
+		t.Errorf("Sync = %+v, want on_push true and no schedule", cfg.Sync)
+	}
+}
+
+func TestWebhookSecretOptionalWhenScheduleOnly(t *testing.T) {
+	t.Parallel()
+
+	yaml := "sync:\n  on_push: false\n  schedule: 1h\n" + sourceYAML + typedTarget
+	cfg, err := config.Load(config.Options{File: writeFile(t, "c.yaml", yaml), Environ: environ()})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Sync.Schedule != time.Hour {
+		t.Errorf("Sync.Schedule = %v, want 1h", cfg.Sync.Schedule)
+	}
+}
+
+func TestLoadTypedTargetFromYAMLAndEnv(t *testing.T) {
+	t.Parallel()
+
+	yaml := "webhook:\n  secret: s\n" + sourceYAML + typedTarget +
+		"    create: true\n    prune_labels: true\n    settings:\n      topics: [A, b]\n      labels: false\n"
+	cfg, err := config.Load(config.Options{
+		File:    writeFile(t, "c.yaml", yaml),
+		Environ: environ("FORGEMIRROR_SYNC__SCHEDULE=30m", "FORGEMIRROR_SYNC__ON_PUSH=false"),
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	target := cfg.Targets[0]
+	if !target.Create || !target.PruneLabels || target.Delete {
+		t.Errorf("flags = create %v prune %v delete %v", target.Create, target.PruneLabels, target.Delete)
+	}
+	if target.Settings.Topics == nil || len(*target.Settings.Topics) != 2 ||
+		target.Settings.Labels == nil || *target.Settings.Labels {
+		t.Errorf("Settings = %+v, want topics [A b] and labels false", target.Settings)
+	}
+	if cfg.Sync.OnPush || cfg.Sync.Schedule != 30*time.Minute {
+		t.Errorf("Sync = %+v, want env values", cfg.Sync)
 	}
 }

@@ -36,6 +36,16 @@ source:
   username: oauth2
   # token_file: /run/secrets/forgemirror/source-token
 
+# What starts a mirror run. Scheduled runs and typed targets (see targets)
+# read from the Forgejo API, so they need source.base_url and a source token.
+sync:
+  # Forgejo push webhooks start runs. false requires a schedule; the webhook
+  # secret is then only needed if a target sets delete.
+  on_push: true
+  # Interval between runs over all repositories the source token can see;
+  # 0s disables scheduled runs. e.g. 1h
+  schedule: 0s
+
 mirror:
   # Upper bound for one clone + push to one target.
   timeout: 10m
@@ -55,6 +65,9 @@ filter:
   # Only pushes to these branches trigger a mirror; tag pushes always do.
   include_branches: [] # e.g. ["main", "release/.*"]
   exclude_private: false
+  # Private repositories matching this pattern pass exclude_private. They are
+  # created and kept private on every target.
+  allow_private: "" # e.g. "acme/notes"
   exclude_forks: false
   # Opt-in: only repositories with this Forgejo topic are mirrored. Not an
   # access control: every repository owner can set topics.
@@ -72,3 +85,29 @@ targets:
   - name: codeberg
     url: "https://codeberg.org/{{ .Owner }}/{{ .Name }}.git"
     token_file: /run/secrets/forgemirror/codeberg-token
+    # Optional forge API integration. Without `type` the target is only a git
+    # push destination (the repository must already exist) and none of the
+    # keys below may be set.
+    # type: github # github, gitlab, forgejo
+    # api_url: "" # derived from type and the url host when empty
+    # create: false # create the repository when it is missing
+    # delete: false # delete it when the source repository was deleted
+    # prune_labels: false # delete labels that do not exist on the source
+    # Target-wide settings; they win over the values of the Forgejo repository.
+    # All keys are optional; `private` accepts only true.
+    # settings:
+    #   description: ""
+    #   website: ""
+    #   topics: []
+    #   default_branch: main
+    #   private: true
+    #   has_issues: false
+    #   has_wiki: false
+    #   has_pull_requests: true
+    #   labels: true # false disables label sync
+    # Matched against "owner/name" (whole value); applied in order on top of
+    # `settings`, later entries win.
+    # overrides:
+    #   - repos: "acme/app"
+    #     settings:
+    #       has_issues: true

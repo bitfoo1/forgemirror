@@ -32,6 +32,9 @@ type Rules struct {
 	IncludeBranches []string `koanf:"include_branches"`
 	// ExcludePrivate skips repositories that are private on Forgejo.
 	ExcludePrivate bool `koanf:"exclude_private"`
+	// AllowPrivate: private repositories whose "owner/name" matches pass
+	// ExcludePrivate. Private repositories stay private on every target.
+	AllowPrivate string `koanf:"allow_private"`
 	// ExcludeForks skips forks.
 	ExcludeForks bool `koanf:"exclude_forks"`
 	// RequireTopic, if set, mirrors only repositories carrying this topic
@@ -41,10 +44,11 @@ type Rules struct {
 
 // Filter is a compiled, immutable set of [Rules], safe for concurrent use.
 type Filter struct {
-	rules    Rules
-	include  *regexp.Regexp
-	exclude  *regexp.Regexp
-	branches []*regexp.Regexp
+	rules        Rules
+	include      *regexp.Regexp
+	exclude      *regexp.Regexp
+	allowPrivate *regexp.Regexp
+	branches     []*regexp.Regexp
 }
 
 // Decision explains whether an event is mirrored and, if not, why.
@@ -75,6 +79,7 @@ func New(rules Rules) (*Filter, error) {
 
 	f.include = compile("include_repos", rules.IncludeRepos)
 	f.exclude = compile("exclude_repos", rules.ExcludeRepos)
+	f.allowPrivate = compile("allow_private", rules.AllowPrivate)
 	for i, pattern := range rules.IncludeBranches {
 		if pattern == "" {
 			errs = append(errs, fmt.Errorf("filter.include_branches[%d]: empty pattern", i))
@@ -108,7 +113,8 @@ func (f *Filter) Decide(r repo.Repository, ref string) Decision {
 		return reject("branch not in filter.include_branches")
 	case f.rules.RequireTopic != "" && !slices.Contains(r.Topics, f.rules.RequireTopic):
 		return reject(fmt.Sprintf("topic %q missing (filter.require_topic)", f.rules.RequireTopic))
-	case f.rules.ExcludePrivate && r.Private:
+	case f.rules.ExcludePrivate && r.Private &&
+		(f.allowPrivate == nil || !f.allowPrivate.MatchString(r.FullName)):
 		return reject("private repository (filter.exclude_private)")
 	case f.rules.ExcludeForks && r.Fork:
 		return reject("fork (filter.exclude_forks)")

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,6 +57,7 @@ type Config struct {
 	Log     Log          `koanf:"log"`
 	Webhook Webhook      `koanf:"webhook"`
 	Source  Source       `koanf:"source"`
+	Sync    Sync         `koanf:"sync"`
 	Mirror  Mirror       `koanf:"mirror"`
 	Filter  filter.Rules `koanf:"filter"`
 	Targets []Target     `koanf:"targets"`
@@ -101,6 +103,19 @@ type Source struct {
 	Username  string `koanf:"username"`
 	Token     Secret `koanf:"token"`
 	TokenFile string `koanf:"token_file"`
+}
+
+// Sync selects what starts a mirror run.
+type Sync struct {
+	// OnPush lets Forgejo push webhooks start runs.
+	OnPush bool `koanf:"on_push"`
+	// Schedule is the interval of scheduled runs; 0 disables them.
+	Schedule time.Duration `koanf:"schedule"`
+}
+
+// Typed reports whether any target talks to a forge API.
+func (c *Config) Typed() bool {
+	return slices.ContainsFunc(c.Targets, func(t Target) bool { return t.Type != "" })
 }
 
 // Mirror configures how git runs.
@@ -209,6 +224,7 @@ func defaults() map[string]any {
 		"log.format":                 LogFormatJSON,
 		"webhook.max_body_bytes":     defaultMaxBodyBytes,
 		"source.username":            defaultUsername,
+		"sync.on_push":               true,
 		"mirror.timeout":             defaultMirrorTimeout,
 		"mirror.max_concurrent":      defaultConcurrency,
 		"mirror.git_binary":          "git",

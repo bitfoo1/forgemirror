@@ -139,6 +139,11 @@ func checkSchemaType(t *testing.T, doc *schemaDoc, path string, n *schemaNode, t
 	}
 	n = doc.resolve(t, path, n)
 
+	// Pointer fields mean "unset" in the config; the schema describes the value.
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+
 	switch typ {
 	case reflect.TypeFor[time.Duration]():
 		if n != doc.Defs["duration"] {
@@ -361,6 +366,22 @@ func TestSchemaRejectsInvalid(t *testing.T) {
 		{
 			name: "target url with credentials",
 			yaml: "targets:\n  - {name: t, url: \"https://u:p@example.com/x.git\", token: x}",
+		},
+		{
+			name: "settings private false",
+			yaml: "targets:\n  - {name: t, type: github, url: \"https://github.com/a/x.git\", token: x, settings: {private: false}}",
+		},
+		{
+			name: "unknown target type",
+			yaml: "targets:\n  - {name: t, type: bitbucket, url: \"https://example.com/x.git\", token: x}",
+		},
+		{
+			name: "override without repos",
+			yaml: "targets:\n  - {name: t, type: github, url: \"https://github.com/a/x.git\", token: x, overrides: [{settings: {has_wiki: true}}]}",
+		},
+		{
+			name: "unknown settings key",
+			yaml: "targets:\n  - {name: t, type: github, url: \"https://github.com/a/x.git\", token: x, settings: {has_issue: true}}",
 		},
 		{name: "empty branch pattern", yaml: "filter: {include_branches: [\"\"]}" + target},
 	}

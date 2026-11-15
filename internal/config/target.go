@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"text/template"
 
+	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
 
@@ -26,7 +28,61 @@ type Target struct {
 	Token     Secret `koanf:"token"`
 	TokenFile string `koanf:"token_file"`
 
+	// Type selects the forge API (github, gitlab, forgejo); empty means the
+	// target is only a git push destination, as before.
+	Type string `koanf:"type"`
+	// APIURL overrides the API base derived from Type and the URL host.
+	APIURL string `koanf:"api_url"`
+	// Create makes a missing target repository.
+	Create bool `koanf:"create"`
+	// Delete removes the target repository when the source was deleted.
+	Delete bool `koanf:"delete"`
+	// PruneLabels deletes labels that do not exist on the source.
+	PruneLabels bool `koanf:"prune_labels"`
+	// Settings are target-wide defaults that beat the source values.
+	Settings forge.Settings `koanf:"settings"`
+	// Overrides refine Settings for matching repositories, in order.
+	Overrides []Override `koanf:"overrides"`
+
 	urlTemplate *template.Template
+}
+
+// Override applies Settings to the repositories matched by Repos.
+type Override struct {
+	// Repos is matched against the whole "owner/name", like the filter rules.
+	Repos    string         `koanf:"repos"`
+	Settings forge.Settings `koanf:"settings"`
+
+	re *regexp.Regexp
+}
+
+// Address derives the API address of r on this target from the rendered URL.
+func (t *Target) Address(r repo.Repository) (forge.Address, error) {
+	raw, err := t.RemoteURL(r)
+	if err != nil {
+		return forge.Address{}, err
+	}
+
+	addr, err := forge.ParseAddress(t.Type, t.APIURL, raw)
+	if err != nil {
+		return forge.Address{}, fmt.Errorf("target %q: %w", t.Name, err)
+	}
+
+	return addr, nil
+}
+
+// Layers returns the settings layers for the repository fullName in
+// precedence order, lowest first: the target defaults, then every matching
+// override.
+func (t *Target) Layers(fullName string) []forge.Settings {
+	layers := []forge.Settings{t.Settings}
+	for _, o := range t.Overrides {
+		if o.re != nil && o.re.MatchString(fullName) {
+			layers = append(layers, o.Settings)
+		}
+	}
+
+	return layers
 }
 
 // RemoteURL renders the push URL for r, without credentials.
@@ -82,4 +138,27 @@ func checkRemoteURL(raw string) error {
 	}
 
 	return nil
+}
+
+// compileOverrides validates the overrides and compiles their patterns. The
+// anchoring matches the filter rules so both read the same way.
+func (t *Target) compileOverrides() []error {
+	var errs []error
+	for j := range t.Overrides {
+		o := &t.Overrides[j]
+		prefix := fmt.Sprintf("overrides[%d]", j)
+
+		if o.Repos == "" {
+			errs = append(errs, fmt.Errorf("%s.repos: %w", prefix, errRequired))
+		} else if re, err := regexp.Compile(`^(?:` + o.Repos + `)$`); err != nil {
+			errs = append(errs, fmt.Errorf("%s.repos: %w", prefix, err))
+		} else {
+			o.re = re
+		}
+		if err := o.Settings.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("%s.settings: %w", prefix, err))
+		}
+	}
+
+	return errs
 }

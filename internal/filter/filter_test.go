@@ -178,3 +178,45 @@ func TestNewInvalidPatterns(t *testing.T) {
 		t.Errorf("Validate() of empty rules = %v, want nil", emptyErr)
 	}
 }
+
+func TestAllowPrivate(t *testing.T) {
+	t.Parallel()
+
+	f, err := filter.New(filter.Rules{ExcludePrivate: true, AllowPrivate: "acme/notes"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		fullName   string
+		private    bool
+		wantMirror bool
+		wantReason string
+	}{
+		{name: "allowed private passes", fullName: "acme/notes", private: true, wantMirror: true},
+		{name: "other private rejected", fullName: "acme/other", private: true, wantReason: "filter.exclude_private"},
+		{name: "pattern is anchored", fullName: "acme/notes-2", private: true, wantReason: "filter.exclude_private"},
+		{name: "public passes", fullName: "acme/other", wantMirror: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := repo.Repository{Owner: "acme", FullName: tc.fullName, Private: tc.private}
+			got := f.Decide(r, "")
+			if got.Mirror != tc.wantMirror || !strings.Contains(got.Reason, tc.wantReason) {
+				t.Errorf("Decide() = %+v, want mirror=%v reason containing %q", got, tc.wantMirror, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestAllowPrivateInvalidPattern(t *testing.T) {
+	t.Parallel()
+
+	_, err := filter.New(filter.Rules{AllowPrivate: "("})
+	if err == nil || !strings.Contains(err.Error(), "filter.allow_private") {
+		t.Errorf("New() error = %v, want filter.allow_private error", err)
+	}
+}

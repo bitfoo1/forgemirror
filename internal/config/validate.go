@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
+
+	"go.bitfoo.de/forgemirror/internal/forge"
 )
 
 // Validate checks the configuration and compiles derived values such as the
@@ -29,7 +32,9 @@ func (c *Config) Validate() error {
 		add("log.format", fmt.Errorf("must be %q or %q, got %q", LogFormatJSON, LogFormatText, c.Log.Format))
 	}
 
-	if c.Webhook.Secret == "" {
+	// Pushes and deletions both arrive as webhooks; without either, the
+	// endpoint is not needed and a secret would only be ceremony.
+	if c.Webhook.Secret == "" && (c.Sync.OnPush || c.anyDelete()) {
 		add("webhook.secret", errRequired)
 	}
 	if c.Webhook.MaxBodyBytes <= 0 {
@@ -39,6 +44,7 @@ func (c *Config) Validate() error {
 	if err := c.Source.validate(); err != nil {
 		add("source.base_url", err)
 	}
+	errs = append(errs, c.validateSync()...)
 
 	if c.Mirror.Timeout <= 0 {
 		add("mirror.timeout", errMustBePositive)
@@ -63,6 +69,37 @@ var (
 	errRequired       = errors.New("required")
 	errMustBePositive = errors.New("must be greater than zero")
 )
+
+func (c *Config) validateSync() []error {
+	var errs []error
+	add := func(key string, err error) {
+		errs = append(errs, fmt.Errorf("%s: %w", key, err))
+	}
+
+	// The API clients and the schedule read from the Forgejo API.
+	if c.Typed() || c.Sync.Schedule > 0 {
+		const need = "required when a target has a type or sync.schedule is set"
+		if c.Source.BaseURL == "" {
+			add("source.base_url", errors.New(need))
+		}
+		if c.Source.Token == "" {
+			add("source.token", errors.New(need))
+		}
+	}
+
+	if c.Sync.Schedule < 0 {
+		add("sync.schedule", errors.New("must not be negative"))
+	}
+	if !c.Sync.OnPush && c.Sync.Schedule <= 0 {
+		add("sync", errors.New("on_push is false and no schedule is set"))
+	}
+
+	return errs
+}
+
+func (c *Config) anyDelete() bool {
+	return slices.ContainsFunc(c.Targets, func(t Target) bool { return t.Delete })
+}
 
 func (c *Config) validateTargets() []error {
 	if len(c.Targets) == 0 {
@@ -95,6 +132,47 @@ func (c *Config) validateTargets() []error {
 		if t.Token == "" {
 			add("token", errors.New("required (or token_file)"))
 		}
+
+		errs = append(errs, t.validateTyped(i)...)
+	}
+
+	return errs
+}
+
+func (t *Target) validateTyped(i int) []error {
+	var errs []error
+	add := func(field string, err error) {
+		errs = append(errs, fmt.Errorf("targets[%d].%s: %w", i, field, err))
+	}
+
+	switch t.Type {
+	case forge.TypeGitHub, forge.TypeGitLab, forge.TypeForgejo:
+	case "":
+		errNeedsType := errors.New("requires type")
+		for _, f := range []struct {
+			field string
+			set   bool
+		}{
+			{"create", t.Create},
+			{"delete", t.Delete},
+			{"prune_labels", t.PruneLabels},
+			{"api_url", t.APIURL != ""},
+			{"settings", !t.Settings.IsZero()},
+			{"overrides", len(t.Overrides) > 0},
+		} {
+			if f.set {
+				add(f.field, errNeedsType)
+			}
+		}
+	default:
+		add("type", fmt.Errorf("must be one of %s, %s, %s", forge.TypeGitHub, forge.TypeGitLab, forge.TypeForgejo))
+	}
+
+	if err := t.Settings.Validate(); err != nil {
+		add("settings", err)
+	}
+	for _, err := range t.compileOverrides() {
+		errs = append(errs, fmt.Errorf("targets[%d].%w", i, err))
 	}
 
 	return errs

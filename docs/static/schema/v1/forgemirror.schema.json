@@ -106,6 +106,24 @@
         }
       }
     },
+    "sync": {
+      "description": "What starts a mirror run: push webhooks, a schedule, or both. A schedule needs source.base_url and a source token.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on_push": {
+          "description": "Forgejo push webhooks start runs. Setting this to false requires a schedule. webhook.secret is only required when this is true or a target sets delete.",
+          "type": "boolean",
+          "default": true
+        },
+        "schedule": {
+          "description": "Interval between scheduled runs over all repositories visible to the source token; 0s disables scheduled runs. The first run starts right after startup.",
+          "$ref": "#/$defs/duration",
+          "default": "0s",
+          "examples": ["1h", "24h"]
+        }
+      }
+    },
     "mirror": {
       "description": "How git runs.",
       "type": "object",
@@ -164,6 +182,12 @@
           "type": "boolean",
           "default": false
         },
+        "allow_private": {
+          "description": "Private repositories whose \"owner/name\" matches this pattern pass exclude_private. They are created and kept private on every target.",
+          "type": "string",
+          "default": "",
+          "examples": ["acme/notes"]
+        },
         "exclude_forks": {
           "description": "Skip forks.",
           "type": "boolean",
@@ -178,7 +202,7 @@
       }
     },
     "targets": {
-      "description": "Forges that receive the mirror. Target repositories must already exist.",
+      "description": "Forges that receive the mirror. Without a type, target repositories must already exist.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/target" }
@@ -223,6 +247,103 @@
           "type": "string",
           "minLength": 1,
           "examples": ["/run/secrets/forgemirror/github-token"]
+        },
+        "type": {
+          "description": "Forge API to use for this target. Without a type the target is a plain git push destination and the keys below are not allowed.",
+          "type": "string",
+          "enum": ["github", "gitlab", "forgejo"]
+        },
+        "api_url": {
+          "description": "API base URL; derived from type and the host of url when empty (github.com uses https://api.github.com, other hosts <host>/api/v3 for GitHub, /api/v4 for GitLab, /api/v1 for Forgejo). Requires type.",
+          "type": "string",
+          "pattern": "^https?://[^/@]+(/.*)?$",
+          "examples": ["https://ghe.example.org/api/v3"]
+        },
+        "create": {
+          "description": "Create the target repository when it is missing. Requires type.",
+          "type": "boolean",
+          "default": false
+        },
+        "delete": {
+          "description": "Delete the target repository when Forgejo reports the source repository as deleted. Requires type and a webhook secret.",
+          "type": "boolean",
+          "default": false
+        },
+        "prune_labels": {
+          "description": "Delete labels on the target that do not exist on the source. Deleting a label strips it from every issue and pull request, so this is off by default. Requires type.",
+          "type": "boolean",
+          "default": false
+        },
+        "settings": {
+          "description": "Target-wide settings that win over the values of the Forgejo repository. Requires type.",
+          "$ref": "#/$defs/settings"
+        },
+        "overrides": {
+          "description": "Settings for matching repositories, applied in order on top of settings; later entries win. Requires type.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/override" }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "description": "Repository description.",
+          "type": "string"
+        },
+        "website": {
+          "description": "Repository website; ignored for GitLab, which has no such field.",
+          "type": "string"
+        },
+        "topics": {
+          "description": "Repository topics; always lower-cased.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "default_branch": {
+          "description": "Default branch; applied after the first push, because the branch must exist.",
+          "type": "string",
+          "minLength": 1
+        },
+        "private": {
+          "description": "Force the repository to be private on this target. Only true is allowed: a public source can be hidden, a private source can never be exposed.",
+          "type": "boolean",
+          "const": true
+        },
+        "has_issues": {
+          "description": "Enable the issue tracker.",
+          "type": "boolean"
+        },
+        "has_wiki": {
+          "description": "Enable the wiki.",
+          "type": "boolean"
+        },
+        "has_pull_requests": {
+          "description": "Enable pull or merge requests; ignored for GitHub, which cannot disable them.",
+          "type": "boolean"
+        },
+        "labels": {
+          "description": "Synchronise labels; false disables label sync for this scope. Defaults to true.",
+          "type": "boolean"
+        }
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repos", "settings"],
+      "properties": {
+        "repos": {
+          "description": "Go regular expression (RE2) that must match the whole \"owner/name\" of the Forgejo repository.",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["acme/app", "acme/homelab-.*"]
+        },
+        "settings": {
+          "description": "Settings applied to matching repositories.",
+          "$ref": "#/$defs/settings"
         }
       }
     }
