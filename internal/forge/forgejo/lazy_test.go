@@ -78,6 +78,7 @@ func TestLazyConnectsOnFirstUseAndRetries(t *testing.T) {
 			f.down.Store(true)
 
 			l := forgejo.NewLazy(httpclient.New(5*time.Second), f.srv.URL, config.Secret(testToken))
+			forgejo.SetFailureBackoff(l, 0)
 
 			err := tc.call(t.Context(), l)
 			if err == nil {
@@ -167,6 +168,7 @@ func TestLazyEveryMethodConnects(t *testing.T) {
 			f := newFlakyForgejo(t)
 			f.down.Store(true)
 			l := forgejo.NewLazy(httpclient.New(5*time.Second), f.srv.URL, config.Secret(testToken))
+			forgejo.SetFailureBackoff(l, 0)
 
 			if err := tc.call(t.Context(), l); err == nil || !strings.Contains(err.Error(), "forgejo connect") {
 				t.Errorf("error while down = %v, want connect error", err)
@@ -176,6 +178,123 @@ func TestLazyEveryMethodConnects(t *testing.T) {
 			_ = tc.call(t.Context(), l) // the fake has no route for most calls; only the connection matters
 			if n := f.versionProbes.Load(); n != 1 {
 				t.Errorf("version probes after recovery = %d, want 1", n)
+			}
+		})
+	}
+}
+
+// TestLazyWaiterRespectsContext: while one caller's connection probe hangs,
+// a second caller must give up when its own context ends instead of queueing
+// behind the probe for the whole HTTP timeout.
+func TestLazyWaiterRespectsContext(t *testing.T) {
+	t.Parallel()
+
+	probing := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(probing)
+		<-release
+		http.Error(w, `{"message":"unavailable"}`, http.StatusServiceUnavailable)
+	}))
+	// Cleanups run last-in first-out: the handler is released before Close
+	// waits for it.
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+
+	l := forgejo.NewLazy(httpclient.New(time.Minute), srv.URL, config.Secret(testToken))
+
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		_, _ = l.Get(t.Context(), addr())
+	}()
+	t.Cleanup(func() { <-firstDone })
+	<-probing
+
+	tests := []struct {
+		name string
+		ctx  func(t *testing.T) context.Context
+		want error
+	}{
+		{name: "deadline", want: context.DeadlineExceeded, ctx: func(t *testing.T) context.Context {
+			t.Helper()
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			t.Cleanup(cancel)
+
+			return ctx
+		}},
+		{name: "cancelled", want: context.Canceled, ctx: func(t *testing.T) context.Context {
+			t.Helper()
+			ctx, cancel := context.WithCancel(t.Context())
+			time.AfterFunc(50*time.Millisecond, cancel)
+			t.Cleanup(cancel)
+
+			return ctx
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := l.Source().Repos(tc.ctx(t))
+				done <- err
+			}()
+
+			select {
+			case err := <-done:
+				if !errors.Is(err, tc.want) {
+					t.Errorf("waiting caller error = %v, want %v", err, tc.want)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("waiting caller ignored its context")
+			}
+		})
+	}
+}
+
+// TestLazyFailureBackoff: callers right after a failed connection get the
+// cached error instead of probing again; after the window a new probe runs.
+func TestLazyFailureBackoff(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		advance    time.Duration
+		wantProbes int32
+	}{
+		{name: "inside window", advance: 9 * time.Second, wantProbes: 1},
+		{name: "after window", advance: 10 * time.Second, wantProbes: 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var probes atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				probes.Add(1)
+				http.Error(w, `{"message":"unavailable"}`, http.StatusServiceUnavailable)
+			}))
+			t.Cleanup(srv.Close)
+
+			now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+			l := forgejo.NewLazy(httpclient.New(5*time.Second), srv.URL, config.Secret(testToken))
+			forgejo.SetFailureBackoff(l, 10*time.Second)
+			forgejo.SetClock(l, func() time.Time { return now })
+
+			_, firstErr := l.Get(t.Context(), addr())
+			if firstErr == nil {
+				t.Fatal("first call: error = nil")
+			}
+			now = now.Add(tc.advance)
+			_, secondErr := l.Get(t.Context(), addr())
+			if secondErr == nil || !strings.Contains(secondErr.Error(), "forgejo connect") {
+				t.Errorf("second call error = %v, want connect error", secondErr)
+			}
+
+			if n := probes.Load(); n != tc.wantProbes {
+				t.Errorf("probe requests = %d, want %d", n, tc.wantProbes)
 			}
 		})
 	}

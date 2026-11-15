@@ -2,49 +2,86 @@ package forgejo
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"sync"
+	"time"
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
 
+// DefaultFailureBackoff is how long a failed connection attempt is reused
+// before the next caller probes Forgejo again.
+const DefaultFailureBackoff = 10 * time.Second
+
 // Lazy is a [Client] that connects on first use. New probes the server
 // version, so connecting at startup would make the service crash-loop
 // whenever Forgejo is briefly unreachable; Lazy defers that to the first run
-// and retries on every later use until a connection succeeds.
+// and retries on later uses until a connection succeeds.
 type Lazy struct {
 	httpClient *http.Client
 	baseURL    string
 	token      config.Secret
 
-	// mu serialises connection attempts so parallel target steps do not
-	// probe the server once each; client is cached only after success.
-	mu     sync.Mutex
+	// lock is a one-slot channel instead of a sync.Mutex so that callers
+	// waiting behind a hanging probe (up to the HTTP timeout) can give up
+	// when their own context ends. It serialises connection attempts so
+	// parallel target steps do not probe the server once each, and guards
+	// the fields below.
+	lock chan struct{}
+	// client is cached only after success.
 	client *Client
+	// lastErr is the most recent connection failure, reused within
+	// failureBackoff of failedAt: a scheduled sweep dispatches every
+	// repository at once, and without it each queued caller would run its
+	// own probe against a hanging Forgejo, one HTTP timeout after another.
+	lastErr        error
+	failedAt       time.Time
+	failureBackoff time.Duration
+	now            func() time.Time
 }
 
 var _ forge.Target = (*Lazy)(nil)
 
 // NewLazy returns a [Lazy] client; it makes no request.
 func NewLazy(httpClient *http.Client, baseURL string, token config.Secret) *Lazy {
-	return &Lazy{httpClient: httpClient, baseURL: baseURL, token: token}
+	return &Lazy{
+		httpClient:     httpClient,
+		baseURL:        baseURL,
+		token:          token,
+		lock:           make(chan struct{}, 1),
+		failureBackoff: DefaultFailureBackoff,
+		now:            time.Now,
+	}
 }
 
 func (l *Lazy) connect(ctx context.Context) (*Client, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	select {
+	case l.lock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("forgejo connect: waiting for connection: %w", ctx.Err())
+	}
+	defer func() { <-l.lock }()
 
 	if l.client != nil {
 		return l.client, nil
 	}
+	if l.lastErr != nil && l.now().Sub(l.failedAt) < l.failureBackoff {
+		return nil, l.lastErr
+	}
 
 	c, err := New(ctx, l.httpClient, l.baseURL, l.token)
 	if err != nil {
+		// A probe aborted by this caller's own context says nothing about
+		// Forgejo; caching it would fail unrelated callers.
+		if ctx.Err() == nil {
+			l.lastErr, l.failedAt = err, l.now()
+		}
+
 		return nil, err
 	}
-	l.client = c
+	l.client, l.lastErr = c, nil
 
 	return c, nil
 }

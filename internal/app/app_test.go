@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go.bitfoo.de/forgemirror/internal/app"
+	"go.bitfoo.de/forgemirror/internal/forge/forgejo"
 )
 
 const waitTimeout = 10 * time.Second
@@ -533,8 +534,8 @@ func TestEndToEndTypedTarget(t *testing.T) {
 }
 
 // TestStartsWhileForgejoUnreachable: startup must not depend on Forgejo
-// (Kubernetes would crash-loop); the first run fails cleanly and a later run
-// connects once Forgejo is back.
+// (Kubernetes would crash-loop); the first run fails cleanly and a run after
+// the failure backoff connects once Forgejo is back.
 func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	t.Parallel()
 
@@ -550,6 +551,9 @@ func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	assertMetrics(ctx, t, svc.addr, `forge_mirror_operations_total{status="failure",target="gh"} 1`)
 
 	f.down.Store(false)
+	// Within the backoff window the cached connect error is returned without
+	// a new probe, so the recovery is only visible after it.
+	time.Sleep(forgejo.DefaultFailureBackoff)
 	postPush(ctx, t, svc.addr, pushBody(f))
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
 	assertMetrics(ctx, t, svc.addr,
