@@ -99,7 +99,10 @@ func runOnce(ctx context.Context, opts Options) {
 		if !opts.Filter.Matches(r) {
 			continue
 		}
-		opts.Dispatcher.Dispatch(ctx, webhook.Event{
+		// The dispatcher derives the run's context from this one; it must
+		// outlive the scheduler so Shutdown drains running mirrors instead
+		// of the scheduler's cancellation killing them, as for webhooks.
+		opts.Dispatcher.Dispatch(context.WithoutCancel(ctx), webhook.Event{
 			Repository: r,
 			Kind:       webhook.EventScheduled,
 			Delivery:   delivery,

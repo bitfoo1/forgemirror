@@ -50,12 +50,21 @@ func (f rejectFilter) Matches(r repo.Repository) bool { return r.Name != f.name 
 type recordingDispatcher struct {
 	mu     sync.Mutex
 	events []webhook.Event
+	ctxs   []context.Context
 }
 
-func (d *recordingDispatcher) Dispatch(_ context.Context, e webhook.Event) {
+func (d *recordingDispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.events = append(d.events, e)
+	d.ctxs = append(d.ctxs, ctx)
+}
+
+func (d *recordingDispatcher) contexts() []context.Context {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return append([]context.Context(nil), d.ctxs...)
 }
 
 func (d *recordingDispatcher) snapshot() []webhook.Event {
@@ -322,5 +331,33 @@ func TestRunCancelledListingNotReported(t *testing.T) {
 	}
 	if len(observer) != 0 {
 		t.Errorf("observer saw %+v, want no report for a cancelled run", <-observer)
+	}
+}
+
+// TestRunDispatchContextSurvivesCancel: the dispatcher derives each run's
+// context from the event context, so cancelling the scheduler at shutdown
+// must not cancel dispatched mirrors; the dispatcher drains them instead.
+func TestRunDispatchContextSurvivesCancel(t *testing.T) {
+	t.Parallel()
+
+	src := &fakeSource{results: []reposResult{{repos: repos("a", "b")}}}
+	h := start(t, src, rejectFilter{})
+	h.waitRun(t)
+
+	h.cancel()
+	select {
+	case <-h.done:
+	case <-time.After(waitTimeout):
+		t.Fatal("Run did not return after cancel")
+	}
+
+	ctxs := h.dispatcher.contexts()
+	if len(ctxs) != 2 {
+		t.Fatalf("dispatched %d events, want 2", len(ctxs))
+	}
+	for i, ctx := range ctxs {
+		if err := ctx.Err(); err != nil {
+			t.Errorf("dispatch context %d after scheduler cancel: %v, want live", i, err)
+		}
 	}
 }
