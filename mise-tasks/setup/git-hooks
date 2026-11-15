@@ -3,7 +3,10 @@
 #MISE quiet=true
 set -euo pipefail
 
-# CI checkouts and tarball exports have no reason to run local hooks.
+# CI checkouts and tarball exports have no reason to run local hooks: CI runs
+# the same gate as its own step, and a hook firing on the release bot's push
+# would rerun it in a container without the race detector's cgo toolchain.
+[[ "${CI:-}" == "true" ]] && exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
 if [[ "$(git config --local core.hooksPath || true)" != ".githooks" ]]; then
