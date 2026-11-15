@@ -115,10 +115,10 @@ Rule for `main`:
 - Optional: require one approval. The release bot's PR then needs your review,
   which is the point of having a release PR.
 
-Rule for `release/*`:
-
-- Allow force pushes only for the account that owns `RELEASE_TOKEN`; the bot
-  regenerates the branch on every run.
+Do not protect `release/*`. The bot regenerates `release/next` and
+force-pushes it on every run, and Forgejo rejects force pushes to protected
+branches for everyone, with no allow-list. The branch only feeds the release
+PR; `main`'s protection still applies when that PR is merged.
 
 Tags (repository → Settings → Tags): protect `v*` and allow only the account
 that owns `RELEASE_TOKEN`. A protected tag with an empty allow-list blocks
