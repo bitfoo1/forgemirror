@@ -83,10 +83,11 @@ docker_signs:
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
 
-# Release notes come from git-cliff (--release-notes), so the changelog in the
-# release PR and the release page are produced by the same tool and config.
-changelog:
-  disable: true
+# Release notes come from CHANGELOG.md via --release-notes (release:publish),
+# so the release page matches the changelog merged with the release PR.
+# Do not set changelog.disable: it skips the whole changelog pipe, including
+# loading --release-notes, and the release body ends up empty. With a notes
+# file, goreleaser uses it and generates no changelog of its own.
 
 gitea_urls:
   api: "{{ .Env.GITHUB_SERVER_URL }}/api/v1"

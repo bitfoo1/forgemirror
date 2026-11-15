@@ -47,7 +47,7 @@ Releases are never tagged by hand.
    `CHANGELOG.md`, creates the tag, and runs goreleaser in the same job:
    binaries for linux/darwin × amd64/arm64, a multi-arch image at
    `git.bitfoo.de/dvonessen/forgemirror`, SBOMs, cosign signatures, and the
-   Forgejo release with git-cliff release notes. Then it packages the Helm
+   Forgejo release, whose notes are the version's section of `CHANGELOG.md`. Then it packages the Helm
    chart with the same version, pushes it to
    `oci://git.bitfoo.de/dvonessen/charts/forgemirror` and signs it with cosign.
 

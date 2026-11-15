@@ -51,7 +51,20 @@ git checkout --quiet "${tag}"
 
 notes="$(mktemp)"
 trap 'rm -rf "${notes}" "${chart_dir:-}"' EXIT
-git cliff --latest --strip all --output "${notes}" 2>/dev/null
+# The notes are the version's section of CHANGELOG.md, taken verbatim instead
+# of re-running git-cliff: the tag may point at a later commit than the one
+# the changelog was generated from, and the release must say exactly what the
+# reviewed release PR said. The heading is dropped; the release title already
+# names the version.
+awk -v v="${tag#v}" '
+  $0 ~ "^## \\[" v "\\]" { in_section = 1; next }
+  in_section && /^## \[/ { exit }
+  in_section { print }
+' CHANGELOG.md >"${notes}"
+if [[ ! -s "${notes}" ]]; then
+  echo "CHANGELOG.md has no section for ${tag}" >&2
+  exit 1
+fi
 
 # ko pushes with credentials from the Docker config; the package registry
 # needs a token with the write:package scope.
