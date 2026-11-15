@@ -50,6 +50,27 @@ func (e *pushEvent) validate() error {
 	return errors.Join(errs...)
 }
 
+// repositoryEvent is the subset of Forgejo's repository payload forgemirror
+// uses; it carries the same repository object as a push.
+type repositoryEvent struct {
+	Action     string            `json:"action"`
+	Repository payloadRepository `json:"repository"`
+}
+
+// validate requires only the full name: nothing is cloned for a deletion, so
+// the clone URL is irrelevant.
+func (e *repositoryEvent) validate() error {
+	if e.Repository.FullName == "" {
+		return errMissingFullName
+	}
+
+	return nil
+}
+
+func (e *repositoryEvent) repository() repo.Repository {
+	return (&pushEvent{Repository: e.Repository}).repository()
+}
+
 func (e *pushEvent) repository() repo.Repository {
 	r := e.Repository
 

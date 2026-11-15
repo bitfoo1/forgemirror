@@ -305,3 +305,144 @@ func TestHandlerEvent(t *testing.T) {
 		t.Errorf("event = %+v\nwant    %+v", got, want)
 	}
 }
+
+const (
+	repositoryDeletedPayload = `{
+  "action": "deleted",
+  "repository": {
+    "name": "app",
+    "full_name": "acme/app",
+    "owner": {"login": "acme"},
+    "private": true
+  }
+}`
+	repositoryCreatedPayload = `{"action": "created", "repository": {"name": "app", "full_name": "acme/app"}}`
+	repositoryNoFullName     = `{"action": "deleted", "repository": {"name": "app"}}`
+)
+
+func repositoryRequest(body string) request {
+	return validRequest(body).with("X-Forgejo-Event", "repository")
+}
+
+func serve(t *testing.T, opts webhook.Options, r request) (*httptest.ResponseRecorder, *recordingDispatcher) {
+	t.Helper()
+
+	dispatcher := &recordingDispatcher{}
+	opts.Secret = []byte(secret)
+	opts.MaxBodyBytes = 1 << 20
+	opts.Dispatcher = dispatcher
+	opts.Logger = slog.New(slog.DiscardHandler)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook", strings.NewReader(r.body))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range r.headers {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	webhook.NewHandler(opts).ServeHTTP(rec, req)
+
+	return rec, dispatcher
+}
+
+func TestPushIgnoredWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	observer := &recordingObserver{}
+	rec, dispatcher := serve(t, webhook.Options{
+		IgnorePush: true,
+		Filter:     staticFilter{decision: filter.Decision{Mirror: true}},
+		Observer:   observer,
+	}, validRequest(pushPayload))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+	if want := "push events disabled (sync.on_push is false)"; !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("body = %q, want %q", rec.Body.String(), want)
+	}
+	if !slices.Equal(observer.outcomes, []webhook.Outcome{webhook.OutcomeIgnored}) {
+		t.Errorf("outcomes = %v, want [ignored]", observer.outcomes)
+	}
+	if len(dispatcher.events) != 0 {
+		t.Errorf("dispatched %d events, want 0", len(dispatcher.events))
+	}
+}
+
+func TestRepositoryDeletedDispatchesDelete(t *testing.T) {
+	t.Parallel()
+
+	// The source error proves the clone URL check is skipped for deletions.
+	rec, dispatcher := serve(t, webhook.Options{
+		IgnorePush: true,
+		Filter:     staticFilter{decision: filter.Decision{Mirror: true}},
+		Source:     staticSource{err: errors.New("bad clone url")},
+	}, repositoryRequest(repositoryDeletedPayload))
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "delete queued") {
+		t.Errorf("body = %q, want delete queued", rec.Body.String())
+	}
+	if len(dispatcher.events) != 1 {
+		t.Fatalf("dispatched %d events, want 1", len(dispatcher.events))
+	}
+	got := dispatcher.events[0]
+	if got.Kind != webhook.EventDelete || got.Repository.FullName != "acme/app" ||
+		got.Repository.Owner != "acme" || got.Delivery != "delivery-1" {
+		t.Errorf("event = %+v", got)
+	}
+}
+
+func TestRepositoryDeletedFiltered(t *testing.T) {
+	t.Parallel()
+
+	observer := &recordingObserver{}
+	rec, dispatcher := serve(t, webhook.Options{
+		Filter:   staticFilter{decision: filter.Decision{Mirror: false, Reason: "excluded by rule x"}},
+		Observer: observer,
+	}, repositoryRequest(repositoryDeletedPayload))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "excluded by rule x") {
+		t.Errorf("body = %q, want the filter rule", rec.Body.String())
+	}
+	if !slices.Equal(observer.outcomes, []webhook.Outcome{webhook.OutcomeFiltered}) {
+		t.Errorf("outcomes = %v, want [filtered]", observer.outcomes)
+	}
+	if len(dispatcher.events) != 0 {
+		t.Errorf("dispatched %d events, want 0", len(dispatcher.events))
+	}
+}
+
+func TestRepositoryCreatedIgnored(t *testing.T) {
+	t.Parallel()
+
+	rec, dispatcher := serve(t, webhook.Options{
+		Filter: staticFilter{decision: filter.Decision{Mirror: true}},
+	}, repositoryRequest(repositoryCreatedPayload))
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+	if len(dispatcher.events) != 0 {
+		t.Errorf("dispatched %d events, want 0", len(dispatcher.events))
+	}
+}
+
+func TestRepositoryDeletedMissingFullName(t *testing.T) {
+	t.Parallel()
+
+	rec, dispatcher := serve(t, webhook.Options{
+		Filter: staticFilter{decision: filter.Decision{Mirror: true}},
+	}, repositoryRequest(repositoryNoFullName))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	if len(dispatcher.events) != 0 {
+		t.Errorf("dispatched %d events, want 0", len(dispatcher.events))
+	}
+}

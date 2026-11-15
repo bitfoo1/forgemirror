@@ -26,7 +26,9 @@ const (
 // Options configures a [Server].
 type Options struct {
 	ReadHeaderTimeout time.Duration
-	Webhook           http.Handler
+	// Webhook serves POST /webhook; nil disables the endpoint (404), as when
+	// no webhook secret is configured.
+	Webhook http.Handler
 	// Metrics serves GET /metrics; nil disables the endpoint.
 	Metrics http.Handler
 	Logger  *slog.Logger
@@ -45,14 +47,16 @@ func New(opts Options) *Server {
 
 // Handler returns the routing table.
 //
-//   - POST /webhook: Forgejo push events
+//   - POST /webhook: Forgejo push and repository events (if configured)
 //   - GET /healthz: liveness; 200 while the process can serve HTTP at all
 //   - GET /readyz: readiness; 503 before serving and once shutdown began,
 //     so Kubernetes stops routing new webhooks to a terminating pod
 //   - GET /metrics: Prometheus metrics (if configured)
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /webhook", s.opts.Webhook)
+	if s.opts.Webhook != nil {
+		mux.Handle("POST /webhook", s.opts.Webhook)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeText(w, http.StatusOK, "ok")
 	})

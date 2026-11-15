@@ -152,3 +152,19 @@ func TestServeListenerError(t *testing.T) {
 		t.Error("Serve() on a closed listener: error = nil, want error")
 	}
 }
+
+func TestWebhookDisabledWithoutSecret(t *testing.T) {
+	t.Parallel()
+
+	srv := server.New(server.Options{
+		ReadHeaderTimeout: time.Second,
+		Logger:            slog.New(slog.DiscardHandler),
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook", http.NoBody)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}

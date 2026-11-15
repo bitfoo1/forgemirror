@@ -164,19 +164,28 @@ func serveAndDrain(
 		Observer:      metrics,
 	})
 
-	srv := server.New(server.Options{
-		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
-		Webhook: webhook.NewHandler(webhook.Options{
+	// Without a secret the endpoint must not exist: an HMAC over an empty key
+	// is forgeable by anyone. Config validation allows this only when nothing
+	// needs webhooks (on_push false, no delete targets).
+	var webhookHandler http.Handler
+	if cfg.Webhook.Secret.Reveal() != "" {
+		webhookHandler = webhook.NewHandler(webhook.Options{
 			Secret:       []byte(cfg.Webhook.Secret.Reveal()),
 			MaxBodyBytes: cfg.Webhook.MaxBodyBytes,
+			IgnorePush:   !cfg.Sync.OnPush,
 			Filter:       flt,
 			Source:       cfg.Source,
 			Dispatcher:   dispatcher,
 			Logger:       logger,
 			Observer:     metrics,
-		}),
-		Metrics: metrics.Handler(),
-		Logger:  logger,
+		})
+	}
+
+	srv := server.New(server.Options{
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		Webhook:           webhookHandler,
+		Metrics:           metrics.Handler(),
+		Logger:            logger,
 	})
 
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Server.ListenAddress)

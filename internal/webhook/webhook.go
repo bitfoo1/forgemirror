@@ -27,7 +27,10 @@ const (
 	headerForgejoDelivery  = "X-Forgejo-Delivery"
 	headerGiteaDelivery    = "X-Gitea-Delivery"
 
-	pushEventName = "push"
+	pushEventName       = "push"
+	repositoryEventName = "repository"
+
+	actionDeleted = "deleted"
 )
 
 // Event is an authenticated push that passed the filter.
@@ -103,6 +106,9 @@ type Options struct {
 	Logger     *slog.Logger
 	// Observer is optional.
 	Observer Observer
+	// IgnorePush acknowledges push events without mirroring (sync.on_push is
+	// false); the endpoint stays up for repository events.
+	IgnorePush bool
 }
 
 // Handler serves the webhook endpoint.
@@ -156,7 +162,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if event := firstHeader(r.Header, headerForgejoEvent, headerGiteaEvent); event != pushEventName {
+	switch event := firstHeader(r.Header, headerForgejoEvent, headerGiteaEvent); event {
+	case pushEventName:
+		if h.opts.IgnorePush {
+			h.respond(ctx, w, logger, http.StatusOK, OutcomeIgnored, "push events disabled (sync.on_push is false)")
+
+			return
+		}
+	case repositoryEventName:
+		h.handleRepository(ctx, w, logger, body, delivery)
+
+		return
+	default:
 		h.respond(ctx, w, logger, http.StatusOK, OutcomeIgnored, "ignored event "+event)
 
 		return
@@ -194,6 +211,48 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// inherit its cancellation, only its values (trace IDs etc.).
 	h.opts.Dispatcher.Dispatch(context.WithoutCancel(ctx), event)
 	h.respond(ctx, w, logger, http.StatusAccepted, OutcomeAccepted, "mirror queued")
+}
+
+// handleRepository queues a deletion for a repository "deleted" event.
+//
+// The filter still applies: when a target URL template lacks the owner, an
+// excluded bob/app would otherwise delete the mirror of acme/app. Applying it
+// can only prevent deletions, never cause one.
+func (h *Handler) handleRepository(
+	ctx context.Context,
+	w http.ResponseWriter,
+	logger *slog.Logger,
+	body []byte,
+	delivery string,
+) {
+	var payload repositoryEvent
+	if err := json.Unmarshal(body, &payload); err != nil {
+		h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "malformed JSON payload")
+
+		return
+	}
+	if payload.Action != actionDeleted {
+		h.respond(ctx, w, logger, http.StatusOK, OutcomeIgnored, "ignored repository action "+payload.Action)
+
+		return
+	}
+	if err := payload.validate(); err != nil {
+		h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "invalid payload: "+err.Error())
+
+		return
+	}
+
+	event := Event{Repository: payload.repository(), Delivery: delivery, Kind: EventDelete}
+	logger = logger.With(slog.String("repository", event.Repository.FullName))
+
+	if decision := h.opts.Filter.Decide(event.Repository, ""); !decision.Mirror {
+		h.respond(ctx, w, logger, http.StatusOK, OutcomeFiltered, "not mirrored: "+decision.Reason)
+
+		return
+	}
+
+	h.opts.Dispatcher.Dispatch(context.WithoutCancel(ctx), event)
+	h.respond(ctx, w, logger, http.StatusAccepted, OutcomeAccepted, "delete queued")
 }
 
 // validSignature checks the HMAC-SHA256 of body against the signature header.
