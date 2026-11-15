@@ -92,7 +92,7 @@ targets:
     # Optional forge API integration. Without `type` the target is only a git
     # push destination (the repository must already exist) and none of the
     # keys below may be set.
-    # type: github # github, gitlab, forgejo
+    # type: forgejo # github, gitlab, forgejo
     # api_url: "" # derived from type and the url host when empty
     # create: false # create the repository when it is missing
     # delete: false # delete it when the source repository was deleted
