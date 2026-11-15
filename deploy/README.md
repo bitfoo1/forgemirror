@@ -10,7 +10,7 @@ instead. Both deploy the same hardened setup.
 | `configmap.yaml`      | `forgemirror.yaml` without secrets                           |
 | `secret.example.yaml` | Template for the credentials; **not** applied by kustomize    |
 | `deployment.yaml`     | One replica, non-root, read-only root filesystem, probes      |
-| `service.yaml`        | ClusterIP service on port 80                                 |
+| `service.yaml`        | ClusterIP service: `webhook` 80, `ops` 9090, `web` 8080      |
 
 ## 1. Configure
 
@@ -77,9 +77,9 @@ ALLOWED_HOST_LIST = external,forgemirror.forgemirror.svc.cluster.local
 ## 5. Verify
 
 ```sh
-kubectl -n forgemirror port-forward svc/forgemirror 8080:80 &
-curl -fsS localhost:8080/readyz     # ready
-curl -fsS localhost:8080/metrics | grep forge_mirror_
+kubectl -n forgemirror port-forward svc/forgemirror 9090:9090 &
+curl -fsS localhost:9090/readyz     # ready
+curl -fsS localhost:9090/metrics | grep forge_mirror_
 kubectl -n forgemirror logs deploy/forgemirror -f
 ```
 
@@ -103,4 +103,9 @@ webhook. The log shows `mirror started`, one `target mirrored` per target and
   `mirror.max_concurrent`.
 - **Metrics.** The pod carries the common `prometheus.io/*` scrape
   annotations. With the Prometheus Operator, add a `PodMonitor` for port
-  `http`, path `/metrics`.
+  `ops`, path `/metrics`.
+- **Ports.** `webhook` (Service port 80, container 8081) is for Forgejo;
+  expose it with an ingress only if Forgejo runs outside the cluster.
+  `ops` (9090) serves probes and metrics; keep it cluster-internal. `web`
+  (8080) serves the UI once `ui.enabled` is set; it has no authentication,
+  so put a proxy or SSO in front of it.

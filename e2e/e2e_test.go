@@ -322,8 +322,9 @@ func eventually(t *testing.T, deadline time.Duration, check func() error) {
 
 // forgemirror is the binary under test, running as a subprocess.
 type forgemirror struct {
-	port int
-	logs *syncBuffer
+	port    int // webhook
+	opsPort int // health and metrics
+	logs    *syncBuffer
 }
 
 func startForgemirror(t *testing.T, e env, secret string) *forgemirror {
@@ -331,15 +332,18 @@ func startForgemirror(t *testing.T, e env, secret string) *forgemirror {
 
 	dir := t.TempDir()
 	port := freePort(t)
+	opsPort := freePort(t)
 	tokenFile := filepath.Join(dir, "target-token")
 	if err := os.WriteFile(tokenFile, []byte(e.token), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Listening on all interfaces: Forgejo runs in a container and reaches
-	// forgemirror through the Docker host gateway, not through loopback.
+	// The webhook listens on all interfaces: Forgejo runs in a container and
+	// reaches forgemirror through the Docker host gateway, not through
+	// loopback. Only the test itself talks to the ops listener.
 	config := fmt.Sprintf(`server:
   listen_address: "0.0.0.0:%d"
+  ops_listen_address: "127.0.0.1:%d"
   shutdown_timeout: 5s
 log:
   level: debug
@@ -363,13 +367,13 @@ targets:
     prune_labels: true
     settings:
       has_issues: false
-`, port, e.forgejoURL+"/", e.user, e.forgejoURL, e.user, tokenFile)
+`, port, opsPort, e.forgejoURL+"/", e.user, e.forgejoURL, e.user, tokenFile)
 	configFile := filepath.Join(dir, "forgemirror.yaml")
 	if err := os.WriteFile(configFile, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	fm := &forgemirror{port: port, logs: &syncBuffer{}}
+	fm := &forgemirror{port: port, opsPort: opsPort, logs: &syncBuffer{}}
 	cmd := exec.CommandContext(t.Context(), e.binary, "--config", configFile)
 	// Source token and webhook secret come from the environment and the target
 	// token from token_file, so none of them is in the config file or in the
@@ -391,7 +395,7 @@ targets:
 	})
 
 	eventually(t, 10*time.Second, func() error {
-		status, err := plainGet(t.Context(), fm.url("127.0.0.1")+"/readyz", nil)
+		status, err := plainGet(t.Context(), fm.opsURL()+"/readyz", nil)
 		if err != nil {
 			return err
 		}
@@ -405,12 +409,12 @@ targets:
 	return fm
 }
 
-func (f *forgemirror) url(host string) string {
-	return "http://" + net.JoinHostPort(host, strconv.Itoa(f.port))
+func (f *forgemirror) webhookURL(host string) string {
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(f.port)) + "/webhook"
 }
 
-func (f *forgemirror) webhookURL(host string) string {
-	return f.url(host) + "/webhook"
+func (f *forgemirror) opsURL() string {
+	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(f.opsPort))
 }
 
 var acceptedMetric = regexp.MustCompile(
@@ -422,7 +426,7 @@ func (f *forgemirror) acceptedWebhooks(t *testing.T) int {
 	t.Helper()
 
 	var body bytes.Buffer
-	if _, err := plainGet(t.Context(), f.url("127.0.0.1")+"/metrics", &body); err != nil {
+	if _, err := plainGet(t.Context(), f.opsURL()+"/metrics", &body); err != nil {
 		t.Fatal(err)
 	}
 	m := acceptedMetric.FindSubmatch(body.Bytes())

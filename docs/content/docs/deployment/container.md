@@ -16,7 +16,9 @@ services:
   forgemirror:
     image: {{< param "project.image" >}}:<version>
     command: ["--config", "/etc/forgemirror/forgemirror.yaml"]
-    ports: ["8080:8080"]
+    # webhook; add "9090:9090" for probes and metrics, "8080:8080" for the
+    # web UI (ui.enabled)
+    ports: ["8081:8081"]
     read_only: true
     tmpfs: [/tmp]
     volumes:

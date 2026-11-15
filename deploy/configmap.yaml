@@ -7,7 +7,8 @@ data:
   # forgemirror Secret (see deployment.yaml and secret.example.yaml).
   forgemirror.yaml: |
     server:
-      listen_address: ":8080"
+      listen_address: ":8081"
+      ops_listen_address: ":9090"
       # Keep below terminationGracePeriodSeconds in deployment.yaml.
       shutdown_timeout: 60s
     log:

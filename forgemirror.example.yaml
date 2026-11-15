@@ -10,8 +10,13 @@
 # Precedence: defaults < this file < environment < CLI flags.
 # Values shown are the defaults unless marked "required".
 
+# Three listeners, one audience each, so each can be exposed or locked down
+# as a whole. The addresses must differ.
 server:
-  listen_address: ":8080"
+  # Webhook listener (POST /webhook), for Forgejo.
+  listen_address: ":8081"
+  # Ops listener (/healthz, /readyz, /metrics). Keep it cluster-internal.
+  ops_listen_address: ":9090"
   read_header_timeout: 10s
   # Upper bound for a graceful shutdown, including running mirrors.
   shutdown_timeout: 60s

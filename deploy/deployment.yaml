@@ -13,7 +13,7 @@ spec:
     metadata:
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9090"
         prometheus.io/path: /metrics
     spec:
       # Must exceed server.shutdown_timeout so running mirrors can finish
@@ -32,17 +32,21 @@ spec:
           image: git.bitfoo.de/dvonessen/forgemirror
           args: ["--config", "/etc/forgemirror/forgemirror.yaml"]
           ports:
-            - name: http
+            - name: webhook
+              containerPort: 8081
+            - name: ops
+              containerPort: 9090
+            - name: web
               containerPort: 8080
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: ops
             periodSeconds: 20
           readinessProbe:
             httpGet:
               path: /readyz
-              port: http
+              port: ops
             periodSeconds: 5
           resources:
             requests:

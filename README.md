@@ -76,14 +76,14 @@ targets:
 **2. Run it:**
 
 ```sh
-docker run --rm -p 8080:8080 \
+docker run --rm -p 8081:8081 \
   -v "$PWD/forgemirror.yaml:/etc/forgemirror/forgemirror.yaml:ro" \
   git.bitfoo.de/dvonessen/forgemirror:latest \
   --config /etc/forgemirror/forgemirror.yaml
 ```
 
 **3. Point Forgejo at it:** add a webhook of type *Forgejo* with target URL
-`http://<forgemirror-host>:8080/webhook`, content type `application/json`, the
+`http://<forgemirror-host>:8081/webhook`, content type `application/json`, the
 secret from step 1, and push events. Then push.
 
 Target repositories must already exist, unless the target has a `type` and

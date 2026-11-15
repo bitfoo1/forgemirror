@@ -4,7 +4,16 @@ metadata:
   name: forgemirror
 spec:
   type: ClusterIP
+  # One port per audience: webhook for Forgejo, ops for probes and
+  # Prometheus, web for the UI (only listening when ui.enabled is true).
+  # The webhook keeps port 80 so the Forgejo webhook URL needs no port.
   ports:
-    - name: http
+    - name: webhook
       port: 80
-      targetPort: http
+      targetPort: webhook
+    - name: ops
+      port: 9090
+      targetPort: ops
+    - name: web
+      port: 8080
+      targetPort: web

@@ -3,10 +3,24 @@ forgemirror {{ .Chart.AppVersion }} is deployed as {{ include "bjw-s.common.lib.
 Point a Forgejo system webhook (Site administration → Webhooks, type Forgejo,
 content type application/json, trigger: push events) at:
 
-  http://{{ include "bjw-s.common.lib.chart.names.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8080/webhook
+{{- if .Values.ingress.webhook.enabled }}
+  http(s)://{{ (first .Values.ingress.webhook.hosts).host }}/webhook
+{{- else }}
+  http://{{ include "bjw-s.common.lib.chart.names.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:8081/webhook
+{{- end }}
 
 Forgejo must be allowed to reach that host: [webhook] ALLOWED_HOST_LIST in app.ini.
 
 Check it:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "bjw-s.common.lib.chart.names.fullname" . }} 9090:9090
+  curl -fsS localhost:9090/readyz
+{{- if dig "ui" "enabled" false .Values.config }}
+
+Web UI (no authentication of its own):
+{{- if .Values.ingress.web.enabled }}
+  https://{{ (first .Values.ingress.web.hosts).host }}/
+{{- else }}
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "bjw-s.common.lib.chart.names.fullname" . }} 8080:8080
-  curl -fsS localhost:8080/readyz
+  open http://localhost:8080/
+{{- end }}
+{{- end }}

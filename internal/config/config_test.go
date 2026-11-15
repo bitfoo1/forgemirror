@@ -86,6 +86,10 @@ func TestLoadValidFile(t *testing.T) {
 		{"listen address", cfg.Server.ListenAddress, "127.0.0.1:9000"},
 		{"shutdown timeout", cfg.Server.ShutdownTimeout, 30 * time.Second},
 		{"read header timeout default", cfg.Server.ReadHeaderTimeout, 10 * time.Second},
+		{"ops listen address default", cfg.Server.OpsListenAddress, ":9090"},
+		{"ui disabled by default", cfg.UI.Enabled, false},
+		{"ui listen address default", cfg.UI.ListenAddress, ":8080"},
+		{"ui log entries default", cfg.UI.LogEntries, 1000},
 		{"log level", cfg.Log.Level, slog.LevelDebug},
 		{"log format", cfg.Log.Format, config.LogFormatText},
 		{"webhook secret", cfg.Webhook.Secret.Reveal(), "hook-secret"},
@@ -236,6 +240,26 @@ func TestLoadErrors(t *testing.T) {
 			name:    "invalid listen address",
 			yaml:    minimalYAML + "server:\n  listen_address: nonsense\n",
 			wantErr: []string{"server.listen_address"},
+		},
+		{
+			name:    "invalid ops and ui listen addresses",
+			yaml:    minimalYAML + "server:\n  ops_listen_address: nonsense\nui:\n  enabled: true\n  listen_address: x\n",
+			wantErr: []string{"server.ops_listen_address", "ui.listen_address"},
+		},
+		{
+			name:    "webhook and ops share a port",
+			yaml:    minimalYAML + "server:\n  listen_address: \":7000\"\n  ops_listen_address: \":7000\"\n",
+			wantErr: []string{`server.ops_listen_address: ":7000" is already used by server.listen_address`},
+		},
+		{
+			name:    "ui shares the ops port",
+			yaml:    minimalYAML + "ui:\n  enabled: true\n  listen_address: \":9090\"\n",
+			wantErr: []string{`ui.listen_address: ":9090" is already used by server.ops_listen_address`},
+		},
+		{
+			name:    "ui log entries",
+			yaml:    minimalYAML + "ui:\n  log_entries: 0\n",
+			wantErr: []string{"ui.log_entries: must be greater than zero"},
 		},
 		{
 			name: "non-positive values",

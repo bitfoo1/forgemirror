@@ -14,18 +14,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/server"
 )
 
-func newServer(metrics http.Handler) *server.Server {
-	return server.New(server.Options{
-		ReadHeaderTimeout: time.Second,
-		Webhook: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusAccepted)
-		}),
-		Metrics: metrics,
-		Logger:  slog.New(slog.DiscardHandler),
-	})
-}
-
-func TestRoutes(t *testing.T) {
+func TestOpsRoutes(t *testing.T) {
 	t.Parallel()
 
 	metrics := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -35,28 +24,27 @@ func TestRoutes(t *testing.T) {
 	tests := []struct {
 		name       string
 		metrics    http.Handler
+		ready      bool
 		method     string
 		path       string
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "webhook", method: http.MethodPost, path: "/webhook", wantStatus: http.StatusAccepted},
-		{
-			name:       "webhook GET not allowed",
-			method:     http.MethodGet,
-			path:       "/webhook",
-			wantStatus: http.StatusMethodNotAllowed,
-		},
 		{name: "healthz", method: http.MethodGet, path: "/healthz", wantStatus: http.StatusOK, wantBody: "ok"},
 		{
 			name: "readyz before serving", method: http.MethodGet, path: "/readyz",
 			wantStatus: http.StatusServiceUnavailable, wantBody: "not ready",
 		},
 		{
+			name: "readyz when ready", ready: true, method: http.MethodGet, path: "/readyz",
+			wantStatus: http.StatusOK, wantBody: "ready",
+		},
+		{
 			name: "metrics", metrics: metrics, method: http.MethodGet, path: "/metrics",
 			wantStatus: http.StatusOK, wantBody: "metric 1",
 		},
 		{name: "metrics disabled", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusNotFound},
+		{name: "no webhook on ops", method: http.MethodPost, path: "/webhook", wantStatus: http.StatusNotFound},
 		{name: "unknown", method: http.MethodGet, path: "/nope", wantStatus: http.StatusNotFound},
 	}
 
@@ -64,9 +52,11 @@ func TestRoutes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			health := &server.Health{}
+			health.SetReady(tc.ready)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, http.NoBody)
-			newServer(tc.metrics).Handler().ServeHTTP(rec, req)
+			server.OpsHandler(health, tc.metrics).ServeHTTP(rec, req)
 
 			if rec.Code != tc.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tc.wantStatus)
@@ -76,6 +66,67 @@ func TestRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWebhookRoutes(t *testing.T) {
+	t.Parallel()
+
+	accept := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	tests := []struct {
+		name       string
+		webhook    http.Handler
+		method     string
+		path       string
+		wantStatus int
+	}{
+		{name: "webhook", webhook: accept, method: http.MethodPost, path: "/webhook", wantStatus: http.StatusAccepted},
+		{
+			name: "webhook GET not allowed", webhook: accept, method: http.MethodGet, path: "/webhook",
+			wantStatus: http.StatusMethodNotAllowed,
+		},
+		{name: "disabled without secret", method: http.MethodPost, path: "/webhook", wantStatus: http.StatusNotFound},
+		// Probes and metrics must not be reachable through a webhook ingress.
+		{
+			name:       "no healthz",
+			webhook:    accept,
+			method:     http.MethodGet,
+			path:       "/healthz",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "no metrics",
+			webhook:    accept,
+			method:     http.MethodGet,
+			path:       "/metrics",
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, http.NoBody)
+			server.WebhookHandler(tc.webhook).ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func newServer(handler http.Handler) *server.Server {
+	return server.New(server.Options{
+		Name:              "test",
+		Handler:           handler,
+		ReadHeaderTimeout: time.Second,
+		Logger:            slog.New(slog.DiscardHandler),
+	})
 }
 
 func get(t *testing.T, url string) (int, string) {
@@ -105,24 +156,11 @@ func TestServeLifecycle(t *testing.T) {
 	base := "http://" + ln.Addr().String()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	srv := newServer(nil)
+	srv := newServer(server.OpsHandler(&server.Health{}, nil))
 	done := make(chan error, 1)
 	shutdownCtx, cancelShutdown := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancelShutdown()
 	go func() { done <- srv.Serve(ctx, shutdownCtx, ln) }()
-
-	// Readiness flips to true once Serve runs.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		status, _ := get(t, base+"/readyz")
-		if status == http.StatusOK {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("/readyz never became ready, last status %d", status)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 
 	if status, body := get(t, base+"/healthz"); status != http.StatusOK || body != "ok" {
 		t.Errorf("/healthz = %d %q", status, body)
@@ -148,23 +186,8 @@ func TestServeListenerError(t *testing.T) {
 	}
 	_ = ln.Close() // Serve fails immediately on a closed listener.
 
-	if serveErr := newServer(nil).Serve(t.Context(), t.Context(), ln); serveErr == nil {
-		t.Error("Serve() on a closed listener: error = nil, want error")
-	}
-}
-
-func TestWebhookDisabledWithoutSecret(t *testing.T) {
-	t.Parallel()
-
-	srv := server.New(server.Options{
-		ReadHeaderTimeout: time.Second,
-		Logger:            slog.New(slog.DiscardHandler),
-	})
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/webhook", http.NoBody)
-	srv.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
+	serveErr := newServer(http.NotFoundHandler()).Serve(t.Context(), t.Context(), ln)
+	if serveErr == nil || !strings.Contains(serveErr.Error(), "test server") {
+		t.Errorf("Serve() on a closed listener: error = %v, want a named error", serveErr)
 	}
 }

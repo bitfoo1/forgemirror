@@ -8,16 +8,23 @@
   "required": ["targets"],
   "properties": {
     "server": {
-      "description": "HTTP server.",
+      "description": "Webhook and ops HTTP listeners.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "listen_address": {
-          "description": "host:port to listen on; an empty host listens on all interfaces.",
+          "description": "host:port of the webhook listener (POST /webhook); an empty host listens on all interfaces.",
           "type": "string",
           "pattern": "^(\\[[^\\]]*\\]|[^:]*):[^:]*$",
-          "default": ":8080",
-          "examples": [":8080", "127.0.0.1:9000", "[::1]:8080"]
+          "default": ":8081",
+          "examples": [":8081", "127.0.0.1:9000", "[::1]:8081"]
+        },
+        "ops_listen_address": {
+          "description": "host:port of the ops listener (/healthz, /readyz, /metrics). Keep it cluster-internal.",
+          "type": "string",
+          "pattern": "^(\\[[^\\]]*\\]|[^:]*):[^:]*$",
+          "default": ":9090",
+          "examples": [":9090", "127.0.0.1:9090"]
         },
         "read_header_timeout": {
           "description": "How long a client may take to send the request headers.",
@@ -28,6 +35,31 @@
           "description": "Upper bound for a graceful shutdown, including running mirrors. Keep it below the Kubernetes terminationGracePeriodSeconds.",
           "$ref": "#/$defs/duration",
           "default": "60s"
+        }
+      }
+    },
+    "ui": {
+      "description": "Read-only web UI (configuration, status, logs). It has no authentication: put a reverse proxy or SSO in front of it.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Serve the web UI. When false, its port is not opened.",
+          "type": "boolean",
+          "default": false
+        },
+        "listen_address": {
+          "description": "host:port of the web UI listener.",
+          "type": "string",
+          "pattern": "^(\\[[^\\]]*\\]|[^:]*):[^:]*$",
+          "default": ":8080",
+          "examples": [":8080", "127.0.0.1:8080"]
+        },
+        "log_entries": {
+          "description": "Number of recent log records kept in memory for the UI.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000
         }
       }
     },

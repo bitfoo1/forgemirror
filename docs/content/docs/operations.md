@@ -5,12 +5,15 @@ weight: 5
 
 ## HTTP endpoints
 
-| Endpoint        | Purpose                                                                 |
-|-----------------|-------------------------------------------------------------------------|
-| `POST /webhook` | Forgejo push and repository events; `404` when no `webhook.secret` is set (schedule-only) |
-| `GET /healthz`  | Liveness: `200` while the process serves HTTP                            |
-| `GET /readyz`   | Readiness: `503` before serving and once shutdown begins, so load balancers stop sending webhooks |
-| `GET /metrics`  | Prometheus metrics                                                      |
+| Listener (default)  | Endpoint        | Purpose                                                                 |
+|---------------------|-----------------|-------------------------------------------------------------------------|
+| webhook (`:8081`)   | `POST /webhook` | Forgejo push and repository events; `404` when no `webhook.secret` is set (schedule-only) |
+| ops (`:9090`)       | `GET /healthz`  | Liveness: `200` while the process serves HTTP                            |
+| ops (`:9090`)       | `GET /readyz`   | Readiness: `503` before serving and once shutdown begins, so load balancers stop sending webhooks |
+| ops (`:9090`)       | `GET /metrics`  | Prometheus metrics                                                      |
+| web (`:8080`)       | `GET /`         | Web UI, only with `ui.enabled: true`                       |
+
+See [Listeners](../configuration/#listeners) for why there are three.
 
 ## Metrics
 

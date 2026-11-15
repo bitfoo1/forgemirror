@@ -32,10 +32,12 @@ import (
 )
 
 const (
-	flagConfig        = "config"
-	flagListenAddress = "listen-address"
-	flagLogLevel      = "log-level"
-	flagLogFormat     = "log-format"
+	flagConfig           = "config"
+	flagListenAddress    = "listen-address"
+	flagOpsListenAddress = "ops-listen-address"
+	flagUIListenAddress  = "ui-listen-address"
+	flagLogLevel         = "log-level"
+	flagLogFormat        = "log-format"
 
 	// apiTimeout bounds a single forge API request; a hanging API must not
 	// block a mirror run until the git timeout.
@@ -45,9 +47,11 @@ const (
 // flagOverrides maps CLI flags to the config keys they override.
 func flagOverrides() map[string]string {
 	return map[string]string{
-		flagListenAddress: "server.listen_address",
-		flagLogLevel:      "log.level",
-		flagLogFormat:     "log.format",
+		flagListenAddress:    "server.listen_address",
+		flagOpsListenAddress: "server.ops_listen_address",
+		flagUIListenAddress:  "ui.listen_address",
+		flagLogLevel:         "log.level",
+		flagLogFormat:        "log.format",
 	}
 }
 
@@ -65,7 +69,12 @@ func NewCommand() *cli.Command {
 				Sources:   cli.EnvVars(config.EnvConfigFile),
 				TakesFile: true,
 			},
-			&cli.StringFlag{Name: flagListenAddress, Usage: "override server.listen_address, e.g. :8080"},
+			&cli.StringFlag{Name: flagListenAddress, Usage: "override server.listen_address (webhook), e.g. :8081"},
+			&cli.StringFlag{
+				Name:  flagOpsListenAddress,
+				Usage: "override server.ops_listen_address (health, metrics), e.g. :9090",
+			},
+			&cli.StringFlag{Name: flagUIListenAddress, Usage: "override ui.listen_address, e.g. :8080"},
 			&cli.StringFlag{Name: flagLogLevel, Usage: "override log.level (debug, info, warn, error)"},
 			&cli.StringFlag{Name: flagLogFormat, Usage: "override log.format (json, text)"},
 		},
@@ -110,6 +119,8 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 	logger.InfoContext(ctx, "forgemirror starting",
 		slog.String("version", cmd.Root().Version),
 		slog.String("listen_address", cfg.Server.ListenAddress),
+		slog.String("ops_listen_address", cfg.Server.OpsListenAddress),
+		slog.Bool("ui", cfg.UI.Enabled),
 		slog.Int("targets", len(cfg.Targets)),
 	)
 
@@ -184,19 +195,17 @@ func serveAndDrain(
 		})
 	}
 
-	srv := server.New(server.Options{
-		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
-		Webhook:           webhookHandler,
-		Metrics:           metrics.Handler(),
-		Logger:            logger,
-	})
-
-	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Server.ListenAddress)
+	health := &server.Health{}
+	listeners := []listener{
+		{name: "webhook", address: cfg.Server.ListenAddress, handler: server.WebhookHandler(webhookHandler)},
+		{name: "ops", address: cfg.Server.OpsListenAddress, handler: server.OpsHandler(health, metrics.Handler())},
+	}
+	bound, err := listen(ctx, listeners)
 	if err != nil {
-		return fmt.Errorf("listening on %s: %w", cfg.Server.ListenAddress, err)
+		return err
 	}
 
-	// runCtx also ends when the server fails on its own, so the shutdown
+	// runCtx also ends when a server fails on its own, so the shutdown
 	// deadline starts in that case too.
 	runCtx, stopRun := context.WithCancel(ctx)
 	defer stopRun()
@@ -205,7 +214,13 @@ func serveAndDrain(
 
 	schedulerDone := startScheduler(runCtx, cfg, logger, flt, metrics, clients.source, dispatcher)
 
-	serveErr := srv.Serve(runCtx, shutdownCtx, ln)
+	// Readiness ends as soon as shutdown begins, before the listeners close,
+	// so Kubernetes stops routing new webhooks to this pod.
+	stopReady := context.AfterFunc(runCtx, func() { health.SetReady(false) })
+	defer stopReady()
+	health.SetReady(true)
+
+	serveErr := serveAll(runCtx, shutdownCtx, stopRun, cfg, logger, bound)
 	stopRun()
 
 	// The scheduler must be gone before the dispatcher drains, or a sweep
@@ -223,6 +238,67 @@ func serveAndDrain(
 	logger.InfoContext(ctx, "forgemirror stopped")
 
 	return errors.Join(serveErr, dispatchErr)
+}
+
+// listener is one HTTP listener to open.
+type listener struct {
+	name    string
+	address string
+	handler http.Handler
+	ln      net.Listener
+}
+
+// listen binds every listener before any of them serves, so a taken port
+// fails startup instead of leaving a half-started service.
+func listen(ctx context.Context, listeners []listener) ([]listener, error) {
+	lc := new(net.ListenConfig)
+	for i := range listeners {
+		ln, err := lc.Listen(ctx, "tcp", listeners[i].address)
+		if err != nil {
+			for _, opened := range listeners[:i] {
+				_ = opened.ln.Close()
+			}
+
+			return nil, fmt.Errorf("listening on %s (%s): %w", listeners[i].address, listeners[i].name, err)
+		}
+		listeners[i].ln = ln
+	}
+
+	return listeners, nil
+}
+
+// serveAll serves every listener until ctx ends; one failing server stops
+// all of them through stop.
+func serveAll(
+	ctx, shutdownCtx context.Context,
+	stop context.CancelFunc,
+	cfg *config.Config,
+	logger *slog.Logger,
+	listeners []listener,
+) error {
+	errs := make(chan error, len(listeners))
+	for _, l := range listeners {
+		srv := server.New(server.Options{
+			Name:              l.name,
+			Handler:           l.handler,
+			ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+			Logger:            logger,
+		})
+		go func() {
+			err := srv.Serve(ctx, shutdownCtx, l.ln)
+			if err != nil {
+				stop()
+			}
+			errs <- err
+		}()
+	}
+
+	var all []error
+	for range listeners {
+		all = append(all, <-errs)
+	}
+
+	return errors.Join(all...)
 }
 
 // startScheduler runs scheduled syncs until ctx ends and returns a channel

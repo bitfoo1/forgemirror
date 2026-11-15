@@ -49,11 +49,15 @@ const (
 	defaultMaxBodyBytes  = 5 << 20
 	defaultMirrorTimeout = 10 * time.Minute
 	defaultConcurrency   = 4
+	// Enough to see the last few runs of a handful of repositories while
+	// bounding memory (a few hundred KiB).
+	defaultUILogEntries = 1000
 )
 
 // Config is the complete runtime configuration.
 type Config struct {
 	Server  Server       `koanf:"server"`
+	UI      UI           `koanf:"ui"`
 	Log     Log          `koanf:"log"`
 	Webhook Webhook      `koanf:"webhook"`
 	Source  Source       `koanf:"source"`
@@ -63,14 +67,29 @@ type Config struct {
 	Targets []Target     `koanf:"targets"`
 }
 
-// Server configures the HTTP server.
+// Server configures the webhook and ops HTTP listeners.
 type Server struct {
-	// ListenAddress is the host:port to listen on.
+	// ListenAddress is the host:port of the webhook listener.
 	ListenAddress string `koanf:"listen_address"`
+	// OpsListenAddress is the host:port of the health and metrics listener.
+	// It is separate from the webhook so that exposing the webhook (e.g.
+	// through an ingress) never exposes metrics or probes.
+	OpsListenAddress string `koanf:"ops_listen_address"`
 	// ReadHeaderTimeout bounds how long a client may take to send headers.
 	ReadHeaderTimeout time.Duration `koanf:"read_header_timeout"`
 	// ShutdownTimeout bounds the graceful shutdown, including running mirrors.
 	ShutdownTimeout time.Duration `koanf:"shutdown_timeout"`
+}
+
+// UI configures the read-only web UI. It has no authentication of its own;
+// operators put a proxy or SSO in front of it, which is why it gets its own
+// listener and is off by default.
+type UI struct {
+	Enabled bool `koanf:"enabled"`
+	// ListenAddress is the host:port of the web listener.
+	ListenAddress string `koanf:"listen_address"`
+	// LogEntries is the number of recent log records kept for the UI.
+	LogEntries int `koanf:"log_entries"`
 }
 
 // Log configures logging.
@@ -229,9 +248,13 @@ func FindFile(candidates []string) (string, error) {
 
 func defaults() map[string]any {
 	return map[string]any{
-		"server.listen_address":      ":8080",
+		"server.listen_address":      ":8081",
+		"server.ops_listen_address":  ":9090",
 		"server.read_header_timeout": defaultReadHeaderTimeout,
 		"server.shutdown_timeout":    defaultShutdownTimeout,
+		"ui.enabled":                 false,
+		"ui.listen_address":          ":8080",
+		"ui.log_entries":             defaultUILogEntries,
 		"log.level":                  "info",
 		"log.format":                 LogFormatJSON,
 		"webhook.max_body_bytes":     defaultMaxBodyBytes,

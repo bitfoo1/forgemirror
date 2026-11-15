@@ -10,7 +10,11 @@ The chart is built on the
 - **Workload:** a single replica with the `Recreate` strategy.
 - **Hardening:** runs non-root with a read-only root filesystem and all
   capabilities dropped.
-- **Probes:** `/healthz` for liveness, `/readyz` for readiness.
+- **Probes:** `/healthz` for liveness, `/readyz` for readiness, on the ops
+  port.
+- **Ports:** one Service with `webhook` (8081), `ops` (9090: probes,
+  metrics) and `web` (8080: UI, listening only with `config.ui.enabled`).
+- **Ingresses:** `ingress.webhook` and `ingress.web`, both disabled.
 - **Shutdown:** a grace period longer than the shutdown timeout, so running
   mirrors can finish.
 - **Rollouts:** a pod restart whenever the config or credentials change.
@@ -65,10 +69,14 @@ so a pod is never deployed in a state where it would just crash-loop.
 | `controllers.forgemirror.containers.app.image.tag` | appVersion | Image tag                                                                             |
 | `controllers.forgemirror.containers.app.resources` | 50m / 64Mi, 512Mi limit | Raise the limit for large repositories or a higher `config.mirror.max_concurrent` |
 | `persistence.work.sizeLimit`          | `5Gi`           | emptyDir for temporary clones                                                                     |
-| `serviceMonitor.forgemirror.enabled`  | `false`         | Prometheus Operator ServiceMonitor for `/metrics`                                                 |
+| `config.ui.enabled`                   | `false`         | Serve the read-only web UI on service port `web` (8080)                                           |
+| `ingress.web.enabled`                 | `false`         | Ingress to the web UI; requires `config.ui.enabled`. Secure it with `annotations`                 |
+| `ingress.webhook.enabled`             | `false`         | Ingress to the webhook, for a Forgejo outside the cluster                                         |
+| `ingress.<name>.className`, `.annotations`, `.hosts`, `.tls` | see values.yaml | Plain bjw-s ingress values, no provider-specific settings           |
+| `serviceMonitor.forgemirror.enabled`  | `false`         | Prometheus Operator ServiceMonitor for `/metrics` (port `ops`)                                    |
 
 Every other bjw-s common library value applies as well, for example
-`ingress`, `route`, `networkpolicies`, `defaultPodOptions.nodeSelector` and
+`route`, `networkpolicies`, `defaultPodOptions.nodeSelector` and
 `controllers.forgemirror.pod.imagePullSecrets`.
 
 **Template evaluation:** bjw-s normally evaluates every string in the values

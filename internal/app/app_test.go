@@ -146,10 +146,37 @@ func TestServeConfigError(t *testing.T) {
 func TestServeListenError(t *testing.T) {
 	t.Parallel()
 
-	_, err := run(t, "--config", writeConfig(t, testConfig), "--listen-address", "256.0.0.1:0")
-	if err == nil || !strings.Contains(err.Error(), "listening on") {
-		t.Errorf("Run() error = %v, want listen error", err)
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "webhook", args: []string{"--listen-address", "256.0.0.1:0"}, want: "(webhook)"},
+		{
+			// The webhook port is already bound when the ops port fails; it
+			// must be released again (the run ends without hanging).
+			name: "ops",
+			args: []string{"--listen-address", "127.0.0.1:0", "--ops-listen-address", "256.0.0.1:0"},
+			want: "(ops)",
+		},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			args := append([]string{"--config", writeConfig(t, testConfig)}, tc.args...)
+			_, err := run(t, args...)
+			if err == nil || !strings.Contains(err.Error(), "listening on") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Run() error = %v, want listen error %s", err, tc.want)
+			}
+		})
+	}
+}
+
+// listeningOn matches the startup line of the named listener and captures
+// its address.
+func listeningOn(name string) *regexp.Regexp {
+	return regexp.MustCompile(`msg="http server listening" server=` + name + ` address=(\S+)`)
 }
 
 func waitForLog(t *testing.T, logs *syncBuffer, pattern *regexp.Regexp) []string {
@@ -231,6 +258,7 @@ if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
 	cfg := writeConfig(t, testConfig+`
 server:
   listen_address: "127.0.0.1:0"
+  ops_listen_address: "127.0.0.1:0"
   shutdown_timeout: 5s
 mirror:
   git_binary: `+fakeGit+`
@@ -246,7 +274,8 @@ mirror:
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run(ctx, []string{"forgemirror", "--config", cfg}) }()
 
-	addr := waitForLog(t, &logs, regexp.MustCompile(`msg="http server listening" address=(\S+)`))[1]
+	addr := waitForLog(t, &logs, listeningOn("webhook"))[1]
+	opsAddr := waitForLog(t, &logs, listeningOn("ops"))[1]
 
 	body := `{"ref":"refs/heads/main","repository":{"name":"app","full_name":"acme/app",` +
 		`"owner":{"login":"acme"},"clone_url":"https://git.example/acme/app.git"}}`
@@ -271,7 +300,7 @@ mirror:
 	}
 
 	waitForLog(t, &logs, regexp.MustCompile(`msg="mirror finished"`))
-	assertMetrics(ctx, t, addr,
+	assertMetrics(ctx, t, opsAddr,
 		`forge_mirror_operations_total{status="success",target="example"} 1`,
 		`forge_mirror_webhook_requests_total{outcome="accepted"} 1`,
 		`forge_mirror_active_operations 0`,
@@ -455,6 +484,7 @@ targets:
 `+targetExtra+`
 server:
   listen_address: "127.0.0.1:0"
+  ops_listen_address: "127.0.0.1:0"
   shutdown_timeout: 5s
 mirror:
   git_binary: `+fakeGit+`
@@ -464,10 +494,11 @@ mirror:
 
 // service is a running forgemirror command.
 type service struct {
-	addr   string
-	logs   *syncBuffer
-	cancel context.CancelFunc
-	done   chan error
+	addr    string
+	opsAddr string
+	logs    *syncBuffer
+	cancel  context.CancelFunc
+	done    chan error
 }
 
 func startService(ctx context.Context, t *testing.T, cfg string) *service {
@@ -481,7 +512,8 @@ func startService(ctx context.Context, t *testing.T, cfg string) *service {
 	cmd.ErrWriter = s.logs
 	go func() { s.done <- cmd.Run(ctx, []string{"forgemirror", "--config", cfg}) }()
 
-	s.addr = waitForLog(t, s.logs, regexp.MustCompile(`msg="http server listening" address=(\S+)`))[1]
+	s.addr = waitForLog(t, s.logs, listeningOn("webhook"))[1]
+	s.opsAddr = waitForLog(t, s.logs, listeningOn("ops"))[1]
 
 	return s
 }
@@ -519,7 +551,7 @@ func TestEndToEndTypedTarget(t *testing.T) {
 	postPush(ctx, t, svc.addr, pushBody(f))
 
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
-	assertMetrics(ctx, t, svc.addr,
+	assertMetrics(ctx, t, svc.opsAddr,
 		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
 		`forgemirror_sync_operations_total{operation="settings",status="success",target="gh"} 1`,
 		`forge_mirror_operations_total{status="success",target="gh"} 1`,
@@ -595,7 +627,7 @@ func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	svc := startService(ctx, t, typedConfig(t, f, fakeGit, dir))
 	postPush(ctx, t, svc.addr, pushBody(f))
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished with errors".*reading source repository`))
-	assertMetrics(ctx, t, svc.addr, `forge_mirror_operations_total{status="failure",target="gh"} 1`)
+	assertMetrics(ctx, t, svc.opsAddr, `forge_mirror_operations_total{status="failure",target="gh"} 1`)
 
 	f.down.Store(false)
 	// Within the backoff window the cached connect error is returned without
@@ -603,7 +635,7 @@ func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	time.Sleep(forgejo.DefaultFailureBackoff)
 	postPush(ctx, t, svc.addr, pushBody(f))
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
-	assertMetrics(ctx, t, svc.addr,
+	assertMetrics(ctx, t, svc.opsAddr,
 		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
 		`forge_mirror_operations_total{status="success",target="gh"} 1`,
 	)
@@ -646,6 +678,7 @@ targets:
     token: x
 server:
   listen_address: "127.0.0.1:0"
+  ops_listen_address: "127.0.0.1:0"
   shutdown_timeout: 5s
 mirror:
   git_binary: `+fakeGit+`
@@ -653,7 +686,7 @@ mirror:
 `))
 
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished" repository=acme/app.*delivery=schedule-`))
-	assertMetrics(ctx, t, svc.addr,
+	assertMetrics(ctx, t, svc.opsAddr,
 		`forgemirror_scheduled_runs_total{status="success"} 1`,
 		`forge_mirror_operations_total{status="success",target="example"} 1`,
 	)

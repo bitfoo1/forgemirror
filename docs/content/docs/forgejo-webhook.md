@@ -91,7 +91,7 @@ To send a signed test request by hand:
 ```sh
 body='{"ref":"refs/heads/main","repository":{"name":"app","full_name":"acme/app","owner":{"login":"acme"},"clone_url":"https://forgejo.example/acme/app.git"}}'
 sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
-curl -i http://localhost:8080/webhook \
+curl -i http://localhost:8081/webhook \
   -H 'Content-Type: application/json' -H 'X-Forgejo-Event: push' \
   -H "X-Forgejo-Signature: $sig" --data "$body"
 ```

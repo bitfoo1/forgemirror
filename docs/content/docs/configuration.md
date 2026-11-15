@@ -42,11 +42,35 @@ forgemirror --config forgemirror.yaml validate
 | Flag / command           | Overrides            | Description                                    |
 |--------------------------|----------------------|------------------------------------------------|
 | `--config`, `-c`         |                      | Configuration file (env `FORGEMIRROR_CONFIG`)  |
-| `--listen-address`       | `server.listen_address` | e.g. `:8080`                                |
+| `--listen-address`       | `server.listen_address` | webhook listener, e.g. `:8081`              |
+| `--ops-listen-address`   | `server.ops_listen_address` | health and metrics listener, e.g. `:9090` |
+| `--ui-listen-address`    | `ui.listen_address`  | web UI listener, e.g. `:8080`                  |
 | `--log-level`            | `log.level`          | `debug`, `info`, `warn`, `error`               |
 | `--log-format`           | `log.format`         | `json`, `text`                                 |
 | `validate`               |                      | Load and validate the configuration, then exit |
 | `--version`              |                      | Version, commit and Go version                 |
+
+## Listeners
+
+forgemirror serves three audiences on three ports, so each one can be
+exposed or locked down as a whole, without path rules in a proxy:
+
+| Key                         | Default | Serves                                 | Audience                     |
+|-----------------------------|---------|----------------------------------------|------------------------------|
+| `server.listen_address`     | `:8081` | `POST /webhook`                        | Forgejo                      |
+| `server.ops_listen_address` | `:9090` | `/healthz`, `/readyz`, `/metrics`      | kubelet, Prometheus          |
+| `ui.listen_address`         | `:8080` | the web UI, only with `ui.enabled: true` | operators, behind a proxy or SSO |
+
+The addresses must differ. Exposing the webhook port, e.g. through an
+ingress for a Forgejo in another network, exposes nothing but `/webhook`,
+and requests without a valid signature are rejected.
+
+{{< callout type="warning" >}}
+Upgrading from v0.2 or earlier: the webhook moved from `:8080` to `:8081`,
+and probes and metrics moved to `:9090`. Update the Forgejo webhook URL,
+probes, Prometheus scrape configs and NetworkPolicies, or set
+`server.listen_address: ":8080"` to keep the old webhook port.
+{{< /callout >}}
 
 ## Secrets
 

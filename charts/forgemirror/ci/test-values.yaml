@@ -2,6 +2,8 @@
 # forgemirror validate run against the rendered config). Placeholder
 # credentials only.
 config:
+  ui:
+    enabled: true
   source:
     base_url: https://git.example.org/
   filter:
@@ -17,4 +19,12 @@ credentials:
     github-token: placeholder-github-token
 serviceMonitor:
   forgemirror:
+    enabled: true
+ingress:
+  web:
+    enabled: true
+    className: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/auth-url: https://auth.example.org/oauth2/auth
+  webhook:
     enabled: true

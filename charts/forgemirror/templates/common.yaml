@@ -3,6 +3,9 @@
 {{- if not .Values.config.targets }}
   {{- fail "config.targets: at least one mirror target is required" }}
 {{- end }}
+{{- if and .Values.ingress.web.enabled (not (dig "ui" "enabled" false .Values.config)) }}
+  {{- fail "ingress.web.enabled requires config.ui.enabled: the UI port is not opened otherwise" }}
+{{- end }}
 {{- if and (not .Values.credentials.existingSecret) (not .Values.credentials.data) }}
   {{- fail "credentials: set existingSecret or data (at least the webhook-secret key)" }}
 {{- end }}

@@ -26,3 +26,9 @@ if helm template forgemirror "${chart}" >/dev/null 2>&1; then
   echo "chart rendered without targets/credentials; the fail guards are broken" >&2
   exit 1
 fi
+
+# An ingress to the UI port while the UI is off would route to a closed port.
+if helm template forgemirror "${chart}" -f "${values}" --set config.ui.enabled=false >/dev/null 2>&1; then
+  echo "chart rendered ingress.web without config.ui.enabled; the fail guard is broken" >&2
+  exit 1
+fi

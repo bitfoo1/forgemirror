@@ -76,7 +76,7 @@ All options, including filters and secrets read from files, are covered in
 {{< tabs >}}
   {{< tab name="Container" >}}
   ```sh
-  docker run --rm -p 8080:8080 \
+  docker run --rm -p 8081:8081 -p 9090:9090 \
     -v "$PWD/forgemirror.yaml:/etc/forgemirror/forgemirror.yaml:ro" \
     {{< param "project.image" >}}:<version> \
     --config /etc/forgemirror/forgemirror.yaml
@@ -89,12 +89,12 @@ All options, including filters and secrets read from files, are covered in
   {{< /tab >}}
 {{< /tabs >}}
 
-`curl localhost:8080/readyz` answers `ready`.
+`curl localhost:9090/readyz` answers `ready`.
 
 ### Point Forgejo at it
 
 In Forgejo, add a webhook of type *Forgejo*:
-- **Target URL:** `http://<forgemirror-host>:8080/webhook`
+- **Target URL:** `http://<forgemirror-host>:8081/webhook`
 - **Content type:** `application/json`
 - **Secret:** the value of `webhook.secret`
 - **Trigger:** push events

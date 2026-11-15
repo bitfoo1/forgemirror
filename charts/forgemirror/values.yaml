@@ -12,7 +12,9 @@
 # /run/secrets/forgemirror/.
 config:
   server:
-    listen_address: ":8080"
+    # The ports must match service.forgemirror.ports below.
+    listen_address: ":8081"
+    ops_listen_address: ":9090"
     # Keep below terminationGracePeriodSeconds (defaultPodOptions below).
     shutdown_timeout: 60s
   log:
@@ -25,6 +27,9 @@ config:
     max_concurrent: 4
     work_dir: /work
   filter: {}
+  ui:
+    # -- Serve the read-only web UI on port 8080 (service port "web").
+    enabled: false
   # -- Required: at least one target. `url` is a Go text/template, e.g.
   #   - name: github
   #     url: "https://github.com/acme/{{ .Name }}.git"
@@ -86,7 +91,7 @@ controllers:
             spec:
               httpGet:
                 path: /healthz
-                port: 8080
+                port: 9090
               periodSeconds: 20
           readiness:
             enabled: true
@@ -94,7 +99,7 @@ controllers:
             spec:
               httpGet:
                 path: /readyz
-                port: 8080
+                port: 9090
               periodSeconds: 5
           startup:
             enabled: false
@@ -115,9 +120,56 @@ controllers:
 service:
   forgemirror:
     controller: forgemirror
+    # One port per audience, so each can be exposed or locked down as a
+    # whole: webhook for Forgejo, ops for probes and Prometheus (keep it
+    # cluster-internal), web for the UI (listening only with
+    # config.ui.enabled).
     ports:
-      http:
+      webhook:
+        primary: true
+        port: 8081
+      ops:
+        port: 9090
+      web:
         port: 8080
+
+# Both ingresses are off by default. Each is a plain bjw-s ingress: set
+# className, annotations (e.g. for your SSO or proxy), hosts and tls. Leave
+# web disabled to keep the UI cluster-internal, e.g. when exposing it with
+# Traefik's IngressRoute and a middleware managed outside this chart.
+ingress:
+  # -- The web UI. It has no authentication of its own: secure it with
+  # annotations (oauth2-proxy, Authelia, ...) or your ingress controller.
+  # Requires config.ui.enabled.
+  web:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: forgemirror.example.org
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: forgemirror
+              port: web
+    tls: []
+  # -- The webhook, for a Forgejo that cannot reach the cluster-internal
+  # Service (e.g. running in another cluster). Requests without a valid HMAC
+  # signature are rejected; this port serves nothing else.
+  webhook:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: forgemirror-webhook.example.org
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: forgemirror
+              port: webhook
+    tls: []
 
 persistence:
   config:
@@ -151,6 +203,6 @@ serviceMonitor:
     enabled: false
     serviceName: '{{ include "bjw-s.common.lib.chart.names.fullname" $ }}'
     endpoints:
-      - port: http
+      - port: ops
         path: /metrics
         interval: 1m

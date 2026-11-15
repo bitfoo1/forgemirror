@@ -18,9 +18,7 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("%s: %w", key, err))
 	}
 
-	if _, _, err := net.SplitHostPort(c.Server.ListenAddress); err != nil {
-		add("server.listen_address", err)
-	}
+	errs = append(errs, c.validateListeners()...)
 	if c.Server.ReadHeaderTimeout <= 0 {
 		add("server.read_header_timeout", errMustBePositive)
 	}
@@ -63,6 +61,47 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.validateTargets()...)
 
 	return errors.Join(errs...)
+}
+
+// validateListeners checks the listen addresses. They must differ, because
+// each port has its own audience: sharing one would put the UI or the
+// metrics behind the webhook's ingress.
+func (c *Config) validateListeners() []error {
+	listeners := []struct{ key, addr string }{
+		{"server.listen_address", c.Server.ListenAddress},
+		{"server.ops_listen_address", c.Server.OpsListenAddress},
+	}
+	if c.UI.Enabled {
+		listeners = append(listeners, struct{ key, addr string }{"ui.listen_address", c.UI.ListenAddress})
+	}
+
+	var errs []error
+	seen := make(map[string]string, len(listeners))
+	for _, l := range listeners {
+		host, port, err := net.SplitHostPort(l.addr)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", l.key, err))
+
+			continue
+		}
+		// Port 0 picks a free port, so equal addresses do not collide.
+		if port == "0" {
+			continue
+		}
+		norm := net.JoinHostPort(host, port)
+		if other, dup := seen[norm]; dup {
+			errs = append(errs, fmt.Errorf("%s: %q is already used by %s", l.key, l.addr, other))
+
+			continue
+		}
+		seen[norm] = l.key
+	}
+
+	if c.UI.LogEntries <= 0 {
+		errs = append(errs, fmt.Errorf("ui.log_entries: %w", errMustBePositive))
+	}
+
+	return errs
 }
 
 var (
