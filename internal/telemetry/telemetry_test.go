@@ -140,3 +140,36 @@ func TestSyncFinishedCounts(t *testing.T) {
 		})
 	}
 }
+
+func TestScheduledRunFinishedCounts(t *testing.T) {
+	t.Parallel()
+
+	m, err := telemetry.New("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+	m.ScheduledRunFinished(ctx, 3, nil)
+	m.ScheduledRunFinished(ctx, 0, errors.New("forgejo down"))
+	m.ScheduledRunFinished(ctx, 2, nil)
+
+	body := scrape(t, m)
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "success", want: `forgemirror_scheduled_runs_total{status="success"} 2`},
+		{name: "failure", want: `forgemirror_scheduled_runs_total{status="failure"} 1`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("metrics missing %q:\n%s", tc.want, body)
+			}
+		})
+	}
+}

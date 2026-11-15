@@ -336,6 +336,8 @@ func newForgeFake(t *testing.T) *forgeFake {
 		"GET /api/v1/repos/acme/app":        `{"name":"app","description":"the app","default_branch":"main"}`,
 		"GET /api/v1/repos/acme/app/topics": `{"topics":[]}`,
 		"GET /api/v1/repos/acme/app/labels": `[]`,
+		"GET /api/v1/repos/search": `{"ok":true,"data":[{"name":"app","full_name":"acme/app",` +
+			`"owner":{"login":"acme"},"clone_url":"https://git.example/acme/app.git"}]}`,
 		"GET /api/v3/users/acme":            `{"login":"acme","type":"Organization"}`,
 		"POST /api/v3/orgs/acme/repos":      `{}`,
 		"PATCH /api/v3/repos/acme/app":      `{}`,
@@ -561,4 +563,67 @@ func TestStartsWhileForgejoUnreachable(t *testing.T) {
 		`forge_mirror_operations_total{status="success",target="gh"} 1`,
 	)
 	svc.stop(t)
+}
+
+// TestScheduledSync: with only a schedule (no webhook secret, push events
+// off) the service lists the source repositories at startup and mirrors
+// them, and stops cleanly while the scheduler waits for the next tick.
+func TestScheduledSync(t *testing.T) {
+	t.Parallel()
+
+	f := newForgeFake(t)
+	dir := t.TempDir()
+	fakeGit, gitLog := fakeGitBinary(t, dir)
+	// The source has a branch the target lacks; with equal (empty) refs the
+	// scheduled run would rightly skip clone and push.
+	script := `#!/bin/sh
+echo "$*" >>"` + gitLog + `"
+case "$1 $*" in
+ls-remote*git.example*) printf 'abc123\trefs/heads/main\n' ;;
+clone*) for last; do :; done; mkdir -p "$last" ;;
+esac
+`
+	if err := os.WriteFile(fakeGit, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+
+	svc := startService(ctx, t, writeConfig(t, `
+log:
+  format: text
+source:
+  base_url: `+f.srv.URL+`
+  token: src-token
+sync:
+  on_push: false
+  schedule: 1h
+targets:
+  - name: example
+    url: "https://example.com/{{ .FullName }}.git"
+    token: x
+server:
+  listen_address: "127.0.0.1:0"
+  shutdown_timeout: 5s
+mirror:
+  git_binary: `+fakeGit+`
+  work_dir: `+dir+`
+`))
+
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished" repository=acme/app.*delivery=schedule-`))
+	assertMetrics(ctx, t, svc.addr,
+		`forgemirror_scheduled_runs_total{status="success"} 1`,
+		`forge_mirror_operations_total{status="success",target="example"} 1`,
+	)
+	svc.stop(t)
+
+	if !f.called("GET /api/v1/repos/search") {
+		t.Error("source repositories were not listed")
+	}
+	gitCalls, err := os.ReadFile(gitLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "push --prune --quiet https://example.com/acme/app.git"; !strings.Contains(string(gitCalls), want) {
+		t.Errorf("git calls missing %q:\n%s", want, gitCalls)
+	}
 }

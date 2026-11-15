@@ -23,6 +23,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/mirror"
 	"go.bitfoo.de/forgemirror/internal/repo"
+	"go.bitfoo.de/forgemirror/internal/schedule"
 	"go.bitfoo.de/forgemirror/internal/server"
 	"go.bitfoo.de/forgemirror/internal/telemetry"
 	"go.bitfoo.de/forgemirror/internal/version"
@@ -200,14 +201,60 @@ func serveAndDrain(
 	shutdownCtx, cancelShutdown := shutdownContext(runCtx, cfg.Server.ShutdownTimeout)
 	defer cancelShutdown()
 
+	schedulerDone := startScheduler(runCtx, cfg, logger, flt, metrics, clients.source, dispatcher)
+
 	serveErr := srv.Serve(runCtx, shutdownCtx, ln)
 	stopRun()
+
+	// The scheduler must be gone before the dispatcher drains, or a sweep
+	// still dispatching would only produce dropped-event warnings. Every
+	// step honours runCtx, so this is quick; the deadline guards shutdown
+	// against a scheduler stuck anyway.
+	select {
+	case <-schedulerDone:
+	case <-shutdownCtx.Done():
+		logger.WarnContext(ctx, "scheduler did not stop before the shutdown deadline")
+	}
 
 	logger.InfoContext(ctx, "waiting for running mirrors")
 	dispatchErr := dispatcher.Shutdown(shutdownCtx)
 	logger.InfoContext(ctx, "forgemirror stopped")
 
 	return errors.Join(serveErr, dispatchErr)
+}
+
+// startScheduler runs scheduled syncs until ctx ends and returns a channel
+// closed when they have stopped; without a schedule it is closed at once.
+func startScheduler(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	flt *filter.Filter,
+	metrics *telemetry.Metrics,
+	source forge.Source,
+	dispatcher webhook.Dispatcher,
+) <-chan struct{} {
+	done := make(chan struct{})
+	if cfg.Sync.Schedule <= 0 {
+		close(done)
+
+		return done
+	}
+
+	logger.InfoContext(ctx, "scheduled sync enabled", slog.Duration("interval", cfg.Sync.Schedule))
+	go func() {
+		defer close(done)
+		schedule.Run(ctx, schedule.Options{
+			Interval:   cfg.Sync.Schedule,
+			Source:     source,
+			Filter:     flt,
+			Dispatcher: dispatcher,
+			Logger:     logger,
+			Observer:   metrics,
+		})
+	}()
+
+	return done
 }
 
 // forgeClients are the API clients shared by all runs.

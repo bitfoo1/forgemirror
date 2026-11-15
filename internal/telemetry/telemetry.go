@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 
 	"go.bitfoo.de/forgemirror/internal/dispatch"
+	"go.bitfoo.de/forgemirror/internal/schedule"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
@@ -27,8 +28,8 @@ const (
 	serviceName = "forgemirror"
 )
 
-// Status label values of forge_mirror_operations_total and
-// forgemirror_sync_operations_total.
+// Status label values of forge_mirror_operations_total,
+// forgemirror_sync_operations_total and forgemirror_scheduled_runs_total.
 const (
 	statusSuccess = "success"
 	statusFailure = "failure"
@@ -41,7 +42,8 @@ func durationBuckets() []float64 {
 	return []float64{0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600}
 }
 
-// Metrics implements [dispatch.Observer] and [webhook.Observer].
+// Metrics implements [dispatch.Observer], [webhook.Observer] and
+// [schedule.Observer].
 type Metrics struct {
 	provider *sdkmetric.MeterProvider
 	registry *prometheus.Registry
@@ -51,11 +53,13 @@ type Metrics struct {
 	webhooks   metric.Int64Counter
 	active     metric.Int64UpDownCounter
 	syncOps    metric.Int64Counter
+	scheduled  metric.Int64Counter
 }
 
 var (
 	_ dispatch.Observer = (*Metrics)(nil)
 	_ webhook.Observer  = (*Metrics)(nil)
+	_ schedule.Observer = (*Metrics)(nil)
 )
 
 // New returns [Metrics] backed by their own Prometheus registry. A private
@@ -92,7 +96,7 @@ func New(serviceVersion string) (*Metrics, error) {
 }
 
 func (m *Metrics) instruments(meter metric.Meter) error {
-	var errs [5]error
+	var errs [6]error
 	// The exporter appends _total to counters and _seconds for unit "s".
 	m.operations, errs[0] = meter.Int64Counter("forge_mirror_operations",
 		metric.WithDescription("Mirror operations per target, by status."))
@@ -106,6 +110,12 @@ func (m *Metrics) instruments(meter metric.Meter) error {
 		metric.WithDescription("Mirror runs currently in progress."))
 	m.syncOps, errs[4] = meter.Int64Counter("forgemirror_sync_operations",
 		metric.WithDescription("Forge API operations (create, settings, labels, delete) per target, by status."))
+	m.scheduled, errs[5] = meter.Int64Counter(
+		"forgemirror_scheduled_runs",
+		metric.WithDescription(
+			"Scheduled sync runs, by status; a failure means the source repositories could not be listed.",
+		),
+	)
 
 	if err := errors.Join(errs[:]...); err != nil {
 		return fmt.Errorf("creating instruments: %w", err)
@@ -153,6 +163,11 @@ func (m *Metrics) SyncFinished(ctx context.Context, target, operation string, er
 		attribute.String("operation", operation),
 		attribute.String("status", status(err)),
 	))
+}
+
+// ScheduledRunFinished implements [schedule.Observer].
+func (m *Metrics) ScheduledRunFinished(ctx context.Context, _ int, err error) {
+	m.scheduled.Add(ctx, 1, metric.WithAttributes(attribute.String("status", status(err))))
 }
 
 // ObserveWebhook implements [webhook.Observer].
