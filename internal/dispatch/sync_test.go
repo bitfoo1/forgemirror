@@ -22,22 +22,57 @@ import (
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
+// gauge records the highest number of forge API calls in flight at once. A
+// nil gauge records nothing.
+type gauge struct {
+	mu      sync.Mutex
+	active  int
+	maxSeen int
+}
+
+// hold occupies one slot briefly, so overlapping calls actually overlap.
+func (g *gauge) hold() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	g.active++
+	g.maxSeen = max(g.maxSeen, g.active)
+	g.mu.Unlock()
+
+	time.Sleep(time.Millisecond)
+
+	g.mu.Lock()
+	g.active--
+	g.mu.Unlock()
+}
+
+func (g *gauge) max() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return g.maxSeen
+}
+
 // fakeSource is a forge.Source serving one repository.
 type fakeSource struct {
 	repo   forge.Repo
 	labels []forge.Label
 	err    error
 	calls  atomic.Int32
+	gauge  *gauge
 }
 
 func (s *fakeSource) Repo(context.Context, string, string) (forge.Repo, error) {
 	s.calls.Add(1)
+	s.gauge.hold()
 
 	return s.repo, s.err
 }
 
 func (s *fakeSource) Labels(context.Context, string, string) ([]forge.Label, error) {
 	s.calls.Add(1)
+	s.gauge.hold()
 
 	return slices.Clone(s.labels), s.err
 }
@@ -64,9 +99,15 @@ type fakeForge struct {
 	regetErr error
 	created  bool
 	caps     forge.Capabilities
+	// updateErr is returned by Update.
+	updateErr error
+	gauge     *gauge
 }
 
 func (f *fakeForge) record(call string) {
+	if call != "push" {
+		f.gauge.hold()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, call)
@@ -111,7 +152,7 @@ func (f *fakeForge) Update(_ context.Context, _ forge.Address, s forge.Settings)
 	defer f.mu.Unlock()
 	f.updates = append(f.updates, s)
 
-	return nil
+	return f.updateErr
 }
 
 func (f *fakeForge) Labels(context.Context, forge.Address) ([]forge.Label, error) {
@@ -647,4 +688,30 @@ func waitUntil(t *testing.T, cond func() bool) {
 		}
 	}
 	t.Fatal("timed out waiting for condition")
+}
+
+func TestSweepBoundsForgeAPIConcurrency(t *testing.T) {
+	t.Parallel()
+
+	const maxConcurrent = 4 // set by newSyncDispatcher
+
+	g := &gauge{}
+	src := sourceRepo()
+	src.gauge = g
+	forges := map[string]*fakeForge{
+		"github": {repo: forge.Repo{Description: "old"}, gauge: g},
+		"gitlab": {repo: forge.Repo{Description: "old"}, gauge: g},
+	}
+	d, _ := newSyncDispatcher(t, githubTarget+gitlabTarget, &fakeMirrorer{}, src, forges)
+
+	for i := range 24 {
+		e := event(fmt.Sprintf("app%d", i))
+		e.Kind = webhook.EventScheduled
+		d.Dispatch(t.Context(), e)
+	}
+	shutdown(t, d)
+
+	if got := g.max(); got < 1 || got > maxConcurrent {
+		t.Errorf("forge API calls in flight at once = %d, want 1..%d", got, maxConcurrent)
+	}
 }

@@ -135,7 +135,7 @@
           "default": "10m"
         },
         "max_concurrent": {
-          "description": "Maximum git processes running at once, across all repositories.",
+          "description": "Maximum git processes running at once, across all repositories. Forge API steps of typed targets are capped separately by the same number.",
           "type": "integer",
           "minimum": 1,
           "default": 4

@@ -1,6 +1,7 @@
 // Package dispatch runs mirror operations in the background: one clone per
 // event, pushes to all targets in parallel, at most one run per repository
-// at a time, and a global limit on concurrent git processes. Targets with a
+// at a time, and global limits on concurrent git processes and forge API
+// steps. Targets with a
 // forge type additionally get their repository created and their settings
 // and labels synchronised through the forge API.
 package dispatch
@@ -44,7 +45,8 @@ type Options struct {
 	ForgeSource forge.Source
 	// Forges holds the API client of every typed target, keyed by target name.
 	Forges map[string]forge.Target
-	// MaxConcurrent caps git processes (clones and pushes) across all runs.
+	// MaxConcurrent caps git processes (clones and pushes) across all runs,
+	// and separately the forge API steps across all runs.
 	MaxConcurrent int
 	Logger        *slog.Logger
 	// Observer is optional.
@@ -58,6 +60,14 @@ type Dispatcher struct {
 	// sem bounds concurrent git processes; a buffered channel is the idiomatic
 	// counting semaphore and, unlike a mutex, can be acquired with a timeout.
 	sem chan struct{}
+	// apiSem bounds concurrent forge API steps (reading the source, preparing,
+	// syncing or deleting one target). Without it a scheduled sweep starts
+	// every repository at once and its API calls hit forge rate limits for
+	// concurrent requests; reusing mirror.max_concurrent avoids another knob.
+	//
+	// Lock order: a goroutine never holds an API slot and a git slot at the
+	// same time, so the two semaphores cannot deadlock each other.
+	apiSem chan struct{}
 
 	// base outlives individual requests; cancelling it aborts all running git
 	// processes when the graceful shutdown runs out of time.
@@ -101,6 +111,7 @@ func New(opts Options) *Dispatcher {
 	return &Dispatcher{
 		opts:    opts,
 		sem:     make(chan struct{}, opts.MaxConcurrent),
+		apiSem:  make(chan struct{}, opts.MaxConcurrent),
 		base:    base,
 		cancel:  cancel,
 		running: make(map[string]*repoState),
@@ -358,11 +369,19 @@ func (d *Dispatcher) push(ctx context.Context, ws mirror.Workspace, t *config.Ta
 }
 
 func (d *Dispatcher) acquire(ctx context.Context) (func(), error) {
+	return acquireSlot(ctx, d.sem, "git")
+}
+
+func (d *Dispatcher) acquireAPI(ctx context.Context) (func(), error) {
+	return acquireSlot(ctx, d.apiSem, "forge API")
+}
+
+func acquireSlot(ctx context.Context, sem chan struct{}, kind string) (func(), error) {
 	select {
-	case d.sem <- struct{}{}:
-		return func() { <-d.sem }, nil
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
 	case <-ctx.Done():
-		return nil, fmt.Errorf("waiting for a free git slot: %w", ctx.Err())
+		return nil, fmt.Errorf("waiting for a free %s slot: %w", kind, ctx.Err())
 	}
 }
 

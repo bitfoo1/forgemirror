@@ -143,6 +143,12 @@ func (d *Dispatcher) loadSource(ctx context.Context, e webhook.Event) (sourceSta
 		return sourceState{}, errNoSource
 	}
 
+	release, err := d.acquireAPI(ctx)
+	if err != nil {
+		return sourceState{}, err
+	}
+	defer release()
+
 	r := e.Repository
 	src, err := d.opts.ForgeSource.Repo(ctx, r.Owner, r.Name)
 	if err != nil {
@@ -169,6 +175,12 @@ func (d *Dispatcher) prepareTarget(
 	if tr.api == nil {
 		return fmt.Errorf("target %q: %w", name, errNoClient)
 	}
+
+	release, err := d.acquireAPI(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	addr, err := tr.cfg.Address(e.Repository)
 	if err != nil {
@@ -207,6 +219,14 @@ func (d *Dispatcher) prepareTarget(
 
 // syncTarget brings settings and labels of a pushed target in line.
 func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *targetRun) {
+	release, slotErr := d.acquireAPI(ctx)
+	if slotErr != nil {
+		tr.syncErr = fmt.Errorf("target %q: %w", tr.cfg.Name, slotErr)
+
+		return
+	}
+	defer release()
+
 	var errs []error
 
 	if err := d.syncSettings(ctx, logger, tr); err != nil {
@@ -321,7 +341,7 @@ func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *ta
 	if tr.api != nil {
 		var addr forge.Address
 		if addr, err = tr.cfg.Address(e.Repository); err == nil {
-			err = tr.api.Delete(ctx, addr)
+			err = d.deleteAt(ctx, tr.api, addr)
 		}
 	}
 	// A repository that is already gone is exactly the desired outcome.
@@ -334,6 +354,16 @@ func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *ta
 	d.syncFinished(ctx, logger, tr.cfg.Name, opDelete, err)
 
 	return err
+}
+
+func (d *Dispatcher) deleteAt(ctx context.Context, api forge.Target, addr forge.Address) error {
+	release, err := d.acquireAPI(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	return api.Delete(ctx, addr)
 }
 
 func (d *Dispatcher) syncFinished(ctx context.Context, logger *slog.Logger, target, operation string, err error) {

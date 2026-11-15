@@ -315,7 +315,7 @@ always copies all branches and tags.
 
 | Key                       | Default | Meaning                                                                  |
 |---------------------------|---------|--------------------------------------------------------------------------|
-| `mirror.max_concurrent`   | `4`     | Maximum git processes (clones and pushes) running at once, across all repositories |
+| `mirror.max_concurrent`   | `4`     | Maximum git processes (clones and pushes) running at once, across all repositories; forge API steps of typed targets (reading the source, creating, syncing settings and labels, deleting) are capped separately by the same number |
 | `mirror.timeout`          | `10m`   | Upper bound for each git command                                         |
 | `server.shutdown_timeout` | `60s`   | Budget for a graceful shutdown, covering open requests and running mirrors |
 
