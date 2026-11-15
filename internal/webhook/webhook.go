@@ -70,13 +70,21 @@ const (
 	OutcomeUnsupportedMed Outcome = "unsupported_media_type"
 )
 
+// Source vets the clone URL of a payload. The repository is cloned with the
+// source token, so the URL decides which host receives that token.
+type Source interface {
+	CheckCloneURL(raw string) error
+}
+
 // Options configures a [Handler].
 type Options struct {
 	Secret       []byte
 	MaxBodyBytes int64
 	Filter       Filter
-	Dispatcher   Dispatcher
-	Logger       *slog.Logger
+	// Source is optional; without it every clone URL is accepted.
+	Source     Source
+	Dispatcher Dispatcher
+	Logger     *slog.Logger
 	// Observer is optional.
 	Observer Observer
 }
@@ -94,8 +102,9 @@ func NewHandler(opts Options) *Handler {
 // ServeHTTP implements [http.Handler].
 //
 // Status codes: 202 queued for mirroring; 200 authenticated but not mirrored
-// (other event type or filtered); 400 malformed payload; 401 missing or wrong
-// signature; 413 body too large; 415 not JSON.
+// (other event type or filtered); 400 malformed payload or a clone URL the
+// [Source] rejects; 401 missing or wrong signature; 413 body too large; 415
+// not JSON.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	delivery := firstHeader(r.Header, headerForgejoDelivery, headerGiteaDelivery)
@@ -147,6 +156,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "invalid payload: "+invalidErr.Error())
 
 		return
+	}
+	if h.opts.Source != nil {
+		if urlErr := h.opts.Source.CheckCloneURL(payload.Repository.CloneURL); urlErr != nil {
+			h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "invalid payload: "+urlErr.Error())
+
+			return
+		}
 	}
 
 	event := Event{Repository: payload.repository(), Ref: payload.Ref, Delivery: delivery}

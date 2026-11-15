@@ -150,6 +150,7 @@ func serveAndDrain(
 			Secret:       []byte(cfg.Webhook.Secret.Reveal()),
 			MaxBodyBytes: cfg.Webhook.MaxBodyBytes,
 			Filter:       flt,
+			Source:       cfg.Source,
 			Dispatcher:   dispatcher,
 			Logger:       logger,
 			Observer:     metrics,

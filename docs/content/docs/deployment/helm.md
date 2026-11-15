@@ -37,8 +37,10 @@ Each key is mounted as a file under `/run/secrets/forgemirror/`. Instead of
 ```yaml {filename="my-values.yaml"}
 config:
   source:
+    base_url: https://git.example.org/
     token_file: /run/secrets/forgemirror/source-token
   filter:
+    include_repos: "acme/.*"
     exclude_private: true
   targets:
     - name: github

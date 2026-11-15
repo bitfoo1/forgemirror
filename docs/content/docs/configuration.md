@@ -64,6 +64,26 @@ such as Kubernetes Secrets, Docker secrets or systemd credentials.
 Secrets never appear in logs, error messages or on disk.
 For how tokens reach git, see [Security](../security/#credentials).
 
+## Source
+
+`source` is the Forgejo instance forgemirror clones from.
+
+```yaml
+source:
+  base_url: https://git.example.org/   # recommended
+  username: oauth2                     # default
+  token_file: /run/secrets/forgemirror/source-token
+```
+
+The clone URL comes from the webhook payload, and the token is sent to
+whatever host it names. With `base_url` set, payloads whose clone URL is not
+below that URL (same scheme, host, port and path prefix) are rejected with
+`400`, so the token only ever reaches your Forgejo, even if the webhook secret
+leaks. Without it, every clone URL is accepted.
+
+The token is only needed for private repositories; leave it unset if only
+public ones are mirrored.
+
 ## Targets
 
 A target is a forge that receives the mirror. `url` is a
@@ -87,6 +107,13 @@ targets:
     token_file: /run/secrets/forgemirror/codeberg-token
 ```
 
+{{< callout type="warning" >}}
+A URL without `{{ .Owner }}` maps repositories of different owners to the same
+target: `acme/app` and `bob/app` would both push, with `--prune`, to
+`github.com/acme/app`. On a Forgejo instance with more than one user, combine
+such a target with `filter.include_repos`, e.g. `acme/.*`.
+{{< /callout >}}
+
 Each URL is checked at startup:
 - It must render, so unknown fields are rejected.
 - It must use `http` or `https` and include a host.
@@ -108,7 +135,7 @@ log.
 | Rule               | Effect                                                                         |
 |--------------------|--------------------------------------------------------------------------------|
 | `include_branches` | Only pushes to these branches trigger a mirror. Tag pushes always do.          |
-| `require_topic`    | Only repositories with this Forgejo topic, for per-repository opt-in.          |
+| `require_topic`    | Only repositories with this Forgejo topic, for per-repository opt-in. Not an access control: every repository owner can set topics. |
 | `exclude_private`  | Skip private repositories.                                                     |
 | `exclude_forks`    | Skip forks.                                                                    |
 | `include_repos`    | Only repositories whose `owner/name` matches.                                  |

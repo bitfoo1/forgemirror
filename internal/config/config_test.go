@@ -205,6 +205,21 @@ func TestLoadErrors(t *testing.T) {
 			wantErr: []string{"filter.include_repos"},
 		},
 		{
+			name:    "source base URL not http",
+			yaml:    minimalYAML + "source:\n  base_url: ssh://git.example/\n",
+			wantErr: []string{"source.base_url: scheme must be https or http"},
+		},
+		{
+			name:    "source base URL with query",
+			yaml:    minimalYAML + "source:\n  base_url: https://git.example/?x=1\n",
+			wantErr: []string{"source.base_url: must not contain a query or fragment"},
+		},
+		{
+			name:    "source base URL with credentials",
+			yaml:    minimalYAML + "source:\n  base_url: https://u:p@git.example/\n",
+			wantErr: []string{"source.base_url: must not contain credentials"},
+		},
+		{
 			name:    "invalid log format",
 			yaml:    minimalYAML + "log:\n  format: xml\n",
 			wantErr: []string{"log.format"},

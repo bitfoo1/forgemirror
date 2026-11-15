@@ -30,6 +30,9 @@ webhook:
 # Credentials for cloning private repositories from Forgejo. Leave the token
 # empty if only public repositories are mirrored.
 source:
+  # Recommended: payloads whose clone URL is not below this URL are rejected,
+  # so the token is only ever sent to your Forgejo. Empty accepts any URL.
+  base_url: "" # e.g. "https://git.example.org/"
   username: oauth2
   # token_file: /run/secrets/forgemirror/source-token
 
@@ -53,11 +56,14 @@ filter:
   include_branches: [] # e.g. ["main", "release/.*"]
   exclude_private: false
   exclude_forks: false
-  # Opt-in: only repositories with this Forgejo topic are mirrored.
+  # Opt-in: only repositories with this Forgejo topic are mirrored. Not an
+  # access control: every repository owner can set topics.
   require_topic: "" # e.g. "mirror"
 
 # required: at least one target. `url` is a Go text/template rendered with
 # the repository: {{ .Owner }}, {{ .Name }}, {{ .FullName }}.
+# A URL without {{ .Owner }} maps acme/app and bob/app to the same mirror;
+# pair it with filter.include_repos (e.g. "acme/.*") on shared instances.
 targets:
   - name: github
     url: "https://github.com/acme/{{ .Name }}.git"

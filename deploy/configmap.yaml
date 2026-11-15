@@ -16,12 +16,16 @@ data:
     webhook:
       secret_file: /run/secrets/forgemirror/webhook-secret
     source:
+      base_url: https://git.example.org/
       token_file: /run/secrets/forgemirror/source-token
     mirror:
       timeout: 10m
       max_concurrent: 4
       work_dir: /work
     filter:
+      # The target below has no {{ .Owner }}: limit it to one owner, or
+      # acme/app and bob/app would overwrite the same mirror.
+      include_repos: "acme/.*"
       exclude_private: true
     targets:
       - name: github

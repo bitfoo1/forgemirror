@@ -95,6 +95,9 @@ type Webhook struct {
 
 // Source configures access to the Forgejo instance repositories are cloned from.
 type Source struct {
+	// BaseURL is the Forgejo URL clone URLs must start with; empty accepts
+	// any clone URL. See [Source.CheckCloneURL].
+	BaseURL   string `koanf:"base_url"`
 	Username  string `koanf:"username"`
 	Token     Secret `koanf:"token"`
 	TokenFile string `koanf:"token_file"`

@@ -14,6 +14,11 @@ weight: 6
 - **Targets get everything.** The mirror copies all branches and tags. Use
   [filters](../configuration/#filter) to keep repositories with sensitive
   history from being mirrored at all.
+- **Every Forgejo user can trigger a mirror.** With a system or organization
+  webhook, any user who can push to a covered repository starts a mirror run.
+  `require_topic` does not restrict this, because repository owners set
+  topics themselves. Restrict by owner with `include_repos`, and include
+  `{{ .Owner }}` in target URLs (see [Targets](../configuration/#targets)).
 
 ## Webhook authentication
 
@@ -46,6 +51,11 @@ Technically, each git command receives its credential as a URL-scoped
 host's configuration (`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
 inherited `GIT_*` variables removed) and never prompts
 (`GIT_TERMINAL_PROMPT=0`).
+
+Set [`source.base_url`](../configuration/#source). The clone URL comes from
+the webhook payload; with `base_url`, forgemirror rejects payloads whose
+clone URL points anywhere else, so not even a leaked webhook secret can send
+the Forgejo token to another host.
 
 Use tokens with the narrowest scope:
 - **Forgejo:** `read:repository`.

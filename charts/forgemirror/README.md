@@ -30,6 +30,7 @@ A minimal `my-values.yaml`:
 ```yaml
 config:
   filter:
+    include_repos: "acme/.*"
     exclude_private: true
   targets:
     - name: github

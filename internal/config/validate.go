@@ -36,6 +36,10 @@ func (c *Config) Validate() error {
 		add("webhook.max_body_bytes", errMustBePositive)
 	}
 
+	if err := c.Source.validate(); err != nil {
+		add("source.base_url", err)
+	}
+
 	if c.Mirror.Timeout <= 0 {
 		add("mirror.timeout", errMustBePositive)
 	}

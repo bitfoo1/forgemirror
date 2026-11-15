@@ -2,7 +2,10 @@
 # forgemirror validate run against the rendered config). Placeholder
 # credentials only.
 config:
+  source:
+    base_url: https://git.example.org/
   filter:
+    include_repos: "acme/.*"
     exclude_private: true
   targets:
     - name: github

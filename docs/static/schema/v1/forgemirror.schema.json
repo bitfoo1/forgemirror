@@ -81,6 +81,13 @@
       "additionalProperties": false,
       "not": { "required": ["token", "token_file"] },
       "properties": {
+        "base_url": {
+          "description": "URL of the Forgejo instance. Webhook payloads whose clone URL is not below it are rejected, so the token is only ever sent to this host. Empty accepts every clone URL.",
+          "type": "string",
+          "default": "",
+          "pattern": "^(https?://[^/@?#]+(/[^?#]*)?)?$",
+          "examples": ["https://git.example.org/"]
+        },
         "username": {
           "description": "Username sent together with the token.",
           "type": "string",
@@ -163,7 +170,7 @@
           "default": false
         },
         "require_topic": {
-          "description": "Opt-in: only repositories carrying this Forgejo topic are mirrored.",
+          "description": "Opt-in: only repositories carrying this Forgejo topic are mirrored. Not an access control: every repository owner can set topics.",
           "type": "string",
           "default": "",
           "examples": ["mirror"]
@@ -199,7 +206,7 @@
           "description": "Push URL as a Go text/template, rendered per repository with {{ .Owner }}, {{ .Name }} and {{ .FullName }}. http(s) only, without credentials.",
           "type": "string",
           "pattern": "^https?://[^/@]+(/.*)?$",
-          "examples": ["https://github.com/acme/{{ .Name }}.git", "https://codeberg.org/{{ .Owner }}/{{ .Name }}.git"]
+          "examples": ["https://codeberg.org/{{ .Owner }}/{{ .Name }}.git", "https://github.com/acme/{{ .Name }}.git"]
         },
         "username": {
           "description": "Username sent together with the token; GitHub, Codeberg and GitLab accept oauth2.",

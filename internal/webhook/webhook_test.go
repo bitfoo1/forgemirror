@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -52,6 +53,10 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	d.events = append(d.events, e)
 	d.ctxErr = append(d.ctxErr, ctx.Err())
 }
+
+type staticSource struct{ err error }
+
+func (s staticSource) CheckCloneURL(string) error { return s.err }
 
 type staticFilter struct{ decision filter.Decision }
 
@@ -115,6 +120,7 @@ func TestHandler(t *testing.T) {
 		name         string
 		req          request
 		filter       webhook.Filter
+		source       webhook.Source
 		maxBody      int64
 		wantStatus   int
 		wantOutcome  webhook.Outcome
@@ -196,6 +202,16 @@ func TestHandler(t *testing.T) {
 			filter:     staticFilter{decision: filter.Decision{Reason: "fork (filter.exclude_forks)"}},
 			wantStatus: http.StatusOK, wantOutcome: webhook.OutcomeFiltered,
 		},
+		{
+			name: "clone URL accepted by source", req: validRequest(pushPayload), filter: mirrorAll,
+			source:     staticSource{},
+			wantStatus: http.StatusAccepted, wantOutcome: webhook.OutcomeAccepted, wantDispatch: true,
+		},
+		{
+			name: "clone URL rejected by source", req: validRequest(pushPayload), filter: mirrorAll,
+			source:     staticSource{err: errors.New("clone URL is outside source.base_url")},
+			wantStatus: http.StatusBadRequest, wantOutcome: webhook.OutcomeBadRequest,
+		},
 	}
 
 	for _, tc := range tests {
@@ -212,6 +228,7 @@ func TestHandler(t *testing.T) {
 				Secret:       []byte(secret),
 				MaxBodyBytes: maxBody,
 				Filter:       tc.filter,
+				Source:       tc.source,
 				Dispatcher:   dispatcher,
 				Logger:       slog.New(slog.DiscardHandler),
 				Observer:     observer,
