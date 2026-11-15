@@ -359,6 +359,10 @@ func TestLabelsPaged(t *testing.T) {
 		"GET " + projPath + "/labels": func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 
+			if got := r.URL.Query().Get("include_ancestor_groups"); got != "false" {
+				t.Errorf("include_ancestor_groups = %q, want false", got)
+			}
+
 			if r.URL.Query().Get("per_page") != "100" {
 				t.Errorf("per_page = %q", r.URL.Query().Get("per_page"))
 			}

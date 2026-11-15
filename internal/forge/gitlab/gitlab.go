@@ -236,6 +236,10 @@ func (c *Client) Labels(ctx context.Context, a forge.Address) ([]forge.Label, er
 
 	opts := &gl.ListLabelsOptions{}
 	opts.PerPage = labelPageSize
+	// GitLab includes labels of ancestor groups by default; those are not the
+	// project's to create, update or delete, so asking for them would make
+	// every prune run fail on them.
+	opts.IncludeAncestorGroups = new(false)
 
 	for {
 		page, resp, err := c.api.Labels.ListLabels(projectID(a), opts, gl.WithContext(ctx))
