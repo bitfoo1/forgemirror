@@ -3,12 +3,16 @@ title: forgemirror
 layout: hextra-home
 ---
 
+<div class="fm-glow" aria-hidden="true"></div>
+
+<div class="fm-badge">
 {{< hextra/hero-badge link="docs/getting-started/" >}}
   <span>Get started</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
 {{< /hextra/hero-badge >}}
+</div>
 
-<div class="hx:mt-6 hx:mb-6">
+<div class="fm-headline hx:mt-6 hx:mb-6">
 {{< hextra/hero-headline >}}
   Your Forgejo stays private.&nbsp;<br class="hx:sm:block hx:hidden" />Your code goes public, instantly.
 {{< /hextra/hero-headline >}}
@@ -20,7 +24,7 @@ layout: hextra-home
 {{< /hextra/hero-subtitle >}}
 </div>
 
-<div class="hx:mb-6">
+<div class="fm-button hx:mb-6">
 {{< hextra/hero-button text="Read the docs" link="docs/" >}}
 </div>
 
@@ -29,31 +33,43 @@ layout: hextra-home
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
     title="Push-driven"
+    class="fm-card"
+    style="--fm-accent: var(--fm-forge)"
     subtitle="No polling and no cron. Every push triggers one clone and a parallel push to all targets, and pushes that arrive during a run are coalesced."
     icon="lightning-bolt"
   >}}
   {{< hextra/feature-card
     title="Works behind a firewall"
+    class="fm-card"
+    style="--fm-accent: var(--fm-mirror)"
     subtitle="Forgejo only has to reach forgemirror. Nothing on the internet needs access to your instance."
     icon="shield-check"
   >}}
   {{< hextra/feature-card
     title="One target, many repositories"
+    class="fm-card"
+    style="--fm-accent: var(--fm-violet)"
     subtitle="Target URLs are templates: one entry with `{{ .Name }}` in its path covers every repository."
     icon="template"
   >}}
   {{< hextra/feature-card
     title="Filters"
+    class="fm-card"
+    style="--fm-accent: var(--fm-ember)"
     subtitle="Include and exclude repositories by pattern, restrict branches, skip private repositories and forks, or opt in per repository with a topic."
     icon="filter"
   >}}
   {{< hextra/feature-card
     title="Secrets stay secret"
+    class="fm-card"
+    style="--fm-accent: var(--fm-forge)"
     subtitle="Tokens never touch disk, argv or logs. Credentials can come from mounted files, as Kubernetes expects."
     icon="key"
   >}}
   {{< hextra/feature-card
     title="Ready to operate"
+    class="fm-card"
+    style="--fm-accent: var(--fm-mirror)"
     subtitle="Prometheus metrics, structured logs, health probes, graceful shutdown, a Helm chart and signed multi-arch images."
     icon="chart-bar"
   >}}

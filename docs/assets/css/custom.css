@@ -1,0 +1,171 @@
+/*
+ * forgemirror palette: "forge" (ember orange) to "mirror" (cyan) via magenta
+ * and violet. Hextra derives all primary-* shades (links, buttons, active
+ * sidebar entries) from the three --primary-* variables, so only those and a
+ * few accents are overridden here; the rest of the theme stays untouched to
+ * keep Hextra upgrades painless.
+ *
+ * Hextra's own classes contain ":" (hx:…), which is awkward to select, so the
+ * home page uses fm-* hook classes set in content/_index.md instead.
+ */
+
+:root {
+  --primary-hue: 262deg;
+  --primary-saturation: 83%;
+  --primary-lightness: 58%;
+
+  --fm-forge: #f97316;
+  --fm-ember: #ec4899;
+  --fm-violet: #8b5cf6;
+  --fm-mirror: #06b6d4;
+  --fm-gradient: linear-gradient(
+    100deg,
+    var(--fm-forge) 0%,
+    var(--fm-ember) 35%,
+    var(--fm-violet) 65%,
+    var(--fm-mirror) 100%
+  );
+  --fm-glow-strength: 0.35;
+}
+
+.dark {
+  --primary-hue: 262deg;
+  --primary-saturation: 90%;
+  --primary-lightness: 70%;
+  --fm-glow-strength: 0.28;
+}
+
+/* ---------- Navbar: thin gradient rule instead of the grey hairline ---------- */
+
+.hextra-nav-container::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: var(--fm-gradient);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* ---------- Home page ---------- */
+
+.fm-glow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: -1;
+  width: min(64rem, 100vw);
+  height: 36rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: var(--fm-glow-strength);
+  filter: blur(72px);
+  background:
+    radial-gradient(40% 50% at 25% 35%, var(--fm-forge), transparent 70%),
+    radial-gradient(35% 45% at 55% 25%, var(--fm-ember), transparent 70%),
+    radial-gradient(40% 50% at 80% 45%, var(--fm-mirror), transparent 70%);
+}
+
+.fm-headline h1 {
+  background-image: var(--fm-gradient);
+  background-size: 200% auto;
+  animation: fm-shimmer 12s ease-in-out infinite alternate;
+}
+
+@keyframes fm-shimmer {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-headline h1 { animation: none; }
+}
+
+.fm-badge a {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--fm-badge-bg, #fff), var(--fm-badge-bg, #fff)) padding-box,
+    var(--fm-gradient) border-box;
+}
+
+.dark .fm-badge a { --fm-badge-bg: #171717; }
+
+.fm-button a {
+  background-image: var(--fm-gradient);
+  background-size: 160% auto;
+  background-position: 0% 50%;
+  box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--fm-ember) 60%, transparent);
+  transition: background-position 0.4s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fm-button a:hover {
+  background-position: 100% 50%;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px -8px color-mix(in srgb, var(--fm-violet) 65%, transparent);
+}
+
+/* Feature cards: each card sets --fm-accent through its style attribute. */
+.fm-card {
+  --fm-accent: var(--fm-violet);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fm-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 80% at 0% 0%,
+    color-mix(in srgb, var(--fm-accent) 14%, transparent),
+    transparent 60%
+  );
+}
+
+.fm-card h3 svg { color: var(--fm-accent); }
+
+.fm-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--fm-accent) 55%, transparent);
+  box-shadow: 0 14px 32px -16px color-mix(in srgb, var(--fm-accent) 70%, transparent);
+}
+
+.fm-card code {
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+  font-size: 0.9em;
+  color: var(--fm-accent);
+  background: color-mix(in srgb, var(--fm-accent) 12%, transparent);
+}
+
+/* ---------- Documentation pages ---------- */
+
+.content h1 {
+  background-image: var(--fm-gradient);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.content h2 {
+  padding-bottom: 0.35rem;
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--fm-violet), transparent 70%) 1;
+}
+
+.content :not(pre) > code {
+  color: hsl(var(--primary-hue) var(--primary-saturation) calc(var(--primary-lightness) * 0.8));
+  background: hsl(var(--primary-hue) var(--primary-saturation) var(--primary-lightness) / 0.1);
+}
+
+.dark .content :not(pre) > code {
+  color: hsl(var(--primary-hue) var(--primary-saturation) var(--primary-lightness));
+}
+
+.content table thead {
+  background: hsl(var(--primary-hue) var(--primary-saturation) var(--primary-lightness) / 0.08);
+}
+
+.content blockquote {
+  border-left-color: var(--fm-violet);
+}
