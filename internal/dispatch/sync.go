@@ -34,8 +34,11 @@ type targetRun struct {
 	// api is nil for untyped targets and for typed targets without a client.
 	api  forge.Target
 	addr forge.Address
-	// current is the target repository as last seen (or as created).
-	current    forge.Repo
+	// current is the target repository as last seen; unset when created.
+	current forge.Repo
+	// created means the repository was made in this run and must be read
+	// again before its settings are compared.
+	created    bool
 	desired    forge.Repo
 	syncLabels bool
 	// labels is shared read-only between all targets of a run.
@@ -197,7 +200,7 @@ func (d *Dispatcher) prepareTarget(
 	if err != nil {
 		return fmt.Errorf("target %q: creating repository: %w", name, err)
 	}
-	tr.current = created
+	tr.created = true
 
 	return nil
 }
@@ -206,12 +209,8 @@ func (d *Dispatcher) prepareTarget(
 func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *targetRun) {
 	var errs []error
 
-	if diff := forge.Diff(tr.current, tr.desired, tr.api.Capabilities()); !diff.IsZero() {
-		err := tr.api.Update(ctx, tr.addr, diff)
-		d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %q: updating settings: %w", tr.cfg.Name, err))
-		}
+	if err := d.syncSettings(ctx, logger, tr); err != nil {
+		errs = append(errs, fmt.Errorf("target %q: updating settings: %w", tr.cfg.Name, err))
 	}
 
 	if tr.syncLabels {
@@ -221,6 +220,32 @@ func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *ta
 	}
 
 	tr.syncErr = errors.Join(errs...)
+}
+
+func (d *Dispatcher) syncSettings(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
+	current := tr.current
+	if tr.created {
+		// Create sends only a subset of the settings (Forgejo: name,
+		// description, private), and forges fill the rest with their own
+		// defaults, so only a fresh read shows what still differs.
+		var err error
+		if current, err = tr.api.Get(ctx, tr.addr); err != nil {
+			err = fmt.Errorf("reading created repository: %w", err)
+			d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
+
+			return err
+		}
+	}
+
+	diff := forge.Diff(current, tr.desired, tr.api.Capabilities())
+	if diff.IsZero() {
+		return nil
+	}
+
+	err := tr.api.Update(ctx, tr.addr, diff)
+	d.syncFinished(ctx, logger, tr.cfg.Name, opSettings, err)
+
+	return err
 }
 
 // syncLabels reports at most one result per run: a run without label changes

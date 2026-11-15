@@ -122,7 +122,7 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	clients, err := newForgeClients(ctx, cfg, httpclient.New(apiTimeout))
+	clients, err := newForgeClients(cfg, httpclient.New(apiTimeout))
 	if err != nil {
 		return err
 	}
@@ -208,17 +208,16 @@ type forgeClients struct {
 	targets map[string]forge.Target
 }
 
-// newForgeClients builds every API client once at startup, so a wrong URL or
-// an unreachable Forgejo fails fast instead of on the first push.
-func newForgeClients(ctx context.Context, cfg *config.Config, hc *http.Client) (forgeClients, error) {
+// newForgeClients builds every API client once at startup without network
+// access: the GitHub and GitLab constructors only configure, and Forgejo
+// clients connect lazily, because a startup that needs Forgejo would
+// crash-loop the pod while Forgejo is down. Configuration mistakes (bad URL
+// template, empty token) still fail startup.
+func newForgeClients(cfg *config.Config, hc *http.Client) (forgeClients, error) {
 	clients := forgeClients{targets: make(map[string]forge.Target)}
 
 	if cfg.Typed() || cfg.Sync.Schedule > 0 {
-		src, err := forgejo.New(ctx, hc, cfg.Source.BaseURL, cfg.Source.Token)
-		if err != nil {
-			return forgeClients{}, fmt.Errorf("building source API client: %w", err)
-		}
-		clients.source = src.Source()
+		clients.source = forgejo.NewLazy(hc, cfg.Source.BaseURL, cfg.Source.Token).Source()
 	}
 
 	for i := range cfg.Targets {
@@ -227,7 +226,7 @@ func newForgeClients(ctx context.Context, cfg *config.Config, hc *http.Client) (
 			continue
 		}
 
-		target, err := newTargetClient(ctx, t, hc)
+		target, err := newTargetClient(t, hc)
 		if err != nil {
 			return forgeClients{}, fmt.Errorf("building API client of target %q: %w", t.Name, err)
 		}
@@ -241,7 +240,7 @@ func newForgeClients(ctx context.Context, cfg *config.Config, hc *http.Client) (
 // The API URL is derived from the host of the target URL template, and every
 // real template keeps the host constant (only the path varies per
 // repository), so one client per target serves all repositories.
-func newTargetClient(ctx context.Context, t *config.Target, hc *http.Client) (forge.Target, error) {
+func newTargetClient(t *config.Target, hc *http.Client) (forge.Target, error) {
 	addr, err := t.Address(repo.Repository{Owner: "owner", Name: "name", FullName: "owner/name"})
 	if err != nil {
 		return nil, err
@@ -253,7 +252,7 @@ func newTargetClient(ctx context.Context, t *config.Target, hc *http.Client) (fo
 	case forge.TypeGitLab:
 		return gitlab.New(hc, addr.APIURL, t.Token)
 	case forge.TypeForgejo:
-		return forgejo.New(ctx, hc, addr.APIURL, t.Token)
+		return forgejo.NewLazy(hc, addr.APIURL, t.Token), nil
 	default:
 		return nil, fmt.Errorf("unknown forge type %q", t.Type)
 	}

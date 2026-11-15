@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -318,9 +319,12 @@ func TestFlagOverridesLogging(t *testing.T) {
 // forgeFake serves the Forgejo source API and a GitHub Enterprise target API
 // from one server and records the requests.
 type forgeFake struct {
-	srv   *httptest.Server
-	mu    sync.Mutex
-	calls []string
+	srv     *httptest.Server
+	mu      sync.Mutex
+	calls   []string
+	created bool
+	// down makes every request fail, like an unreachable Forgejo.
+	down atomic.Bool
 }
 
 func newForgeFake(t *testing.T) *forgeFake {
@@ -338,14 +342,27 @@ func newForgeFake(t *testing.T) *forgeFake {
 	}
 	f := &forgeFake{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if f.down.Load() {
+			http.Error(w, `{"message":"unavailable"}`, http.StatusServiceUnavailable)
+
+			return
+		}
 		key := r.Method + " " + r.URL.Path
 		f.mu.Lock()
 		f.calls = append(f.calls, key)
 		f.mu.Unlock()
 
 		body, ok := routes[key]
+		f.mu.Lock()
+		switch key {
+		case "POST /api/v3/orgs/acme/repos":
+			f.created = true
+		case "GET /api/v3/repos/acme/app":
+			// The target repository exists only once it was created.
+			body, ok = `{"name":"app","description":"the app"}`, f.created
+		}
+		f.mu.Unlock()
 		if !ok {
-			// Includes GET /api/v3/repos/acme/app: the target repository is missing.
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
 
 			return
@@ -406,16 +423,10 @@ func postPush(ctx context.Context, t *testing.T, addr, body string) {
 	}
 }
 
-// TestEndToEndTypedTarget: a push for a repository missing on a typed target
-// creates it through the API, pushes, then syncs the settings.
-func TestEndToEndTypedTarget(t *testing.T) {
-	t.Parallel()
+func typedConfig(t *testing.T, f *forgeFake, fakeGit, dir string) string {
+	t.Helper()
 
-	f := newForgeFake(t)
-	dir := t.TempDir()
-	fakeGit, gitLog := fakeGitBinary(t, dir)
-
-	cfg := writeConfig(t, `
+	return writeConfig(t, `
 webhook:
   secret: s
 log:
@@ -436,40 +447,77 @@ mirror:
   git_binary: `+fakeGit+`
   work_dir: `+dir+`
 `)
+}
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+// service is a running forgemirror command.
+type service struct {
+	addr   string
+	logs   *syncBuffer
+	cancel context.CancelFunc
+	done   chan error
+}
 
-	var logs syncBuffer
+func startService(ctx context.Context, t *testing.T, cfg string) *service {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
+
+	s := &service{logs: &syncBuffer{}, cancel: cancel, done: make(chan error, 1)}
 	cmd := app.NewCommand()
-	cmd.ErrWriter = &logs
-	done := make(chan error, 1)
-	go func() { done <- cmd.Run(ctx, []string{"forgemirror", "--config", cfg}) }()
+	cmd.ErrWriter = s.logs
+	go func() { s.done <- cmd.Run(ctx, []string{"forgemirror", "--config", cfg}) }()
 
-	addr := waitForLog(t, &logs, regexp.MustCompile(`msg="http server listening" address=(\S+)`))[1]
-	postPush(ctx, t, addr, `{"ref":"refs/heads/main","repository":{"name":"app","full_name":"acme/app",`+
-		`"owner":{"login":"acme"},"clone_url":"`+f.srv.URL+`/acme/app.git"}}`)
+	s.addr = waitForLog(t, s.logs, regexp.MustCompile(`msg="http server listening" address=(\S+)`))[1]
 
-	waitForLog(t, &logs, regexp.MustCompile(`msg="mirror finished"`))
-	assertMetrics(ctx, t, addr,
-		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
-		`forgemirror_sync_operations_total{operation="settings",status="success",target="gh"} 1`,
-		`forge_mirror_operations_total{status="success",target="gh"} 1`,
-	)
-	cancel()
+	return s
+}
 
+func (s *service) stop(t *testing.T) {
+	t.Helper()
+
+	s.cancel()
 	select {
-	case runErr := <-done:
+	case runErr := <-s.done:
 		if runErr != nil {
 			t.Fatalf("Run() error = %v, want clean shutdown", runErr)
 		}
 	case <-time.After(waitTimeout):
 		t.Fatal("service did not shut down")
 	}
+}
 
-	for _, key := range []string{"POST /api/v3/orgs/acme/repos", "PATCH /api/v3/repos/acme/app"} {
+func pushBody(f *forgeFake) string {
+	return `{"ref":"refs/heads/main","repository":{"name":"app","full_name":"acme/app",` +
+		`"owner":{"login":"acme"},"clone_url":"` + f.srv.URL + `/acme/app.git"}}`
+}
+
+// TestEndToEndTypedTarget: a push for a repository missing on a typed target
+// creates it through the API, pushes, then syncs the settings.
+func TestEndToEndTypedTarget(t *testing.T) {
+	t.Parallel()
+
+	f := newForgeFake(t)
+	dir := t.TempDir()
+	fakeGit, gitLog := fakeGitBinary(t, dir)
+	ctx := t.Context()
+
+	svc := startService(ctx, t, typedConfig(t, f, fakeGit, dir))
+	postPush(ctx, t, svc.addr, pushBody(f))
+
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
+	assertMetrics(ctx, t, svc.addr,
+		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
+		`forgemirror_sync_operations_total{operation="settings",status="success",target="gh"} 1`,
+		`forge_mirror_operations_total{status="success",target="gh"} 1`,
+	)
+	svc.stop(t)
+
+	for _, key := range []string{
+		"POST /api/v3/orgs/acme/repos", "PATCH /api/v3/repos/acme/app",
+	} {
 		if !f.called(key) {
-			t.Errorf("API call %q missing; calls: %v", key, f.calls)
+			t.Errorf("API call %q missing", key)
 		}
 	}
 	gitCalls, err := os.ReadFile(gitLog)
@@ -479,30 +527,34 @@ mirror:
 	if want := "push --prune --quiet " + f.srv.URL + "/acme/app.git"; !strings.Contains(string(gitCalls), want) {
 		t.Errorf("git calls missing %q:\n%s", want, gitCalls)
 	}
-	if strings.Contains(logs.String(), "gh-token") || strings.Contains(logs.String(), "src-token") {
-		t.Errorf("logs contain a token:\n%s", logs.String())
+	if logs := svc.logs.String(); strings.Contains(logs, "gh-token") || strings.Contains(logs, "src-token") {
+		t.Errorf("logs contain a token:\n%s", logs)
 	}
 }
 
-func TestServeFailsWhenForgeClientCannotBeBuilt(t *testing.T) {
+// TestStartsWhileForgejoUnreachable: startup must not depend on Forgejo
+// (Kubernetes would crash-loop); the first run fails cleanly and a later run
+// connects once Forgejo is back.
+func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	t.Parallel()
 
-	// Nothing listens on port 1, so the Forgejo version probe fails.
-	_, err := run(t, "--config", writeConfig(t, `
-webhook:
-  secret: s
-source:
-  base_url: http://127.0.0.1:1
-  token: src-token
-targets:
-  - name: gh
-    type: github
-    url: "https://github.com/acme/{{ .Name }}.git"
-    token: gh-token
-server:
-  listen_address: "127.0.0.1:0"
-`))
-	if err == nil || !strings.Contains(err.Error(), "source API client") {
-		t.Errorf("Run() error = %v, want source API client error", err)
-	}
+	f := newForgeFake(t)
+	f.down.Store(true)
+	dir := t.TempDir()
+	fakeGit, _ := fakeGitBinary(t, dir)
+	ctx := t.Context()
+
+	svc := startService(ctx, t, typedConfig(t, f, fakeGit, dir))
+	postPush(ctx, t, svc.addr, pushBody(f))
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished with errors".*reading source repository`))
+	assertMetrics(ctx, t, svc.addr, `forge_mirror_operations_total{status="failure",target="gh"} 1`)
+
+	f.down.Store(false)
+	postPush(ctx, t, svc.addr, pushBody(f))
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
+	assertMetrics(ctx, t, svc.addr,
+		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
+		`forge_mirror_operations_total{status="success",target="gh"} 1`,
+	)
+	svc.stop(t)
 }
