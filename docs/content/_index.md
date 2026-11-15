@@ -39,7 +39,7 @@ layout: hextra-home
   >}}
   {{< hextra/feature-card
     title="One target, many repositories"
-    subtitle="Target URLs are templates, so a single entry like https://github.com/acme/{{ .Name }}.git covers every repository."
+    subtitle="Target URLs are templates: one entry with `{{ .Name }}` in its path covers every repository."
     icon="template"
   >}}
   {{< hextra/feature-card
