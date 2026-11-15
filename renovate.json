@@ -16,12 +16,13 @@
   ],
   "customManagers": [
     {
-      "description": "mise version installed in CI (.forgejo/workflows/ci.yaml).",
+      "description": "mise version installed in CI by mise-action (.forgejo/workflows/*.yaml).",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.forgejo/workflows/.+\\.ya?ml$/"],
-      "matchStrings": ["MISE_VERSION: (?<currentValue>v[0-9.]+)"],
+      "matchStrings": ["version: (?<currentValue>[0-9.]+) # keep in step with the local mise version"],
       "datasourceTemplate": "github-releases",
-      "depNameTemplate": "jdx/mise"
+      "depNameTemplate": "jdx/mise",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ]
 }

@@ -36,30 +36,30 @@ jobs:
     if: vars.DOCS_DEPLOY_TARGET != ''
     runs-on: docker
     container:
-      image: debian:trixie-slim
+      image: node:24-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1
     steps:
       - name: Checkout
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          # rsync + openssh-client: transport to the web host (system tools,
-          # not available through mise).
+          # rsync: transport to the web host (a system tool, not available
+          # through mise; git and openssh-client come with the image).
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends ca-certificates curl git rsync openssh-client >/dev/null
+          apt-get install -y -qq --no-install-recommends rsync >/dev/null
           git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
           git checkout --quiet "${GITHUB_SHA}"
 
+      # Caches mise's data dir in the runner's cache server, keyed on
+      # mise.toml/mise.lock. github_token must be a GitHub token: the default
+      # (github.token) is the Forgejo token and GitHub would reject it.
       - name: Install mise and tools
-        env:
-          MISE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          MISE_VERSION: v2026.11.7 # keep in step with the local mise version
-        run: |
-          set -eu
-          curl -fsSL https://mise.run | sh
-          echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
+        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.11.7 # keep in step with the local mise version
+          github_token: ${{ secrets.GH_TOKEN }}
           # Only what the docs need: hugo, go (Hugo modules) and lychee.
-          "${HOME}/.local/bin/mise" install go hugo lychee
+          install_args: go hugo lychee
 
       - name: Check
         run: mise run docs:check

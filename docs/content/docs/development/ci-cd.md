@@ -16,6 +16,14 @@ on pull requests. Every step is a mise task, so a local `mise run check`
 
 The changelog job is always last: it only runs once the code is verified.
 
+Jobs run in `node:24-trixie`, which brings Node.js for JavaScript actions and
+git, curl and a C toolchain for the race detector. `jdx/mise-action` installs
+mise and the pinned tools, and `actions/cache` keeps Go modules and build
+caches. Both store their data in the runner's cache server, keyed on
+`mise.toml`/`mise.lock` and `go.sum`, so unchanged tools and dependencies are
+restored instead of downloaded. Pull requests write to an isolated cache
+scope and cannot poison the cache used on `main`.
+
 `.forgejo/workflows/docs.yaml` publishes this documentation separately, on
 pushes to `main` that touch the docs (or files the docs embed). It runs
 `docs:check`, then `docs:publish`, which builds the site and syncs it to the

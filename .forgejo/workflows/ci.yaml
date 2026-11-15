@@ -2,9 +2,12 @@
 # decides *when* things run; *what* runs is identical to local development and
 # the git hooks.
 #
-# Runner constraints on git.bitfoo.de (act_runner, `runs-on: docker`):
-# - No node in the job image, so JavaScript actions (actions/checkout,
-#   upload-artifact, …) cannot run; checkout is done with plain git.
+# Runner constraints on git.bitfoo.de (forgejo-runner, `runs-on: docker`):
+# - Jobs run in node:24-trixie: node for JavaScript actions (mise-action,
+#   actions/cache), and the buildpack-deps base already ships git, curl,
+#   gcc and libc6-dev, so no apt step is needed.
+# - actions/cache talks to the runner's cache server (runner-cache in the
+#   forgejo-runner namespace); pull requests get write-isolated entries.
 # - No Docker daemon for jobs; images are built daemonless by ko.
 #
 # Secrets:
@@ -30,28 +33,38 @@ jobs:
     if: github.ref_type != 'tag'
     runs-on: docker
     container:
-      image: debian:trixie-slim
+      image: node:24-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1
     steps:
       - name: Checkout
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          # gcc + libc6-dev: the race detector (go test -race) needs cgo.
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends ca-certificates curl git gcc libc6-dev >/dev/null
           git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
           git checkout --quiet "${GITHUB_SHA}"
 
+      # Caches mise's data dir in the runner's cache server, keyed on
+      # mise.toml/mise.lock. github_token must be a GitHub token: the default
+      # (github.token) is the Forgejo token and GitHub would reject it.
       - name: Install mise and tools
-        env:
-          MISE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          MISE_VERSION: v2026.11.7 # keep in step with the local mise version
-        run: |
-          set -eu
-          curl -fsSL https://mise.run | sh
-          echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
-          "${HOME}/.local/bin/mise" install
+        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.11.7 # keep in step with the local mise version
+          github_token: ${{ secrets.GH_TOKEN }}
+
+      # Module downloads and compiled packages dominate the job time. The key
+      # only changes with dependencies or the Go version, so the build cache
+      # is refreshed then; in between, restored entries still cover most
+      # packages.
+      - name: Go caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-
 
       - name: Commit messages
         run: |
@@ -78,7 +91,7 @@ jobs:
     if: always() && (needs.verify.result == 'success' || github.ref_type == 'tag')
     runs-on: docker
     container:
-      image: debian:trixie-slim
+      image: node:24-trixie@sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1
     concurrency:
       group: release
       cancel-in-progress: false
@@ -88,20 +101,31 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends ca-certificates curl git >/dev/null
           git clone --quiet "https://oauth2:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git" .
           git checkout --quiet "${GITHUB_SHA}"
 
+      # Caches mise's data dir in the runner's cache server, keyed on
+      # mise.toml/mise.lock. github_token must be a GitHub token: the default
+      # (github.token) is the Forgejo token and GitHub would reject it.
       - name: Install mise and tools
-        env:
-          MISE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          MISE_VERSION: v2026.11.7 # keep in step with the local mise version
-        run: |
-          set -eu
-          curl -fsSL https://mise.run | sh
-          echo "${HOME}/.local/bin" >>"${GITHUB_PATH}"
-          "${HOME}/.local/bin/mise" install
+        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.11.7 # keep in step with the local mise version
+          github_token: ${{ secrets.GH_TOKEN }}
+
+      # Module downloads and compiled packages dominate the job time. The key
+      # only changes with dependencies or the Go version, so the build cache
+      # is refreshed then; in between, restored entries still cover most
+      # packages.
+      - name: Go caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-
 
       - name: Changelog preview (pull request)
         if: github.event_name == 'pull_request'
