@@ -112,3 +112,39 @@ func TestTimeout(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 }
+
+// A same-host redirect to another scheme cannot be served by one httptest
+// server, so the redirect policy is called directly.
+func TestRedirectPolicyScheme(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr bool
+	}{
+		{name: "same scheme", from: "https://git.example/a", to: "https://git.example/b"},
+		{name: "https to http", from: "https://git.example/a", to: "http://git.example/b", wantErr: true},
+		{name: "http to https", from: "http://git.example/a", to: "https://git.example/b", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			from, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tc.from, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			to, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tc.to, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = httpclient.New(time.Second).CheckRedirect(to, []*http.Request{from})
+			if (err != nil) != tc.wantErr {
+				t.Errorf("CheckRedirect() error = %v, want error %v", err, tc.wantErr)
+			}
+		})
+	}
+}

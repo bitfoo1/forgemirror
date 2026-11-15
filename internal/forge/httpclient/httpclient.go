@@ -11,14 +11,16 @@ import (
 const maxRedirects = 10
 
 var (
-	errCrossHostRedirect = errors.New("refusing redirect to a different host")
-	errTooManyRedirects  = errors.New("stopped after too many redirects")
+	errCrossHostRedirect   = errors.New("refusing redirect to a different host")
+	errCrossSchemeRedirect = errors.New("refusing redirect to a different scheme")
+	errTooManyRedirects    = errors.New("stopped after too many redirects")
 )
 
-// New returns a client that never follows redirects to another host. Forge
-// libraries set custom auth headers (e.g. GitLab's PRIVATE-TOKEN) that Go
-// does not strip on cross-host redirects, so following them would leak the
-// token.
+// New returns a client that never follows redirects to another host or
+// scheme. Forge libraries set custom auth headers (e.g. GitLab's
+// PRIVATE-TOKEN) that Go does not strip on cross-host redirects, so following
+// them would leak the token; Go keeps even Authorization on a same-host
+// https to http redirect, which would send it in clear text.
 func New(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
@@ -29,6 +31,10 @@ func New(timeout time.Duration) *http.Client {
 
 			if req.URL.Host != via[0].URL.Host {
 				return errCrossHostRedirect
+			}
+
+			if req.URL.Scheme != via[0].URL.Scheme {
+				return errCrossSchemeRedirect
 			}
 
 			return nil
