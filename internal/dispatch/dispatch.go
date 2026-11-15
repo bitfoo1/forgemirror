@@ -1,17 +1,20 @@
 // Package dispatch runs mirror operations in the background: one clone per
 // event, pushes to all targets in parallel, at most one run per repository
-// at a time, and a global limit on concurrent git processes.
+// at a time, and a global limit on concurrent git processes. Targets with a
+// forge type additionally get their repository created and their settings
+// and labels synchronised through the forge API.
 package dispatch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
 	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/mirror"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
@@ -24,13 +27,23 @@ type Observer interface {
 	RunFinished(ctx context.Context)
 	// TargetFinished reports the outcome for one target; err is nil on success.
 	TargetFinished(ctx context.Context, target string, duration time.Duration, err error)
+	// SyncFinished reports one forge API operation ("create", "settings",
+	// "labels" or "delete") on a typed target; err is nil on success.
+	SyncFinished(ctx context.Context, target, operation string, err error)
 }
 
 // Options configures a [Dispatcher].
 type Options struct {
 	Mirrorer mirror.Mirrorer
-	Source   config.Source
-	Targets  []config.Target
+	// Source holds the credentials for cloning from Forgejo.
+	Source  config.Source
+	Targets []config.Target
+	// ForgeSource reads repository settings and labels from the Forgejo API.
+	// It is nil when no target has a type. It cannot be called Source, which
+	// already names the clone credentials.
+	ForgeSource forge.Source
+	// Forges holds the API client of every typed target, keyed by target name.
+	Forges map[string]forge.Target
 	// MaxConcurrent caps git processes (clones and pushes) across all runs.
 	MaxConcurrent int
 	Logger        *slog.Logger
@@ -109,6 +122,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	}
 
 	if state, busy := d.running[key]; busy {
+		// The repository is gone once a deletion is queued; letting a later
+		// push replace it would recreate the target repository.
+		if state.next != nil && state.next.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
+			logger.InfoContext(ctx, "deletion already queued; event dropped")
+
+			return
+		}
 		state.next = &queuedEvent{ctx: ctx, event: e}
 		logger.InfoContext(ctx, "mirror already running; queued one follow-up run")
 
@@ -174,7 +194,7 @@ func (d *Dispatcher) nextRun(e webhook.Event) *queuedEvent {
 	return nil
 }
 
-// run performs one mirror run: clone once, push to every target in parallel.
+// run performs one run of e: a deletion, or a mirror run.
 func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 	// The run keeps the event's values but is cancelled by the dispatcher's
 	// lifetime, not by the (already finished) HTTP request.
@@ -187,15 +207,57 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 	defer d.opts.Observer.RunFinished(ctx)
 
 	logger := d.eventLogger(e)
+	if e.Kind == webhook.EventDelete {
+		d.deleteRepos(ctx, logger, e)
+
+		return
+	}
+
 	start := time.Now()
 	logger.InfoContext(ctx, "mirror started")
 
+	runs := d.targetRuns()
+	d.prepare(ctx, logger, runs, e, start)
+	d.mirror(ctx, logger, runs, e, start)
+	parallel(runs, func(tr *targetRun) {
+		if tr.typed() && tr.err == nil {
+			d.syncTarget(ctx, logger, tr)
+		}
+	})
+
+	if err := runErrors(runs); err != nil {
+		logger.ErrorContext(ctx, "mirror finished with errors",
+			slog.Duration("duration", time.Since(start)), slog.Any("error", err))
+
+		return
+	}
+	logger.InfoContext(ctx, "mirror finished", slog.Duration("duration", time.Since(start)))
+}
+
+// mirror clones once and pushes to every target that is still in the run.
+func (d *Dispatcher) mirror(
+	ctx context.Context,
+	logger *slog.Logger,
+	runs []*targetRun,
+	e webhook.Event,
+	start time.Time,
+) {
+	pending := pendingRuns(runs)
+	if len(pending) == 0 {
+		return
+	}
+
+	if e.Kind == webhook.EventScheduled && d.inSync(ctx, logger, pending, e) {
+		logger.InfoContext(ctx, "already in sync; clone and push skipped")
+
+		return
+	}
+
 	ws, err := d.clone(ctx, e)
 	if err != nil {
-		for _, t := range d.opts.Targets {
-			d.finishTarget(ctx, logger, t.Name, start, err)
+		for _, tr := range pending {
+			d.fail(ctx, logger, tr, start, err)
 		}
-		logger.ErrorContext(ctx, "mirror failed", slog.Duration("duration", time.Since(start)), slog.Any("error", err))
 
 		return
 	}
@@ -205,27 +267,69 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 		}
 	}()
 
-	errs := make([]error, len(d.opts.Targets))
-	var wg sync.WaitGroup
-	for i := range d.opts.Targets {
-		target := &d.opts.Targets[i]
-		// Each goroutine writes only its own slice element, so the results
-		// need no lock; wg.Wait below makes them visible to this goroutine.
-		wg.Go(func() {
-			pushStart := time.Now()
-			errs[i] = d.push(ctx, ws, target, e)
-			d.finishTarget(ctx, logger, target.Name, pushStart, errs[i])
-		})
-	}
-	wg.Wait()
+	parallel(pending, func(tr *targetRun) {
+		pushStart := time.Now()
+		tr.err = d.push(ctx, ws, tr.cfg, e)
+		d.finishTarget(ctx, logger, tr.cfg.Name, pushStart, tr.err)
+	})
+}
 
-	if pushErr := errors.Join(errs...); pushErr != nil {
-		logger.ErrorContext(ctx, "mirror finished with errors",
-			slog.Duration("duration", time.Since(start)), slog.Any("error", pushErr))
+// inSync reports whether every target already has exactly the source refs.
+// Any failure to list refs means "not known to be in sync", so the run falls
+// back to a full mirror instead of silently skipping it.
+func (d *Dispatcher) inSync(ctx context.Context, logger *slog.Logger, runs []*targetRun, e webhook.Event) bool {
+	want, err := d.refs(ctx, d.sourceRemote(e))
+	if err != nil {
+		logger.WarnContext(ctx, "listing source refs failed; mirroring anyway", slog.Any("error", err))
 
-		return
+		return false
 	}
-	logger.InfoContext(ctx, "mirror finished", slog.Duration("duration", time.Since(start)))
+
+	for _, tr := range runs {
+		remote, remoteErr := targetRemote(tr.cfg, e)
+		if remoteErr != nil {
+			return false
+		}
+		have, refsErr := d.refs(ctx, remote)
+		if refsErr != nil {
+			logger.WarnContext(ctx, "listing target refs failed; mirroring anyway",
+				slog.String("target", tr.cfg.Name), slog.Any("error", refsErr))
+
+			return false
+		}
+		if !maps.Equal(want, have) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (d *Dispatcher) refs(ctx context.Context, r mirror.Remote) (map[string]string, error) {
+	release, err := d.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	return d.opts.Mirrorer.Refs(ctx, r)
+}
+
+func (d *Dispatcher) sourceRemote(e webhook.Event) mirror.Remote {
+	return mirror.Remote{
+		URL:      e.Repository.CloneURL,
+		Username: d.opts.Source.Username,
+		Token:    d.opts.Source.Token,
+	}
+}
+
+func targetRemote(t *config.Target, e webhook.Event) (mirror.Remote, error) {
+	url, err := t.RemoteURL(e.Repository)
+	if err != nil {
+		return mirror.Remote{}, err
+	}
+
+	return mirror.Remote{URL: url, Username: t.Username, Token: t.Token}, nil
 }
 
 func (d *Dispatcher) clone(ctx context.Context, e webhook.Event) (mirror.Workspace, error) {
@@ -235,15 +339,11 @@ func (d *Dispatcher) clone(ctx context.Context, e webhook.Event) (mirror.Workspa
 	}
 	defer release()
 
-	return d.opts.Mirrorer.Clone(ctx, mirror.Remote{
-		URL:      e.Repository.CloneURL,
-		Username: d.opts.Source.Username,
-		Token:    d.opts.Source.Token,
-	})
+	return d.opts.Mirrorer.Clone(ctx, d.sourceRemote(e))
 }
 
 func (d *Dispatcher) push(ctx context.Context, ws mirror.Workspace, t *config.Target, e webhook.Event) error {
-	url, err := t.RemoteURL(e.Repository)
+	remote, err := targetRemote(t, e)
 	if err != nil {
 		return err
 	}
@@ -254,7 +354,7 @@ func (d *Dispatcher) push(ctx context.Context, ws mirror.Workspace, t *config.Ta
 	}
 	defer release()
 
-	return ws.Push(ctx, mirror.Remote{URL: url, Username: t.Username, Token: t.Token})
+	return ws.Push(ctx, remote)
 }
 
 func (d *Dispatcher) acquire(ctx context.Context) (func(), error) {
@@ -292,3 +392,4 @@ type noopObserver struct{}
 func (noopObserver) RunStarted(context.Context)                                   {}
 func (noopObserver) RunFinished(context.Context)                                  {}
 func (noopObserver) TargetFinished(context.Context, string, time.Duration, error) {}
+func (noopObserver) SyncFinished(context.Context, string, string, error)          {}

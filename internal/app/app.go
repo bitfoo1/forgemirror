@@ -7,14 +7,22 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/dispatch"
 	"go.bitfoo.de/forgemirror/internal/filter"
+	"go.bitfoo.de/forgemirror/internal/forge"
+	"go.bitfoo.de/forgemirror/internal/forge/forgejo"
+	"go.bitfoo.de/forgemirror/internal/forge/github"
+	"go.bitfoo.de/forgemirror/internal/forge/gitlab"
+	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/mirror"
+	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/server"
 	"go.bitfoo.de/forgemirror/internal/telemetry"
 	"go.bitfoo.de/forgemirror/internal/version"
@@ -26,6 +34,10 @@ const (
 	flagListenAddress = "listen-address"
 	flagLogLevel      = "log-level"
 	flagLogFormat     = "log-format"
+
+	// apiTimeout bounds a single forge API request; a hanging API must not
+	// block a mirror run until the git timeout.
+	apiTimeout = 30 * time.Second
 )
 
 // flagOverrides maps CLI flags to the config keys they override.
@@ -110,6 +122,11 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		return err
 	}
 
+	clients, err := newForgeClients(ctx, cfg, httpclient.New(apiTimeout))
+	if err != nil {
+		return err
+	}
+
 	metrics, err := telemetry.New(version.Get().Version)
 	if err != nil {
 		return err
@@ -117,7 +134,7 @@ func run(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 
 	// ctx is already cancelled here; WithoutCancel keeps its values only.
 	return errors.Join(
-		serveAndDrain(ctx, cfg, logger, flt, metrics),
+		serveAndDrain(ctx, cfg, logger, flt, metrics, clients),
 		metrics.Shutdown(context.WithoutCancel(ctx)),
 	)
 }
@@ -130,6 +147,7 @@ func serveAndDrain(
 	logger *slog.Logger,
 	flt *filter.Filter,
 	metrics *telemetry.Metrics,
+	clients forgeClients,
 ) error {
 	dispatcher := dispatch.New(dispatch.Options{
 		Mirrorer: mirror.NewGit(mirror.GitOptions{
@@ -139,6 +157,8 @@ func serveAndDrain(
 		}),
 		Source:        cfg.Source,
 		Targets:       cfg.Targets,
+		ForgeSource:   clients.source,
+		Forges:        clients.targets,
 		MaxConcurrent: cfg.Mirror.MaxConcurrent,
 		Logger:        logger,
 		Observer:      metrics,
@@ -179,6 +199,64 @@ func serveAndDrain(
 	logger.InfoContext(ctx, "forgemirror stopped")
 
 	return errors.Join(serveErr, dispatchErr)
+}
+
+// forgeClients are the API clients shared by all runs.
+type forgeClients struct {
+	// source is nil unless a target has a type or a schedule is set.
+	source  forge.Source
+	targets map[string]forge.Target
+}
+
+// newForgeClients builds every API client once at startup, so a wrong URL or
+// an unreachable Forgejo fails fast instead of on the first push.
+func newForgeClients(ctx context.Context, cfg *config.Config, hc *http.Client) (forgeClients, error) {
+	clients := forgeClients{targets: make(map[string]forge.Target)}
+
+	if cfg.Typed() || cfg.Sync.Schedule > 0 {
+		src, err := forgejo.New(ctx, hc, cfg.Source.BaseURL, cfg.Source.Token)
+		if err != nil {
+			return forgeClients{}, fmt.Errorf("building source API client: %w", err)
+		}
+		clients.source = src.Source()
+	}
+
+	for i := range cfg.Targets {
+		t := &cfg.Targets[i]
+		if t.Type == "" {
+			continue
+		}
+
+		target, err := newTargetClient(ctx, t, hc)
+		if err != nil {
+			return forgeClients{}, fmt.Errorf("building API client of target %q: %w", t.Name, err)
+		}
+		clients.targets[t.Name] = target
+	}
+
+	return clients, nil
+}
+
+// newTargetClient builds the client from the address of a sample repository.
+// The API URL is derived from the host of the target URL template, and every
+// real template keeps the host constant (only the path varies per
+// repository), so one client per target serves all repositories.
+func newTargetClient(ctx context.Context, t *config.Target, hc *http.Client) (forge.Target, error) {
+	addr, err := t.Address(repo.Repository{Owner: "owner", Name: "name", FullName: "owner/name"})
+	if err != nil {
+		return nil, err
+	}
+
+	switch t.Type {
+	case forge.TypeGitHub:
+		return github.New(hc, addr.APIURL, t.Token)
+	case forge.TypeGitLab:
+		return gitlab.New(hc, addr.APIURL, t.Token)
+	case forge.TypeForgejo:
+		return forgejo.New(ctx, hc, addr.APIURL, t.Token)
+	default:
+		return nil, fmt.Errorf("unknown forge type %q", t.Type)
+	}
 }
 
 func validate(_ context.Context, cmd *cli.Command) error {

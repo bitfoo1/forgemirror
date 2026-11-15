@@ -8,9 +8,11 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -310,5 +312,197 @@ func TestFlagOverridesLogging(t *testing.T) {
 		"--listen-address", "256.0.0.1:0")
 	if strings.Contains(out.stderr, "forgemirror starting") {
 		t.Errorf("log output = %q, want no info lines at level error", out.stderr)
+	}
+}
+
+// forgeFake serves the Forgejo source API and a GitHub Enterprise target API
+// from one server and records the requests.
+type forgeFake struct {
+	srv   *httptest.Server
+	mu    sync.Mutex
+	calls []string
+}
+
+func newForgeFake(t *testing.T) *forgeFake {
+	t.Helper()
+
+	routes := map[string]string{
+		"GET /api/v1/version":               `{"version":"15.0.0+gitea-1.22.0"}`,
+		"GET /api/v1/repos/acme/app":        `{"name":"app","description":"the app","default_branch":"main"}`,
+		"GET /api/v1/repos/acme/app/topics": `{"topics":[]}`,
+		"GET /api/v1/repos/acme/app/labels": `[]`,
+		"GET /api/v3/users/acme":            `{"login":"acme","type":"Organization"}`,
+		"POST /api/v3/orgs/acme/repos":      `{}`,
+		"PATCH /api/v3/repos/acme/app":      `{}`,
+		"GET /api/v3/repos/acme/app/labels": `[]`,
+	}
+	f := &forgeFake{}
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + " " + r.URL.Path
+		f.mu.Lock()
+		f.calls = append(f.calls, key)
+		f.mu.Unlock()
+
+		body, ok := routes[key]
+		if !ok {
+			// Includes GET /api/v3/repos/acme/app: the target repository is missing.
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(f.srv.Close)
+
+	return f
+}
+
+func (f *forgeFake) called(key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Contains(f.calls, key)
+}
+
+// fakeGitBinary writes a git stand-in that logs its arguments and creates
+// the clone directory.
+func fakeGitBinary(t *testing.T, dir string) (binary, logFile string) { //nolint:nonamedreturns // documents the pair
+	t.Helper()
+
+	logFile = filepath.Join(dir, "git.log")
+	binary = filepath.Join(dir, "git")
+	script := `#!/bin/sh
+echo "$*" >>"` + logFile + `"
+if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
+`
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	return binary, logFile
+}
+
+func postPush(ctx context.Context, t *testing.T, addr, body string) {
+	t.Helper()
+
+	mac := hmac.New(sha256.New, []byte("s"))
+	mac.Write([]byte(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/webhook", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forgejo-Event", "push")
+	req.Header.Set("X-Forgejo-Signature", hex.EncodeToString(mac.Sum(nil)))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /webhook: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /webhook status = %d, want 202", resp.StatusCode)
+	}
+}
+
+// TestEndToEndTypedTarget: a push for a repository missing on a typed target
+// creates it through the API, pushes, then syncs the settings.
+func TestEndToEndTypedTarget(t *testing.T) {
+	t.Parallel()
+
+	f := newForgeFake(t)
+	dir := t.TempDir()
+	fakeGit, gitLog := fakeGitBinary(t, dir)
+
+	cfg := writeConfig(t, `
+webhook:
+  secret: s
+log:
+  format: text
+source:
+  base_url: `+f.srv.URL+`
+  token: src-token
+targets:
+  - name: gh
+    type: github
+    url: "`+f.srv.URL+`/acme/{{ .Name }}.git"
+    token: gh-token
+    create: true
+server:
+  listen_address: "127.0.0.1:0"
+  shutdown_timeout: 5s
+mirror:
+  git_binary: `+fakeGit+`
+  work_dir: `+dir+`
+`)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var logs syncBuffer
+	cmd := app.NewCommand()
+	cmd.ErrWriter = &logs
+	done := make(chan error, 1)
+	go func() { done <- cmd.Run(ctx, []string{"forgemirror", "--config", cfg}) }()
+
+	addr := waitForLog(t, &logs, regexp.MustCompile(`msg="http server listening" address=(\S+)`))[1]
+	postPush(ctx, t, addr, `{"ref":"refs/heads/main","repository":{"name":"app","full_name":"acme/app",`+
+		`"owner":{"login":"acme"},"clone_url":"`+f.srv.URL+`/acme/app.git"}}`)
+
+	waitForLog(t, &logs, regexp.MustCompile(`msg="mirror finished"`))
+	assertMetrics(ctx, t, addr,
+		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
+		`forgemirror_sync_operations_total{operation="settings",status="success",target="gh"} 1`,
+		`forge_mirror_operations_total{status="success",target="gh"} 1`,
+	)
+	cancel()
+
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run() error = %v, want clean shutdown", runErr)
+		}
+	case <-time.After(waitTimeout):
+		t.Fatal("service did not shut down")
+	}
+
+	for _, key := range []string{"POST /api/v3/orgs/acme/repos", "PATCH /api/v3/repos/acme/app"} {
+		if !f.called(key) {
+			t.Errorf("API call %q missing; calls: %v", key, f.calls)
+		}
+	}
+	gitCalls, err := os.ReadFile(gitLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "push --prune --quiet " + f.srv.URL + "/acme/app.git"; !strings.Contains(string(gitCalls), want) {
+		t.Errorf("git calls missing %q:\n%s", want, gitCalls)
+	}
+	if strings.Contains(logs.String(), "gh-token") || strings.Contains(logs.String(), "src-token") {
+		t.Errorf("logs contain a token:\n%s", logs.String())
+	}
+}
+
+func TestServeFailsWhenForgeClientCannotBeBuilt(t *testing.T) {
+	t.Parallel()
+
+	// Nothing listens on port 1, so the Forgejo version probe fails.
+	_, err := run(t, "--config", writeConfig(t, `
+webhook:
+  secret: s
+source:
+  base_url: http://127.0.0.1:1
+  token: src-token
+targets:
+  - name: gh
+    type: github
+    url: "https://github.com/acme/{{ .Name }}.git"
+    token: gh-token
+server:
+  listen_address: "127.0.0.1:0"
+`))
+	if err == nil || !strings.Contains(err.Error(), "source API client") {
+		t.Errorf("Run() error = %v, want source API client error", err)
 	}
 }

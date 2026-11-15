@@ -27,7 +27,8 @@ const (
 	serviceName = "forgemirror"
 )
 
-// Status label values of forge_mirror_operations_total.
+// Status label values of forge_mirror_operations_total and
+// forgemirror_sync_operations_total.
 const (
 	statusSuccess = "success"
 	statusFailure = "failure"
@@ -49,6 +50,7 @@ type Metrics struct {
 	duration   metric.Float64Histogram
 	webhooks   metric.Int64Counter
 	active     metric.Int64UpDownCounter
+	syncOps    metric.Int64Counter
 }
 
 var (
@@ -90,7 +92,7 @@ func New(serviceVersion string) (*Metrics, error) {
 }
 
 func (m *Metrics) instruments(meter metric.Meter) error {
-	var errs [4]error
+	var errs [5]error
 	// The exporter appends _total to counters and _seconds for unit "s".
 	m.operations, errs[0] = meter.Int64Counter("forge_mirror_operations",
 		metric.WithDescription("Mirror operations per target, by status."))
@@ -102,6 +104,8 @@ func (m *Metrics) instruments(meter metric.Meter) error {
 		metric.WithDescription("Webhook requests, by outcome."))
 	m.active, errs[3] = meter.Int64UpDownCounter("forge_mirror_active_operations",
 		metric.WithDescription("Mirror runs currently in progress."))
+	m.syncOps, errs[4] = meter.Int64Counter("forgemirror_sync_operations",
+		metric.WithDescription("Forge API operations (create, settings, labels, delete) per target, by status."))
 
 	if err := errors.Join(errs[:]...); err != nil {
 		return fmt.Errorf("creating instruments: %w", err)
@@ -136,17 +140,30 @@ func (m *Metrics) RunFinished(ctx context.Context) {
 
 // TargetFinished implements [dispatch.Observer].
 func (m *Metrics) TargetFinished(ctx context.Context, target string, duration time.Duration, err error) {
-	status := statusSuccess
-	if err != nil {
-		status = statusFailure
-	}
 	targetAttr := attribute.String("target", target)
 
-	m.operations.Add(ctx, 1, metric.WithAttributes(targetAttr, attribute.String("status", status)))
+	m.operations.Add(ctx, 1, metric.WithAttributes(targetAttr, attribute.String("status", status(err))))
 	m.duration.Record(ctx, duration.Seconds(), metric.WithAttributes(targetAttr))
+}
+
+// SyncFinished implements [dispatch.Observer].
+func (m *Metrics) SyncFinished(ctx context.Context, target, operation string, err error) {
+	m.syncOps.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("target", target),
+		attribute.String("operation", operation),
+		attribute.String("status", status(err)),
+	))
 }
 
 // ObserveWebhook implements [webhook.Observer].
 func (m *Metrics) ObserveWebhook(ctx context.Context, outcome webhook.Outcome) {
 	m.webhooks.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", string(outcome))))
+}
+
+func status(err error) string {
+	if err != nil {
+		return statusFailure
+	}
+
+	return statusSuccess
 }

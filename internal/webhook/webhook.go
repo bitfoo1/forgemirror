@@ -37,7 +37,23 @@ type Event struct {
 	Ref string
 	// Delivery is Forgejo's delivery ID, for correlating logs.
 	Delivery string
+	// Kind selects what the run does; the zero value is a push.
+	Kind EventKind
 }
+
+// EventKind is what started a run.
+type EventKind int
+
+// Event kinds.
+const (
+	// EventPush mirrors after a push.
+	EventPush EventKind = iota
+	// EventScheduled mirrors periodically and skips git when the target refs
+	// already match the source.
+	EventScheduled
+	// EventDelete removes the repository from targets with delete enabled.
+	EventDelete
+)
 
 // Dispatcher runs the mirror work for an event. Dispatch must not block on
 // the mirror itself: Forgejo times out webhook deliveries after a few

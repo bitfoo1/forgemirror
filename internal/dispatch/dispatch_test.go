@@ -111,11 +111,30 @@ type targetResult struct {
 	err    error
 }
 
+type syncResult struct {
+	target, operation string
+	err               error
+}
+
 type recordingObserver struct {
 	mu      sync.Mutex
 	started atomic.Int32
 	done    atomic.Int32
 	results []targetResult
+	syncs   []syncResult
+}
+
+func (o *recordingObserver) SyncFinished(_ context.Context, target, operation string, err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.syncs = append(o.syncs, syncResult{target: target, operation: operation, err: err})
+}
+
+func (o *recordingObserver) snapshot() ([]targetResult, []syncResult) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	return slices.Clone(o.results), slices.Clone(o.syncs)
 }
 
 func (o *recordingObserver) RunStarted(context.Context)  { o.started.Add(1) }

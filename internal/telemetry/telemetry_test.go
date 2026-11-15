@@ -101,3 +101,42 @@ func TestIndependentRegistries(t *testing.T) {
 		t.Errorf("second instance sees first instance's metrics:\n%s", body)
 	}
 }
+
+func TestSyncFinishedCounts(t *testing.T) {
+	t.Parallel()
+
+	m, err := telemetry.New("test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+	m.SyncFinished(ctx, "github", "create", nil)
+	m.SyncFinished(ctx, "github", "labels", errors.New("forbidden"))
+	m.SyncFinished(ctx, "github", "labels", errors.New("forbidden"))
+
+	body := scrape(t, m)
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{
+			name: "create success",
+			want: `forgemirror_sync_operations_total{operation="create",status="success",target="github"} 1`,
+		},
+		{
+			name: "labels failure",
+			want: `forgemirror_sync_operations_total{operation="labels",status="failure",target="github"} 2`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("metrics missing %q:\n%s", tc.want, body)
+			}
+		})
+	}
+}
