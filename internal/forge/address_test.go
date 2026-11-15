@@ -1,6 +1,7 @@
 package forge_test
 
 import (
+	"strings"
 	"testing"
 
 	"go.bitfoo.de/forgemirror/internal/forge"
@@ -41,6 +42,14 @@ func TestParseAddress(t *testing.T) {
 		},
 		{"no namespace", "github", "", "https://github.com/app.git", forge.Address{}, true},
 		{"unknown type", "bitbucket", "", "https://bitbucket.org/a/b.git", forge.Address{}, true},
+		{
+			"unknown type with explicit api url",
+			"bitbucket",
+			"https://x/api",
+			"https://x/a/b.git",
+			forge.Address{},
+			true,
+		},
 		{"invalid url", "github", "", "://bad", forge.Address{}, true},
 	}
 	for _, tc := range tests {
@@ -55,5 +64,17 @@ func TestParseAddress(t *testing.T) {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseAddressErrorHidesCredentials(t *testing.T) {
+	t.Parallel()
+
+	_, err := forge.ParseAddress("github", "", "https://user:s3cret@%zz")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("error leaks credentials: %v", err)
 	}
 }

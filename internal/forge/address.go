@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -18,9 +19,14 @@ type Address struct {
 // scheme and host (including port) of the clone URL are reused for the
 // default API URL so self-hosted instances on http or odd ports work.
 func ParseAddress(forgeType, apiURL, renderedURL string) (Address, error) {
+	if !slices.Contains([]string{TypeGitHub, TypeGitLab, TypeForgejo}, forgeType) {
+		return Address{}, fmt.Errorf("unknown forge type %q", forgeType)
+	}
+
 	u, err := url.Parse(renderedURL)
 	if err != nil {
-		return Address{}, fmt.Errorf("parse repository url: %w", err)
+		// The *url.Error would embed the raw URL, which may carry credentials.
+		return Address{}, errors.New("repository url is not parseable")
 	}
 
 	segments := strings.Split(strings.Trim(strings.TrimSuffix(u.Path, ".git"), "/"), "/")
