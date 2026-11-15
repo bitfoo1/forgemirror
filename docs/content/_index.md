@@ -34,42 +34,36 @@ layout: hextra-home
   {{< hextra/feature-card
     title="Push-driven"
     class="fm-card"
-    style="--fm-accent: var(--fm-forge)"
     subtitle="No polling and no cron. Every push triggers one clone and a parallel push to all targets, and pushes that arrive during a run are coalesced."
     icon="lightning-bolt"
   >}}
   {{< hextra/feature-card
     title="Works behind a firewall"
     class="fm-card"
-    style="--fm-accent: var(--fm-mirror)"
     subtitle="Forgejo only has to reach forgemirror. Nothing on the internet needs access to your instance."
     icon="shield-check"
   >}}
   {{< hextra/feature-card
     title="One target, many repositories"
     class="fm-card"
-    style="--fm-accent: var(--fm-violet)"
     subtitle="Target URLs are templates: one entry with `{{ .Name }}` in its path covers every repository."
     icon="template"
   >}}
   {{< hextra/feature-card
     title="Filters"
     class="fm-card"
-    style="--fm-accent: var(--fm-ember)"
     subtitle="Include and exclude repositories by pattern, restrict branches, skip private repositories and forks, or opt in per repository with a topic."
     icon="filter"
   >}}
   {{< hextra/feature-card
     title="Secrets stay secret"
     class="fm-card"
-    style="--fm-accent: var(--fm-forge)"
     subtitle="Tokens never touch disk, argv or logs. Credentials can come from mounted files, as Kubernetes expects."
     icon="key"
   >}}
   {{< hextra/feature-card
     title="Ready to operate"
     class="fm-card"
-    style="--fm-accent: var(--fm-mirror)"
     subtitle="Prometheus metrics, structured logs, health probes, graceful shutdown, a Helm chart and signed multi-arch images."
     icon="chart-bar"
   >}}
