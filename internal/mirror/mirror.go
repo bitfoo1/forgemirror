@@ -26,6 +26,10 @@ type Mirrorer interface {
 	// Clone creates a bare mirror clone of src. The caller must Close the
 	// returned Workspace.
 	Clone(ctx context.Context, src Remote) (Workspace, error)
+	// Refs lists the remote's branches and tags as ref name to object id,
+	// without cloning. The scheduled run compares these maps to skip targets
+	// that are already in sync. An empty remote yields an empty map.
+	Refs(ctx context.Context, r Remote) (map[string]string, error)
 }
 
 // Workspace is a local mirror clone.

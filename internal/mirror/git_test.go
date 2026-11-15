@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -240,5 +241,68 @@ func TestWorkDirError(t *testing.T) {
 	g := newGit("git", filepath.Join(t.TempDir(), "missing", "dir"), time.Minute)
 	if _, err := g.Clone(t.Context(), mirror.Remote{URL: "https://forgejo.example/a.git"}); err == nil {
 		t.Error("Clone() with missing work dir: error = nil, want error")
+	}
+}
+
+func TestRefsCommandAndParsing(t *testing.T) {
+	t.Parallel()
+
+	binary, logFile := fakeGit(
+		t,
+		`printf 'aaa\trefs/heads/main\nbbb\trefs/tags/v1\nccc\trefs/tags/v1^{}\n'; echo "warning" >&2`,
+	)
+	g := newGit(binary, t.TempDir(), time.Minute)
+	r := mirror.Remote{URL: "https://github.com/acme/app.git", Username: "bot", Token: "dst-token"}
+
+	got, err := g.Refs(t.Context(), r)
+	if err != nil {
+		t.Fatalf("Refs() error = %v", err)
+	}
+	want := map[string]string{"refs/heads/main": "aaa", "refs/tags/v1": "bbb"}
+	if !maps.Equal(got, want) {
+		t.Errorf("Refs() = %v, want %v", got, want)
+	}
+
+	log := readLog(t, logFile)
+	if !strings.Contains(log, "ARGS ls-remote --heads --tags -- "+r.URL) {
+		t.Errorf("unexpected git arguments:\n%s", log)
+	}
+	if !strings.Contains(log, "GIT_CONFIG_KEY_0=http."+r.URL+".extraHeader") {
+		t.Errorf("credential header not scoped to URL:\n%s", log)
+	}
+}
+
+func TestRefsCredentialNotInArgs(t *testing.T) {
+	t.Parallel()
+
+	binary, logFile := fakeGit(t, "exit 0")
+	g := newGit(binary, t.TempDir(), time.Minute)
+
+	got, err := g.Refs(t.Context(), mirror.Remote{URL: "https://github.com/a.git", Username: "bot", Token: "dst-token"})
+	if err != nil {
+		t.Fatalf("Refs() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("Refs() = %v, want empty", got)
+	}
+	for line := range strings.Lines(readLog(t, logFile)) {
+		if strings.HasPrefix(line, "ARGS") && strings.Contains(line, "dst-token") {
+			t.Errorf("credentials in git arguments: %s", line)
+		}
+	}
+}
+
+func TestRefsFailureRedacts(t *testing.T) {
+	t.Parallel()
+
+	binary, _ := fakeGit(t, `echo "fatal: denied dst-token" >&2; exit 128`)
+	g := newGit(binary, t.TempDir(), time.Minute)
+
+	_, err := g.Refs(t.Context(), mirror.Remote{URL: "https://github.com/a.git", Token: "dst-token"})
+	if err == nil {
+		t.Fatal("Refs() error = nil")
+	}
+	if strings.Contains(err.Error(), "dst-token") {
+		t.Errorf("token leaked: %v", err)
 	}
 }

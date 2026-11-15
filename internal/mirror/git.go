@@ -106,33 +106,66 @@ func (w *gitWorkspace) Close() error {
 	return w.closeErr
 }
 
+// Refs implements [Mirrorer].
+func (g *Git) Refs(ctx context.Context, r Remote) (map[string]string, error) {
+	// Only heads and tags: refs/pull/* are never mirrored, so they must not
+	// make an otherwise identical target look out of sync.
+	out, err := g.output(ctx, "", r, "ls-remote", "--heads", "--tags", "--", r.URL)
+	if err != nil {
+		return nil, fmt.Errorf("listing refs of %s: %w", redactURL(r.URL), err)
+	}
+
+	refs := make(map[string]string)
+	for line := range strings.Lines(out) {
+		id, name, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		// Peeled entries (^{}) repeat an annotated tag's target commit; the tag
+		// object id alone already identifies the tag.
+		if !ok || strings.HasSuffix(name, "^{}") {
+			continue
+		}
+		refs[name] = id
+	}
+
+	return refs, nil
+}
+
 func (g *Git) run(ctx context.Context, dir string, remote Remote, args ...string) error {
+	_, err := g.output(ctx, dir, remote, args...)
+
+	return err
+}
+
+// output runs git and returns stdout. Stderr is kept apart so that warnings
+// cannot corrupt parsed output; it only appears in errors.
+func (g *Git) output(ctx context.Context, dir string, remote Remote, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, g.opts.Timeout)
 	defer cancel()
 
-	var out bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	// The binary is operator configuration (mirror.git_binary) and the
 	// arguments are fixed flags plus validated URLs; no shell is involved.
 	cmd := exec.CommandContext(ctx, g.opts.Binary, args...) //nolint:gosec // see above
 	cmd.Dir = dir
 	cmd.Env = g.env(remote)
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	// Distinct buffers: exec copies each stream in its own goroutine, so a
+	// shared buffer would race.
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	cmd.WaitDelay = g.opts.WaitDelay
 
 	err := cmd.Run()
 	if err == nil {
-		return nil
+		return stdout.String(), nil
 	}
 
-	output := redact(strings.TrimSpace(out.String()), remote)
+	output := redact(strings.TrimSpace(stderr.String()+stdout.String()), remote)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		// Both errors stay inspectable: errors.Is(err, context.DeadlineExceeded)
 		// as well as *exec.ExitError.
-		return fmt.Errorf("%w: %w: %s", ctxErr, err, output)
+		return "", fmt.Errorf("%w: %w: %s", ctxErr, err, output)
 	}
 
-	return fmt.Errorf("%w: %s", err, output)
+	return "", fmt.Errorf("%w: %s", err, output)
 }
 
 // env builds git's environment. Credentials travel as an HTTP header scoped

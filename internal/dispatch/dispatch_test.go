@@ -33,6 +33,15 @@ type fakeMirrorer struct {
 
 	cloneHook func(ctx context.Context, src mirror.Remote) error
 	pushHook  func(ctx context.Context, dst mirror.Remote) error
+	refsHook  func(ctx context.Context, r mirror.Remote) (map[string]string, error)
+}
+
+func (f *fakeMirrorer) Refs(ctx context.Context, r mirror.Remote) (map[string]string, error) {
+	if f.refsHook != nil {
+		return f.refsHook(ctx, r)
+	}
+
+	return map[string]string{}, nil
 }
 
 func (f *fakeMirrorer) enter() {

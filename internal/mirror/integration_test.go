@@ -1,6 +1,7 @@
 package mirror_test
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,5 +123,47 @@ func TestCredentialHeaderScopeWithRealGit(t *testing.T) {
 		if leaked, matchErr := urlmatch(other); matchErr == nil || leaked != "" {
 			t.Errorf("header leaked to %s: %q", other, leaked)
 		}
+	}
+}
+
+func TestRefs(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	source := filepath.Join(root, "source.git")
+	empty := filepath.Join(root, "empty.git")
+
+	gitCmd(t, root, "init", "--quiet", "--bare", source)
+	gitCmd(t, root, "init", "--quiet", "--bare", empty)
+	gitCmd(t, root, "init", "--quiet", "--initial-branch=main", work)
+	gitCmd(t, work, "commit", "--quiet", "--allow-empty", "-m", "initial")
+	gitCmd(t, work, "tag", "-a", "-m", "release", "v1")
+	gitCmd(t, work, "push", "--quiet", source, "main", "v1", "HEAD:refs/pull/1/head")
+
+	g := mirror.NewGit(mirror.GitOptions{Binary: "git", WorkDir: t.TempDir(), Timeout: time.Minute})
+
+	got, err := g.Refs(t.Context(), mirror.Remote{URL: source})
+	if err != nil {
+		t.Fatalf("Refs() error = %v", err)
+	}
+	want := map[string]string{
+		"refs/heads/main": gitCmd(t, source, "rev-parse", "refs/heads/main"),
+		"refs/tags/v1":    gitCmd(t, source, "rev-parse", "refs/tags/v1"),
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("Refs() = %v, want %v", got, want)
+	}
+
+	if got, err = g.Refs(t.Context(), mirror.Remote{URL: empty}); err != nil || len(got) != 0 {
+		t.Errorf("Refs(empty) = %v, %v; want empty map, nil", got, err)
+	}
+
+	if _, err = g.Refs(t.Context(), mirror.Remote{URL: filepath.Join(root, "missing.git")}); err == nil {
+		t.Error("Refs(missing) error = nil")
 	}
 }
