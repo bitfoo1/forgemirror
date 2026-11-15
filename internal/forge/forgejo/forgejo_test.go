@@ -323,6 +323,7 @@ func TestCreateOrgVsUser(t *testing.T) {
 
 			f := newFake(t, map[string]http.HandlerFunc{
 				"GET /api/v1/orgs/" + tt.ns: tt.orgRoute,
+				"GET /api/v1/user":          jsonReply(`{"login":"Bob"}`),
 				"POST " + tt.wantPath:       jsonReply(`{"name":"app"}`),
 			})
 
@@ -351,6 +352,29 @@ func TestCreateOrgVsUser(t *testing.T) {
 				t.Errorf("default_branch = %v", v)
 			}
 		})
+	}
+}
+
+func TestCreateRefusesForeignUser(t *testing.T) {
+	t.Parallel()
+
+	f := newFake(t, map[string]http.HandlerFunc{
+		"GET /api/v1/orgs/mallory": status(http.StatusNotFound),
+		"GET /api/v1/user":         jsonReply(`{"login":"bob"}`),
+		"POST /api/v1/user/repos":  jsonReply(`{"name":"app"}`),
+	})
+
+	err := f.client(t, "").Create(t.Context(), forge.Address{Namespace: "mallory", Name: "app"}, forge.Repo{})
+	if err == nil {
+		t.Fatal("Create succeeded for a foreign user")
+	}
+
+	if !strings.Contains(err.Error(), "not an organisation and not the token's user") {
+		t.Errorf("err = %v", err)
+	}
+
+	if posts := f.recorded("POST", "/api/v1/user/repos"); len(posts) != 0 {
+		t.Errorf("posts = %d, want none", len(posts))
 	}
 }
 

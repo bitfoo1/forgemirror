@@ -22,6 +22,13 @@ const pageSize = 50
 
 const apiSuffix = "/api/v1"
 
+type foreignNamespaceError struct{ namespace string }
+
+func (e *foreignNamespaceError) Error() string {
+	return "cannot create repository in namespace " + e.namespace +
+		": not an organisation and not the token's user"
+}
+
 // Client talks to one Forgejo instance. It is a forge.Target; the source side
 // is available through Source because both interfaces declare a Labels method
 // with different signatures.
@@ -284,11 +291,29 @@ func (c *Client) Create(ctx context.Context, a forge.Address, r forge.Repo) erro
 	case err == nil:
 		_, resp, err = api.CreateOrgRepo(a.Namespace, opt)
 	case resp != nil && resp.Response != nil && resp.StatusCode == http.StatusNotFound:
-		// Not an organisation, so the owner is the token's own user.
+		if err = requireSelf(api, op, a.Namespace); err != nil {
+			return err
+		}
 		_, resp, err = api.CreateRepo(opt)
 	}
 
 	return wrap(op, resp, err)
+}
+
+// requireSelf refuses a namespace that is neither an organisation nor the
+// token's user: Forgejo creates a user repository in the token's own account,
+// so it would otherwise land somewhere other than the configured URL.
+func requireSelf(api *sdk.Client, op, namespace string) error {
+	self, resp, err := api.GetMyUserInfo()
+	if err != nil {
+		return wrap(op, resp, err)
+	}
+
+	if !strings.EqualFold(self.UserName, namespace) {
+		return fmt.Errorf("forgejo %s: %w", op, &foreignNamespaceError{namespace})
+	}
+
+	return nil
 }
 
 // Update implements forge.Target, sending only the fields that are set.

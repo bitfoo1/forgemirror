@@ -208,11 +208,10 @@ require a `type`; the namespace and name of the repository come from the
 rendered `url` (`/group/sub/name.git` is namespace `group/sub`, name `name`).
 
 **Creating repositories:** forgemirror creates a repository in an
-organisation or group, or in the token's own account. GitHub and GitLab
-refuse any other namespace with `cannot create repository in namespace …:
-not an organisation and not the token's user`, because they would otherwise
-create it somewhere else. Forgejo targets have no such check: a namespace
-that is not an organisation is created in the token's own account.
+organisation or group, or in the token's own account. Any other namespace
+is refused with `cannot create repository in namespace …: not an
+organisation and not the token's user`, because the forge would otherwise
+create it somewhere else.
 On Forgejo, organisation repositories are created through the deprecated but
 working `/api/v1/org/{org}/repos` route.
 
@@ -264,7 +263,7 @@ without a leading `#`.
 | `website`           | synced           | ignored        | synced  |
 | `has_pull_requests` | ignored          | synced         | synced  |
 | `topics`            | lower-cased      | lower-cased    | lower-cased |
-| Create in           | organisation or own user | group or own user | organisation or token's account |
+| Create in           | organisation or own user | group or own user | organisation or own user |
 
 `delete: true` removes the target repository when Forgejo sends a
 `repository` event with action `deleted`. Only that event deletes: not an
