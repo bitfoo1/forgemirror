@@ -53,7 +53,7 @@ forgemirror answers right away, and mirroring happens in the background. A
 | 202    | `accepted`                 | Mirror queued, or coalesced into a running one                 |
 | 200    | `filtered`                 | Valid push, but a filter rule excludes it; the body names the rule |
 | 200    | `ignored`                  | Not a push event (for example the test delivery of another event type) |
-| 400    | `bad_request`              | Malformed JSON or required fields missing                      |
+| 400    | `bad_request`              | Malformed JSON, required fields missing, or a clone URL outside `source.base_url` |
 | 401    | `unauthorized`             | Missing or wrong signature, so the secrets differ              |
 | 413    | `too_large`                | Body exceeds `webhook.max_body_bytes` (default 5 MiB)          |
 | 415    | `unsupported_media_type`   | Content type is not `application/json`                         |
