@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -225,9 +226,7 @@ func TestEndToEnd(t *testing.T) {
 echo "$*" >>"` + gitLog + `"
 if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
 `
-	if err := os.WriteFile(fakeGit, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeExecutable(t, fakeGit, script)
 
 	cfg := writeConfig(t, testConfig+`
 server:
@@ -401,9 +400,7 @@ func fakeGitBinary(t *testing.T, dir string) (binary, logFile string) { //nolint
 echo "$*" >>"` + logFile + `"
 if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
 `
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeExecutable(t, binary, script)
 
 	return binary, logFile
 }
@@ -631,9 +628,7 @@ ls-remote*git.example*) printf 'abc123\trefs/heads/main\n' ;;
 clone*) for last; do :; done; mkdir -p "$last" ;;
 esac
 `
-	if err := os.WriteFile(fakeGit, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeExecutable(t, fakeGit, script)
 	ctx := t.Context()
 
 	svc := startService(ctx, t, writeConfig(t, `
@@ -673,5 +668,27 @@ mirror:
 	}
 	if want := "push --prune --quiet https://example.com/acme/app.git"; !strings.Contains(string(gitCalls), want) {
 		t.Errorf("git calls missing %q:\n%s", want, gitCalls)
+	}
+}
+
+// writeExecutable creates an executable script at path without ever holding
+// a writable descriptor for it in this process. Parallel tests fork git
+// processes; a child forked while the script is open for writing inherits
+// that descriptor until it execs, and exec'ing the script then fails with
+// "text file busy" on Linux (golang/go#22315). Writing a plain source file
+// and letting a short-lived cp create the executable keeps the destination's
+// descriptor out of every forked child.
+func writeExecutable(t *testing.T, path, content string) {
+	t.Helper()
+
+	src := path + ".src"
+	if err := os.WriteFile(src, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.CommandContext(t.Context(), "cp", src, path).CombinedOutput(); err != nil {
+		t.Fatalf("cp %s %s: %v: %s", src, path, err, out)
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		t.Fatal(err)
 	}
 }

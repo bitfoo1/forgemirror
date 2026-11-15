@@ -28,11 +28,31 @@ func fakeGit(t *testing.T, body string) (binary, logFile string) { //nolint:nona
 { echo "ARGS $*"; env | grep '^GIT_' | sort; } >>"` + logFile + `"
 if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
 ` + body + "\n"
-	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeExecutable(t, binary, script)
 
 	return binary, logFile
+}
+
+// writeExecutable creates an executable script at path without ever holding
+// a writable descriptor for it in this process. Parallel tests fork git
+// processes; a child forked while the script is open for writing inherits
+// that descriptor until it execs, and exec'ing the script then fails with
+// "text file busy" on Linux (golang/go#22315). Writing a plain source file
+// and letting a short-lived cp create the executable keeps the destination's
+// descriptor out of every forked child.
+func writeExecutable(t *testing.T, path, content string) {
+	t.Helper()
+
+	src := path + ".src"
+	if err := os.WriteFile(src, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.CommandContext(t.Context(), "cp", src, path).CombinedOutput(); err != nil {
+		t.Fatalf("cp %s %s: %v: %s", src, path, err, out)
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func readLog(t *testing.T, path string) string {
