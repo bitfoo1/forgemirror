@@ -22,7 +22,7 @@ lychee = "0.24.2"
 # standalone compose binary is used because a CLI plugin would need
 # per-machine docker config to be found.
 docker-cli = "29.9.3"
-docker-compose = "5.6.1"
+docker-compose = "v5.7.1"
 
 [hooks]
 # Point git at the versioned hooks in .githooks/. `enter` covers developers
