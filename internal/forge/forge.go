@@ -59,6 +59,8 @@ type Settings struct {
 	HasWiki         *bool     `koanf:"has_wiki"`
 	HasPullRequests *bool     `koanf:"has_pull_requests"`
 	Labels          *bool     `koanf:"labels"`
+	Releases        *bool     `koanf:"releases"`
+	Packages        *bool     `koanf:"packages"`
 }
 
 // Validate rejects settings that could expose a private source repository.

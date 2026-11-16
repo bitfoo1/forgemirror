@@ -270,3 +270,30 @@ func TestSettingsIsZero(t *testing.T) {
 		t.Error("labels-only settings reported zero")
 	}
 }
+
+func TestResolveFeatures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		layers []forge.Settings
+		want   forge.Features
+	}{
+		{"defaults", nil, forge.Features{Labels: true}},
+		{
+			"target enables, override disables packages",
+			[]forge.Settings{{Releases: new(true), Packages: new(true)}, {Packages: new(false)}},
+			forge.Features{Labels: true, Releases: true},
+		},
+		{"labels off", []forge.Settings{{Labels: new(false)}}, forge.Features{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := forge.ResolveFeatures(tc.layers...); got != tc.want {
+				t.Errorf("ResolveFeatures() = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}

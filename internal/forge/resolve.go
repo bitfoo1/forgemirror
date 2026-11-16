@@ -6,11 +6,11 @@ import (
 )
 
 // Resolve applies the layers in order (last wins) on top of the source
-// repository. syncLabels defaults to true.
+// repository. The bool reports whether labels are synced (see
+// [ResolveFeatures]).
 func Resolve(src Repo, layers ...Settings) (Repo, bool) {
 	out := src
 	out.Topics = normalizeTopics(src.Topics)
-	syncLabels := true
 
 	for _, l := range layers {
 		if l.Description != nil {
@@ -39,12 +39,36 @@ func Resolve(src Repo, layers ...Settings) (Repo, bool) {
 		if l.HasPullRequests != nil {
 			out.HasPullRequests = *l.HasPullRequests
 		}
+	}
+
+	return out, ResolveFeatures(layers...).Labels
+}
+
+// Features selects which parts besides the repository settings are synced.
+type Features struct {
+	Labels   bool
+	Releases bool
+	Packages bool
+}
+
+// ResolveFeatures applies the layers in order (last wins). Labels default to
+// on; releases and packages default to off, because they publish binaries and
+// need token scopes an existing deployment may not have.
+func ResolveFeatures(layers ...Settings) Features {
+	f := Features{Labels: true}
+	for _, l := range layers {
 		if l.Labels != nil {
-			syncLabels = *l.Labels
+			f.Labels = *l.Labels
+		}
+		if l.Releases != nil {
+			f.Releases = *l.Releases
+		}
+		if l.Packages != nil {
+			f.Packages = *l.Packages
 		}
 	}
 
-	return out, syncLabels
+	return f
 }
 
 // Diff returns the settings that must change to turn current into desired.

@@ -116,6 +116,8 @@ targets:
     # create: false # create the repository when it is missing
     # delete: false # delete it when the source repository was deleted
     # prune_labels: false # delete labels that do not exist on the source
+    # prune_releases: false # delete releases that do not exist on the source
+    # registry: "" # container registry for package sync; derived when empty
     # Target-wide settings; they win over the values of the Forgejo repository.
     # All keys are optional; `private` accepts only true.
     # settings:
@@ -128,6 +130,8 @@ targets:
     #   has_wiki: false
     #   has_pull_requests: true
     #   labels: true # false disables label sync
+    #   releases: false # true syncs published releases with attachments
+    #   packages: false # true copies linked container packages (public repos only)
     # Matched against "owner/name" (whole value); applied in order on top of
     # `settings`, later entries win.
     # overrides:

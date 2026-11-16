@@ -12,6 +12,11 @@ import (
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
 
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
+
 // errTargetNotValidated guards against using a Target that did not go
 // through [Config.Validate], which compiles the URL template.
 var errTargetNotValidated = errors.New("target URL template not compiled; validate the config first")
@@ -39,6 +44,12 @@ type Target struct {
 	Delete bool `koanf:"delete"`
 	// PruneLabels deletes labels that do not exist on the source.
 	PruneLabels bool `koanf:"prune_labels"`
+	// PruneReleases deletes releases whose tag has no published release on
+	// the source.
+	PruneReleases bool `koanf:"prune_releases"`
+	// Registry is the container registry of the target forge, as host[:port]
+	// or http(s)://host[:port]; empty derives it from Type and the URL host.
+	Registry string `koanf:"registry"`
 	// Settings are target-wide defaults that beat the source values.
 	Settings forge.Settings `koanf:"settings"`
 	// Overrides refine Settings for matching repositories, in order.
@@ -69,6 +80,72 @@ func (t *Target) Address(r repo.Repository) (forge.Address, error) {
 	}
 
 	return addr, nil
+}
+
+// RegistryHost returns the container registry host of the target and
+// whether it is reached over plain HTTP.
+func (t *Target) RegistryHost() (string, bool, error) {
+	if t.Registry != "" {
+		return parseRegistry(t.Registry)
+	}
+
+	// The host is constant across repositories (see [Target.Address]), so a
+	// sample rendering is enough.
+	raw, err := t.RemoteURL(repo.Repository{Owner: "owner", Name: "name", FullName: "owner/name"})
+	if err != nil {
+		return "", false, err
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", false, errors.New("url: cannot derive the registry host")
+	}
+
+	switch {
+	case t.Type == forge.TypeGitHub && strings.EqualFold(u.Host, "github.com"):
+		return "ghcr.io", false, nil
+	case t.Type == forge.TypeGitLab && strings.EqualFold(u.Host, "gitlab.com"):
+		return "registry.gitlab.com", false, nil
+	case t.Type == forge.TypeForgejo:
+		// Forgejo serves its registry on the instance host itself.
+		return u.Host, u.Scheme == schemeHTTP, nil
+	default:
+		return "", false, fmt.Errorf("cannot derive the container registry of %s; set registry", u.Host)
+	}
+}
+
+// parseRegistry accepts host[:port] (HTTPS) or an http(s) URL without a path.
+func parseRegistry(raw string) (string, bool, error) {
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil:
+		return "", false, errors.New("not a valid host or URL")
+	case u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP:
+		return "", false, fmt.Errorf("scheme must be https or http, got %q", u.Scheme)
+	case u.Host == "" || u.User != nil || strings.Trim(u.Path, "/") != "" || u.RawQuery != "":
+		return "", false, errors.New("must be host[:port] or a scheme and host[:port] only")
+	}
+
+	return u.Host, u.Scheme == schemeHTTP, nil
+}
+
+// syncsPackages reports whether package sync is enabled in the target
+// settings or any override.
+func (t *Target) syncsPackages() bool {
+	if t.Settings.Packages != nil && *t.Settings.Packages {
+		return true
+	}
+
+	for _, o := range t.Overrides {
+		if o.Settings.Packages != nil && *o.Settings.Packages {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Layers returns the settings layers for the repository fullName in
@@ -125,7 +202,7 @@ func checkRemoteURL(raw string) error {
 	if err != nil {
 		return err
 	}
-	if u.Scheme != "https" && u.Scheme != "http" {
+	if u.Scheme != schemeHTTPS && u.Scheme != schemeHTTP {
 		return fmt.Errorf("scheme must be https or http, got %q", u.Scheme)
 	}
 	if u.Host == "" {

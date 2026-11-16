@@ -295,6 +295,8 @@ mirror:
 			yaml: typedBase + `    create: true
     delete: true
     prune_labels: true
+    prune_releases: true
+    registry: ghcr.io
     api_url: https://x.example/api
     settings: {has_issues: true}
     overrides:
@@ -303,8 +305,25 @@ mirror:
 			wantErr: []string{
 				"targets[0].create: requires type", "targets[0].delete: requires type",
 				"targets[0].prune_labels: requires type", "targets[0].api_url: requires type",
+				"targets[0].prune_releases: requires type", "targets[0].registry: requires type",
 				"targets[0].settings: requires type", "targets[0].overrides: requires type",
 			},
+		},
+		{
+			name: "packages without a derivable registry",
+			yaml: strings.Replace(typedBase, "github.com", "github.example.com", 1) + `    type: github
+    overrides:
+      - repos: "a/b"
+        settings: {packages: true}
+`,
+			wantErr: []string{"targets[0].registry: cannot derive the container registry of github.example.com"},
+		},
+		{
+			name: "registry malformed",
+			yaml: typedBase + `    type: github
+    registry: "ftp://ghcr.io/x"
+`,
+			wantErr: []string{"targets[0].registry: scheme must be https or http"},
 		},
 		{
 			name: "private false rejected",

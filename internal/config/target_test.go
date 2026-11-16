@@ -114,3 +114,83 @@ func TestTypedFalseWithoutTypes(t *testing.T) {
 		t.Error("Typed() = true, want false")
 	}
 }
+
+func TestTargetRegistryHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, typ, url, registry string
+		wantHost                 string
+		wantInsecure             bool
+		wantErr                  bool
+	}{
+		{name: "github.com", typ: "github", url: "https://github.com/a/{{ .Name }}.git", wantHost: "ghcr.io"},
+		{
+			name:     "gitlab.com",
+			typ:      "gitlab",
+			url:      "https://gitlab.com/a/{{ .Name }}.git",
+			wantHost: "registry.gitlab.com",
+		},
+		{name: "codeberg", typ: "forgejo", url: "https://codeberg.org/a/{{ .Name }}.git", wantHost: "codeberg.org"},
+		{
+			name: "forgejo over http", typ: "forgejo", url: "http://127.0.0.1:3000/a/{{ .Name }}.git",
+			wantHost: "127.0.0.1:3000", wantInsecure: true,
+		},
+		{name: "github enterprise", typ: "github", url: "https://ghe.example/a/{{ .Name }}.git", wantErr: true},
+		{name: "self-hosted gitlab", typ: "gitlab", url: "https://gl.example/a/{{ .Name }}.git", wantErr: true},
+		{
+			name: "explicit host", typ: "github", url: "https://ghe.example/a/{{ .Name }}.git",
+			registry: "containers.ghe.example", wantHost: "containers.ghe.example",
+		},
+		{
+			name: "explicit http URL", typ: "gitlab", url: "https://gl.example/a/{{ .Name }}.git",
+			registry: "http://reg.example:5000", wantHost: "reg.example:5000", wantInsecure: true,
+		},
+		{
+			name: "explicit with path", typ: "gitlab", url: "https://gl.example/a/{{ .Name }}.git",
+			registry: "reg.example/x", wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			yaml := "webhook:\n  secret: s\nsource:\n  base_url: https://git.example.org/\n  token: st\n" +
+				"targets:\n  - name: t\n    type: " + tc.typ + "\n    url: \"" + tc.url + "\"\n    token: x\n"
+			cfg, err := config.Load(config.Options{File: writeFile(t, "c.yaml", yaml), Environ: environ()})
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			target := cfg.Targets[0]
+			target.Registry = tc.registry
+
+			host, insecure, err := target.RegistryHost()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("RegistryHost() = %q, want error", host)
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("RegistryHost() error = %v", err)
+			}
+			if host != tc.wantHost || insecure != tc.wantInsecure {
+				t.Errorf("RegistryHost() = %q, %v; want %q, %v", host, insecure, tc.wantHost, tc.wantInsecure)
+			}
+		})
+	}
+}
+
+func TestSourceRegistryHost(t *testing.T) {
+	t.Parallel()
+
+	host, insecure, err := config.Source{BaseURL: "http://127.0.0.1:3000/"}.RegistryHost()
+	if err != nil || host != "127.0.0.1:3000" || !insecure {
+		t.Errorf("RegistryHost() = %q, %v, %v; want 127.0.0.1:3000, true, nil", host, insecure, err)
+	}
+	if _, _, err = (config.Source{}).RegistryHost(); err == nil {
+		t.Error("RegistryHost() without base_url: error = nil, want error")
+	}
+}

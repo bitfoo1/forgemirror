@@ -41,6 +41,17 @@ func (s Source) CheckCloneURL(raw string) error {
 	return nil
 }
 
+// RegistryHost returns the host of the Forgejo container registry (the host
+// of BaseURL) and whether it is reached over plain HTTP.
+func (s Source) RegistryHost() (string, bool, error) {
+	u, err := url.Parse(s.BaseURL)
+	if err != nil || u.Host == "" {
+		return "", false, errors.New("source.base_url: required for package sync")
+	}
+
+	return u.Host, u.Scheme == schemeHTTP, nil
+}
+
 func (s Source) validate() error {
 	if s.BaseURL == "" {
 		return nil

@@ -311,6 +311,16 @@
           "type": "boolean",
           "default": false
         },
+        "prune_releases": {
+          "description": "Delete releases on the target whose tag has no published release on the source. Off by default. Requires type.",
+          "type": "boolean",
+          "default": false
+        },
+        "registry": {
+          "description": "Container registry of the target for package sync, as host[:port] or http(s)://host[:port]. Derived when empty: github.com uses ghcr.io, gitlab.com registry.gitlab.com, Forgejo the host of url; other hosts must set it. Requires type.",
+          "type": "string",
+          "examples": ["ghcr.io", "containers.ghe.example.org"]
+        },
         "settings": {
           "description": "Target-wide settings that win over the values of the Forgejo repository. Requires type.",
           "$ref": "#/$defs/settings"
@@ -363,6 +373,14 @@
         },
         "labels": {
           "description": "Synchronise labels; false disables label sync for this scope. Defaults to true.",
+          "type": "boolean"
+        },
+        "releases": {
+          "description": "Synchronise published releases (tag, title, notes, prerelease flag and attachments); drafts are never synced. Defaults to false.",
+          "type": "boolean"
+        },
+        "packages": {
+          "description": "Copy the container packages linked to the repository in Forgejo, with every tag, to the target's container registry. Only for public target repositories; tags are never deleted on the target. Defaults to false.",
           "type": "boolean"
         }
       }

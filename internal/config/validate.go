@@ -199,6 +199,8 @@ func (t *Target) validateTyped(i int) []error {
 			{"create", t.Create},
 			{"delete", t.Delete},
 			{"prune_labels", t.PruneLabels},
+			{"prune_releases", t.PruneReleases},
+			{"registry", t.Registry != ""},
 			{"api_url", t.APIURL != ""},
 			{"settings", !t.Settings.IsZero()},
 			{"overrides", len(t.Overrides) > 0},
@@ -209,6 +211,12 @@ func (t *Target) validateTyped(i int) []error {
 		}
 	default:
 		add("type", fmt.Errorf("must be one of %s, %s, %s", forge.TypeGitHub, forge.TypeGitLab, forge.TypeForgejo))
+	}
+
+	if t.Type != "" && (t.Registry != "" || t.syncsPackages()) {
+		if _, _, err := t.RegistryHost(); err != nil {
+			add("registry", err)
+		}
 	}
 
 	if err := t.Settings.Validate(); err != nil {
