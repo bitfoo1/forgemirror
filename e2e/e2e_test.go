@@ -105,12 +105,33 @@ func TestEndToEnd(t *testing.T) {
 		{name: "ui", run: func(t *testing.T) { testUI(t, e, fm, secret) }},
 		{name: "schedule", run: func(t *testing.T) { testSchedule(t, api) }},
 		{name: "artifacts", run: func(t *testing.T) { testArtifacts(t, e, api, fm, secret) }},
+		{name: "hold", run: func(t *testing.T) { hold(t, fm) }},
 		{name: "delete", run: func(t *testing.T) { testDelete(t, e, api, fm, secret) }},
 	}
 	for _, step := range steps {
 		if !t.Run(step.name, step.run) {
 			t.FailNow()
 		}
+	}
+}
+
+// hold pauses for E2E_HOLD (a duration) when it is set, so the web UI can be
+// inspected or screenshotted for the documentation. It sits before the delete
+// step because by then every feature has run once, which gives the UI the
+// most to show; afterwards the run tears everything down.
+func hold(t *testing.T, fm *forgemirror) {
+	value := os.Getenv("E2E_HOLD")
+	if value == "" {
+		t.Skip("E2E_HOLD not set")
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		t.Fatalf("E2E_HOLD: %v", err)
+	}
+	t.Logf("holding for %s; web UI at %s", d, fm.webURL())
+	select {
+	case <-time.After(d):
+	case <-t.Context().Done():
 	}
 }
 
