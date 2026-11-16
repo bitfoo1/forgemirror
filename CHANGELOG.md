@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-16
+
+### Features
+
+- **plan:** Describe what a run changes on its targets (e2f2e95)
+- **config:** Add sync.auto to switch to review mode (737c4e3)
+- **dispatch:** Plan every run before applying it and log each change (f7105a1)
+- **ui:** Review diffs and sync from a Tokyo Night themed UI (97663d8)
+
+### Documentation
+
+- **spec:** Design review mode, change log and UI redesign (01a31a8)
+- Document review mode, the UI actions and the change log (ec3fbdd)
+
+### Miscellaneous
+
+- **deps:** Update dependency jdx/mise to v2026.11.8 (af7c599)
+- **deps:** Update https://github.com/jdx/mise-action action to v5.2.9 (0e98e21)
+- **mise:** Update dependency docker-cli to v29.9.3 (b50a319)
+- **deps:** Update node.js to v26 (235d3f8)
+- **renovate:** Group updates by project area and add gitmoji (3e4b749)
+- **mise:** Update dependency docker-compose to v5.7.1 (f29a1bc)
+- **deps:** Update go modules (77538b1)
+
 ## [0.3.0] - 2026-11-15
 
 ### Features
