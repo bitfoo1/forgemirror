@@ -70,7 +70,7 @@ forgejo_cli=("${compose[@]}" exec --no-TTY --user git forgejo forgejo)
 # Captured into a variable and handed over through the environment only, so
 # the token never appears in output or process arguments.
 token="$("${forgejo_cli[@]}" admin user generate-access-token --username e2e-admin --token-name e2e --raw \
-  --scopes "read:repository,read:issue,write:repository,write:issue,write:organization")"
+  --scopes "read:repository,read:issue,write:repository,write:issue,write:organization,write:package")"
 
 E2E_FORGEJO_URL="${forgejo_url}" \
   E2E_FORGEJO_TOKEN="${token}" \

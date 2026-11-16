@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +28,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 const (
@@ -35,9 +41,13 @@ const (
 	docsColor       = "0075ca"
 	ciColor         = "e4e669"
 	tagName         = "v0.1.0"
+	assetName       = "app.txt"
+	assetContent    = "release attachment\n"
+	imageTag        = "1.0.0"
 
 	pushDeadline     = 30 * time.Second
 	scheduleDeadline = 10 * time.Second
+	artifactDeadline = 30 * time.Second
 	deleteDeadline   = 30 * time.Second
 	pollInterval     = 500 * time.Millisecond
 )
@@ -94,6 +104,7 @@ func TestEndToEnd(t *testing.T) {
 		{name: "push", run: func(t *testing.T) { testPush(t, e, api, fm, secret) }},
 		{name: "ui", run: func(t *testing.T) { testUI(t, e, fm, secret) }},
 		{name: "schedule", run: func(t *testing.T) { testSchedule(t, api) }},
+		{name: "artifacts", run: func(t *testing.T) { testArtifacts(t, e, api, fm, secret) }},
 		{name: "delete", run: func(t *testing.T) { testDelete(t, e, api, fm, secret) }},
 	}
 	for _, step := range steps {
@@ -235,6 +246,139 @@ func testSchedule(t *testing.T, api *forgejoAPI) {
 	eventually(t, scheduleDeadline, func() error {
 		return checkLabels(t.Context(), api, map[string]string{"bug": bugColor, "ci": ciColor})
 	})
+}
+
+// testArtifacts publishes a release with an attachment and a container image
+// linked to src/app, and expects both on dst. Packages are only synced for
+// public repositories, so the source is made public first.
+func testArtifacts(t *testing.T, e env, api *forgejoAPI, fm *forgemirror, secret string) {
+	api.mustDo(t, http.MethodPatch, "/repos/src/app", map[string]any{"private": false})
+	accepted := fm.acceptedWebhooks(t)
+	api.mustDo(t, http.MethodPost, "/repos/src/app/hooks", hookBody(fm.webhookURL(e.webhookHost), secret, "release"))
+
+	digest := pushImage(t, e, "src/app:"+imageTag)
+	linkPackage(t, api)
+
+	var rel struct {
+		ID int64 `json:"id"`
+	}
+	if _, err := api.do(t.Context(), http.MethodPost, "/repos/src/app/releases", map[string]any{
+		"tag_name": tagName, "name": "First release", "body": "notes",
+	}, &rel); err != nil {
+		t.Fatal(err)
+	}
+	api.mustUpload(
+		t,
+		fmt.Sprintf("/repos/src/app/releases/%d/assets?name=%s", rel.ID, assetName),
+		assetName,
+		assetContent,
+	)
+
+	eventually(t, artifactDeadline, func() error {
+		if got := fm.acceptedWebhooks(t); got <= accepted {
+			return errors.New("forgemirror has not accepted the release webhook")
+		}
+		if err := checkRelease(t.Context(), api); err != nil {
+			return err
+		}
+
+		return checkImage(t.Context(), e, "dst/app:"+imageTag, digest)
+	})
+}
+
+// linkPackage links the image to src/app unless Forgejo already did: it links
+// a container package on its own when a repository of the same name exists,
+// and refuses a second link with 400.
+func linkPackage(t *testing.T, api *forgejoAPI) {
+	t.Helper()
+
+	var pkg struct {
+		Repository *struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if err := api.get(t.Context(), "/packages/src/container/app/"+imageTag, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Repository != nil {
+		if pkg.Repository.FullName != "src/app" {
+			t.Fatalf("package linked to %s, want src/app", pkg.Repository.FullName)
+		}
+
+		return
+	}
+	api.mustDo(t, http.MethodPost, "/packages/src/container/app/-/link/app", nil)
+}
+
+func checkRelease(ctx context.Context, api *forgejoAPI) error {
+	var rel struct {
+		Name   string `json:"name"`
+		Body   string `json:"body"`
+		Assets []struct {
+			Name string `json:"name"`
+			Size int64  `json:"size"`
+		} `json:"assets"`
+	}
+	if err := api.get(ctx, "/repos/dst/app/releases/tags/"+tagName, &rel); err != nil {
+		return err
+	}
+	if rel.Name != "First release" || rel.Body != "notes" || len(rel.Assets) != 1 ||
+		rel.Assets[0].Name != assetName || rel.Assets[0].Size != int64(len(assetContent)) {
+		return fmt.Errorf("dst/app release %s = %+v", tagName, rel)
+	}
+
+	return nil
+}
+
+// registryRef names an image in the Forgejo registry, which serves plain
+// HTTP like the rest of the test instance.
+func registryRef(e env, repoTag string) (name.Reference, error) {
+	host := strings.TrimPrefix(strings.TrimPrefix(e.forgejoURL, "http://"), "https://")
+
+	return name.NewTag(host+"/"+repoTag, name.Insecure)
+}
+
+func registryAuth(e env) remote.Option {
+	return remote.WithAuth(&authn.Basic{Username: e.user, Password: e.token})
+}
+
+// pushImage pushes a small random image and returns its digest.
+func pushImage(t *testing.T, e env, repoTag string) string {
+	t.Helper()
+
+	img, err := random.Image(1024, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := registryRef(e, repoTag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = remote.Write(ref, img, registryAuth(e), remote.WithContext(t.Context())); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := img.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return digest.String()
+}
+
+func checkImage(ctx context.Context, e env, repoTag, want string) error {
+	ref, err := registryRef(e, repoTag)
+	if err != nil {
+		return err
+	}
+	desc, err := remote.Head(ref, registryAuth(e), remote.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("image %s: %w", repoTag, err)
+	}
+	if desc.Digest.String() != want {
+		return fmt.Errorf("image %s digest = %s, want %s", repoTag, desc.Digest, want)
+	}
+
+	return nil
 }
 
 func testDelete(t *testing.T, e env, api *forgejoAPI, fm *forgemirror, secret string) {
@@ -405,8 +549,11 @@ targets:
     create: true
     delete: true
     prune_labels: true
+    prune_releases: true
     settings:
       has_issues: false
+      releases: true
+      packages: true
 `, port, opsPort, webPort, e.forgejoURL+"/", e.user, e.forgejoURL, e.user, tokenFile)
 	configFile := filepath.Join(dir, "forgemirror.yaml")
 	if err := os.WriteFile(configFile, []byte(config), 0o600); err != nil {
@@ -580,6 +727,40 @@ func (a *forgejoAPI) mustDo(t *testing.T, method, path string, in any) {
 
 	if _, err := a.do(t.Context(), method, path, in, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// mustUpload sends one file as the multipart field "attachment".
+func (a *forgejoAPI) mustUpload(t *testing.T, path, filename, content string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("attachment", filename)
+	if err == nil {
+		_, err = io.WriteString(part, content)
+	}
+	if err == nil {
+		err = mw.Close()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, a.baseURL+path, &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "token "+a.token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := a.client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST %s: status %d: %s", path, resp.StatusCode, raw)
 	}
 }
 
