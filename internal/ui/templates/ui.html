@@ -73,7 +73,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 </div>
 <div class="tile">
   <span class="tile-label">Targets</span>
-  <span class="tile-value">{{len .Targets}}</span>
+  <ul class="kinds">
+    {{- range .Types}}
+    <li class="kind{{if .Names}} kind-on{{end}}" title="{{if .Names}}{{range $i, $n := .Names}}{{if $i}}, {{end}}{{$n}}{{end}}{{else}}not configured{{end}}">{{.Label}}</li>
+    {{- end}}
+  </ul>
   <span class="tile-note">{{range $i, $t := .Targets}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</span>
 </div>
 <div class="tile">

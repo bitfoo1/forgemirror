@@ -92,6 +92,7 @@ type handler struct {
 	tmpl    *template.Template
 	config  string
 	targets []string
+	types   []targetType
 }
 
 // Handler returns the UI's routing table: GET and HEAD for pages and
@@ -120,6 +121,7 @@ func Handler(opts Options) (http.Handler, error) {
 	for _, t := range opts.Config.Targets {
 		h.targets = append(h.targets, t.Name)
 	}
+	h.types = targetTypes(opts.Config.Targets)
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -238,6 +240,7 @@ type pageData struct {
 	Refresh  time.Duration
 	Snapshot status.Snapshot
 	Targets  []string
+	Types    []targetType
 	OnPush   bool
 	Auto     bool
 	Actions  bool
@@ -293,6 +296,7 @@ func (h *handler) data(r *http.Request) pageData {
 		Refresh:  refresh,
 		Snapshot: h.opts.Store.Snapshot(),
 		Targets:  h.targets,
+		Types:    h.types,
 		OnPush:   h.opts.Config.Sync.OnPush,
 		Auto:     h.opts.Config.Sync.Auto,
 		Actions:  h.opts.Actions != nil,

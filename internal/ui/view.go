@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"slices"
 
+	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/plan"
 	"go.bitfoo.de/forgemirror/internal/status"
 )
@@ -153,4 +155,35 @@ func targetViews(r status.Repo) []targetView {
 	}
 
 	return views
+}
+
+// targetType is one kind of target the configuration accepts. Every kind is
+// listed, used or not, so the overview shows what is possible as well as
+// what is configured.
+type targetType struct {
+	Label string
+	// Names are the configured targets of this kind, in configuration order.
+	Names []string
+}
+
+// targetTypes follows the types config validation accepts; the empty type is
+// a plain git push destination without forge API.
+func targetTypes(targets []config.Target) []targetType {
+	kinds := []struct{ typ, label string }{
+		{forge.TypeGitHub, "GitHub"},
+		{forge.TypeGitLab, "GitLab"},
+		{forge.TypeForgejo, "Forgejo"},
+		{"", "Git"},
+	}
+	types := make([]targetType, len(kinds))
+	for i, k := range kinds {
+		types[i].Label = k.label
+		for _, t := range targets {
+			if t.Type == k.typ {
+				types[i].Names = append(types[i].Names, t.Name)
+			}
+		}
+	}
+
+	return types
 }

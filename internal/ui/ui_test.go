@@ -44,6 +44,9 @@ targets:
     type: github
     url: "https://github.com/acme/{{ .Name }}.git"
     token: ` + targetToken + `
+  - name: backup
+    url: "https://git.example.net/acme/{{ .Name }}.git"
+    token: ` + targetToken + `
 `
 
 func testNow() time.Time { return time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC) }
@@ -156,6 +159,12 @@ func TestRoutes(t *testing.T) {
 			want: []string{
 				"Uptime",
 				"<code>github</code>",
+				"<code>backup</code>",
+				// Every accepted target type is shown; configured ones are on.
+				`<li class="kind kind-on" title="github">GitHub</li>`,
+				`<li class="kind" title="not configured">GitLab</li>`,
+				`<li class="kind" title="not configured">Forgejo</li>`,
+				`<li class="kind kind-on" title="backup">Git</li>`,
 				"every 1h0m0s",
 				"2 repositories",
 				"1 queued",
