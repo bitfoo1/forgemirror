@@ -297,9 +297,9 @@ mirror:
 
 	waitForLog(t, &logs, regexp.MustCompile(`msg="mirror finished"`))
 	assertMetrics(ctx, t, opsAddr,
-		`forge_mirror_operations_total{status="success",target="example"} 1`,
-		`forge_mirror_webhook_requests_total{outcome="accepted"} 1`,
-		`forge_mirror_active_operations 0`,
+		`forgemirror_operations_total{status="success",target="example"} 1`,
+		`forgemirror_webhook_requests_total{outcome="accepted"} 1`,
+		`forgemirror_active_operations 0`,
 	)
 	cancel()
 
@@ -561,7 +561,7 @@ func TestEndToEndTypedTarget(t *testing.T) {
 	assertMetrics(ctx, t, svc.opsAddr,
 		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
 		`forgemirror_sync_operations_total{operation="settings",status="success",target="gh"} 1`,
-		`forge_mirror_operations_total{status="success",target="gh"} 1`,
+		`forgemirror_operations_total{status="success",target="gh"} 1`,
 	)
 	svc.stop(t)
 
@@ -634,7 +634,7 @@ func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	svc := startService(ctx, t, typedConfig(t, f, fakeGit, dir))
 	postPush(ctx, t, svc.addr, pushBody(f))
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished with errors".*reading source repository`))
-	assertMetrics(ctx, t, svc.opsAddr, `forge_mirror_operations_total{status="failure",target="gh"} 1`)
+	assertMetrics(ctx, t, svc.opsAddr, `forgemirror_operations_total{status="failure",target="gh"} 1`)
 
 	f.down.Store(false)
 	// Within the backoff window the cached connect error is returned without
@@ -644,7 +644,7 @@ func TestStartsWhileForgejoUnreachable(t *testing.T) {
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
 	assertMetrics(ctx, t, svc.opsAddr,
 		`forgemirror_sync_operations_total{operation="create",status="success",target="gh"} 1`,
-		`forge_mirror_operations_total{status="success",target="gh"} 1`,
+		`forgemirror_operations_total{status="success",target="gh"} 1`,
 	)
 	svc.stop(t)
 }
@@ -685,7 +685,7 @@ mirror:
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished" repository=acme/app.*delivery=schedule-`))
 	assertMetrics(ctx, t, svc.opsAddr,
 		`forgemirror_scheduled_runs_total{status="success"} 1`,
-		`forge_mirror_operations_total{status="success",target="example"} 1`,
+		`forgemirror_operations_total{status="success",target="example"} 1`,
 	)
 	svc.stop(t)
 

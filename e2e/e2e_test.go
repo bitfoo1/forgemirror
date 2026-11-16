@@ -613,7 +613,7 @@ func (f *forgemirror) webURL() string {
 }
 
 var acceptedMetric = regexp.MustCompile(
-	`(?m)^forge_mirror_webhook_requests_total\{[^}]*outcome="accepted"[^}]*\} (\d+)`,
+	`(?m)^forgemirror_webhook_requests_total\{[^}]*outcome="accepted"[^}]*\} (\d+)`,
 )
 
 // acceptedWebhooks reads the accepted-webhook counter from /metrics.

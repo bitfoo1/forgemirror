@@ -23,10 +23,10 @@ included as well.
 
 | Metric                                  | Type      | Labels             | Meaning                                         |
 |-----------------------------------------|-----------|--------------------|-------------------------------------------------|
-| `forge_mirror_operations_total`         | counter   | `target`, `status` | Mirror operations per target; `status` is `success` or `failure` |
-| `forge_mirror_duration_seconds`         | histogram | `target`           | Duration of each push to a target; buckets from 0.5 s to 10 min |
-| `forge_mirror_webhook_requests_total`   | counter   | `outcome`          | Webhook requests by [outcome](../forgejo-webhook/#responses) |
-| `forge_mirror_active_operations`        | gauge     |                    | Mirror runs in progress                          |
+| `forgemirror_operations_total`          | counter   | `target`, `status` | Mirror operations per target; `status` is `success` or `failure` |
+| `forgemirror_duration_seconds`          | histogram | `target`           | Duration of each push to a target; buckets from 0.5 s to 10 min |
+| `forgemirror_webhook_requests_total`    | counter   | `outcome`          | Webhook requests by [outcome](../forgejo-webhook/#responses) |
+| `forgemirror_active_operations`         | gauge     |                    | Mirror runs in progress                          |
 | `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Forge API operations of typed targets; `operation` is `create`, `settings`, `labels`, `releases`, `packages` or `delete`, `status` is `success` or `failure`. Runs without changes for an operation are not counted |
 | `forgemirror_scheduled_runs_total`      | counter   | `status`           | Scheduled sweeps; `failure` means the source repositories could not be listed |
 | `target_info`                           | gauge     | `service_name`, `service_version` | Build information                 |
@@ -42,7 +42,7 @@ groups:
   - name: forgemirror
     rules:
       - alert: ForgemirrorTargetFailing
-        expr: increase(forge_mirror_operations_total{status="failure"}[30m]) > 0
+        expr: increase(forgemirror_operations_total{status="failure"}[30m]) > 0
         labels: { severity: warning }
         annotations:
           summary: "Mirroring to {{ $labels.target }} fails"
@@ -57,7 +57,7 @@ groups:
         annotations:
           summary: "Scheduled sync cannot list Forgejo repositories"
       - alert: ForgemirrorWebhookUnauthorized
-        expr: increase(forge_mirror_webhook_requests_total{outcome="unauthorized"}[15m]) > 0
+        expr: increase(forgemirror_webhook_requests_total{outcome="unauthorized"}[15m]) > 0
         labels: { severity: warning }
         annotations:
           summary: "Webhook signature mismatch; check webhook.secret"

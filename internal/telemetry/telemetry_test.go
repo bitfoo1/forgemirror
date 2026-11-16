@@ -59,14 +59,14 @@ func TestMetrics(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "success counter", want: `forge_mirror_operations_total{status="success",target="github"} 2`},
-		{name: "failure counter", want: `forge_mirror_operations_total{status="failure",target="codeberg"} 1`},
-		{name: "histogram count", want: `forge_mirror_duration_seconds_count{target="github"} 2`},
-		{name: "histogram sum", want: `forge_mirror_duration_seconds_sum{target="github"} 4`},
-		{name: "histogram bucket", want: `forge_mirror_duration_seconds_bucket{target="github",le="2.5"} 1`},
-		{name: "webhook accepted", want: `forge_mirror_webhook_requests_total{outcome="accepted"} 1`},
-		{name: "webhook unauthorized", want: `forge_mirror_webhook_requests_total{outcome="unauthorized"} 2`},
-		{name: "active gauge", want: `forge_mirror_active_operations 1`},
+		{name: "success counter", want: `forgemirror_operations_total{status="success",target="github"} 2`},
+		{name: "failure counter", want: `forgemirror_operations_total{status="failure",target="codeberg"} 1`},
+		{name: "histogram count", want: `forgemirror_duration_seconds_count{target="github"} 2`},
+		{name: "histogram sum", want: `forgemirror_duration_seconds_sum{target="github"} 4`},
+		{name: "histogram bucket", want: `forgemirror_duration_seconds_bucket{target="github",le="2.5"} 1`},
+		{name: "webhook accepted", want: `forgemirror_webhook_requests_total{outcome="accepted"} 1`},
+		{name: "webhook unauthorized", want: `forgemirror_webhook_requests_total{outcome="unauthorized"} 2`},
+		{name: "active gauge", want: `forgemirror_active_operations 1`},
 		{name: "go runtime", want: `go_goroutines `},
 		{name: "service", want: `service_name="forgemirror",service_version="test"`},
 	}
@@ -97,7 +97,7 @@ func TestIndependentRegistries(t *testing.T) {
 
 	a.ObserveWebhook(t.Context(), webhook.OutcomeAccepted)
 
-	if body := scrape(t, b); strings.Contains(body, "forge_mirror_webhook_requests_total") {
+	if body := scrape(t, b); strings.Contains(body, "forgemirror_webhook_requests_total") {
 		t.Errorf("second instance sees first instance's metrics:\n%s", body)
 	}
 }

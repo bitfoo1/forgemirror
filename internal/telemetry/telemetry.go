@@ -29,7 +29,7 @@ const (
 	serviceName = "forgemirror"
 )
 
-// Status label values of forge_mirror_operations_total,
+// Status label values of forgemirror_operations_total,
 // forgemirror_sync_operations_total and forgemirror_scheduled_runs_total.
 const (
 	statusSuccess = "success"
@@ -99,15 +99,15 @@ func New(serviceVersion string) (*Metrics, error) {
 func (m *Metrics) instruments(meter metric.Meter) error {
 	var errs [6]error
 	// The exporter appends _total to counters and _seconds for unit "s".
-	m.operations, errs[0] = meter.Int64Counter("forge_mirror_operations",
+	m.operations, errs[0] = meter.Int64Counter("forgemirror_operations",
 		metric.WithDescription("Mirror operations per target, by status."))
-	m.duration, errs[1] = meter.Float64Histogram("forge_mirror_duration",
+	m.duration, errs[1] = meter.Float64Histogram("forgemirror_duration",
 		metric.WithDescription("Duration of mirror operations per target."),
 		metric.WithUnit("s"),
 		metric.WithExplicitBucketBoundaries(durationBuckets()...))
-	m.webhooks, errs[2] = meter.Int64Counter("forge_mirror_webhook_requests",
+	m.webhooks, errs[2] = meter.Int64Counter("forgemirror_webhook_requests",
 		metric.WithDescription("Webhook requests, by outcome."))
-	m.active, errs[3] = meter.Int64UpDownCounter("forge_mirror_active_operations",
+	m.active, errs[3] = meter.Int64UpDownCounter("forgemirror_active_operations",
 		metric.WithDescription("Mirror runs currently in progress."))
 	m.syncOps, errs[4] = meter.Int64Counter(
 		"forgemirror_sync_operations",

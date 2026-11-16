@@ -151,9 +151,9 @@ Each phase ends with a green `mise run check` and one conventional commit.
 - [x] `log/slog`: JSON or text, level from config; every mirror log has
       target, repository, duration, outcome; no secrets
 - [x] OpenTelemetry metrics with the Prometheus exporter on `GET /metrics`:
-      `forge_mirror_operations_total` (counter), `forge_mirror_duration_seconds`
-      (histogram), `forge_mirror_webhook_requests_total` (counter),
-      `forge_mirror_active_operations` (gauge)
+      `forgemirror_operations_total` (counter), `forgemirror_duration_seconds`
+      (histogram), `forgemirror_webhook_requests_total` (counter),
+      `forgemirror_active_operations` (gauge)
 - [x] SIGTERM/SIGINT: stop accepting requests, drain running mirrors, bounded
       by the shutdown timeout
 

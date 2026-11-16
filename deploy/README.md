@@ -79,14 +79,14 @@ ALLOWED_HOST_LIST = external,forgemirror.forgemirror.svc.cluster.local
 ```sh
 kubectl -n forgemirror port-forward svc/forgemirror 9090:9090 &
 curl -fsS localhost:9090/readyz     # ready
-curl -fsS localhost:9090/metrics | grep forge_mirror_
+curl -fsS localhost:9090/metrics | grep forgemirror_
 kubectl -n forgemirror logs deploy/forgemirror -f
 ```
 
 Push to a repository that passes the filter, or use **Test delivery** on the
 webhook. The log shows `mirror started`, one `target mirrored` per target and
 `mirror finished`. Deliveries are counted in
-`forge_mirror_webhook_requests_total{outcome="…"}`:
+`forgemirror_webhook_requests_total{outcome="…"}`:
 
 - `unauthorized`: the webhook secret does not match.
 - `filtered`: the repository or branch is excluded by the filter rules.
