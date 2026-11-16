@@ -1,0 +1,23 @@
+{{- /*
+Theme-aware screenshot: renders assets/images/<name>-light.png and
+<name>-dark.png, and CSS shows the one matching Hextra's light/dark switch.
+<picture> with prefers-color-scheme cannot follow the theme toggle, which
+overrides the system setting. The PNGs are the source of truth (taken at 2x);
+WebP is generated here so no image tool is needed outside Hugo.
+
+Usage: {{< screenshot name="web-ui" alt="…" class="fm-ribbon" >}}
+*/ -}}
+{{- $name := .Get "name" -}}
+{{- $alt := .Get "alt" | default "" -}}
+{{- $class := .Get "class" | default "" -}}
+<figure class="fm-shot {{ $class }}">
+{{- range $scheme := slice "light" "dark" -}}
+  {{- $path := printf "images/%s-%s.png" $name $scheme -}}
+  {{- with resources.Get $path -}}
+    {{- $img := .Process "webp q85" -}}
+    <img class="fm-shot-{{ $scheme }}" src="{{ $img.RelPermalink }}" width="{{ div $img.Width 2 }}" height="{{ div $img.Height 2 }}" alt="{{ $alt }}" loading="lazy" decoding="async">
+  {{- else -}}
+    {{- errorf "screenshot: assets/%s not found (%s)" $path $.Position -}}
+  {{- end -}}
+{{- end -}}
+</figure>
