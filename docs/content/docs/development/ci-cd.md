@@ -12,7 +12,7 @@ on pull requests. Every step is a mise task, so a local `mise run check`
 | Job         | Runs on          | Steps                                                                                        |
 |-------------|------------------|----------------------------------------------------------------------------------------------|
 | `verify`    | PR, push to main | `commits:check` → `check` (fmt, tidy, vet, lint, test + coverage, govulncheck, manifests) → `snapshot` |
-| `e2e`       | after `verify`   | `test:e2e` against a real Forgejo in Docker (the runner pod's DinD, `DOCKER_HOST=tcp://127.0.0.1:2375`) |
+| `e2e`       | after `verify`   | `test:e2e` against a real Forgejo in Docker, one job each for LTS and latest (the runner pod's DinD, `DOCKER_HOST=tcp://127.0.0.1:2375`) |
 | `changelog` | after `verify`   | PR: `changelog:preview --pr` · main: `release:publish`, then `release:pr` · tag: `release:publish` |
 
 The changelog job is always last: it only runs once the code is verified.

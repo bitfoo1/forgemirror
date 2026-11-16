@@ -3,6 +3,26 @@
 #MISE depends=["build"]
 set -euo pipefail
 
+# E2E_FORGEJO picks the Forgejo release line (a service in e2e/compose.yaml).
+# Unset, every line runs one after the other, so a plain local run covers
+# what CI covers; CI sets it per matrix job to run the lines in parallel.
+# The task re-executes itself per line instead of looping inside, so each run
+# keeps its own project, port and EXIT-trap teardown; calling the script
+# directly also skips the mise dependency, so the binary is built only once.
+releases=(lts latest)
+if [ -z "${E2E_FORGEJO:-}" ]; then
+  for release in "${releases[@]}"; do
+    echo "=== Forgejo ${release} ==="
+    E2E_FORGEJO="${release}" "$0" "$@"
+  done
+  exit 0
+fi
+if [[ " ${releases[*]} " != *" ${E2E_FORGEJO} "* ]]; then
+  echo "E2E_FORGEJO must be one of: ${releases[*]} (got '${E2E_FORGEJO}')" >&2
+  exit 1
+fi
+service="forgejo-${E2E_FORGEJO}"
+
 # The daemon is taken from the environment (DOCKER_HOST or the docker
 # context): CI runners and developer machines reach it in different ways.
 if ! docker_err="$(docker info --format '{{.ServerVersion}}' 2>&1 >/dev/null)"; then
@@ -15,14 +35,14 @@ fi
 # One project per run: CI jobs may share a daemon, and a fixed name would let
 # one run's teardown remove another run's Forgejo. Time and PID alone collide
 # across CI containers (each starts with low PIDs), hence the random suffix.
-project="forgemirror-e2e-$(date +%s)-$$-${RANDOM}${RANDOM}"
+project="forgemirror-e2e-${E2E_FORGEJO}-$(date +%s)-$$-${RANDOM}${RANDOM}"
 compose=(docker-compose --file e2e/compose.yaml --project-name "${project}")
 
 cleanup() {
   local status=$?
   if [ "${status}" -ne 0 ]; then
     echo "--- Forgejo logs ---" >&2
-    "${compose[@]}" logs --no-color --tail 200 forgejo >&2 || true
+    "${compose[@]}" logs --no-color --tail 200 "${service}" >&2 || true
   fi
   "${compose[@]}" down --volumes --remove-orphans --timeout 5 >/dev/null 2>&1 || true
   exit "${status}"
@@ -38,7 +58,8 @@ trap 'exit 143' TERM
 # next port is tried.
 for attempt in $(seq 1 10); do
   export E2E_FORGEJO_PORT="$((20000 + RANDOM % 30000))"
-  if up_out="$("${compose[@]}" up --detach --quiet-pull --wait 2>&1)"; then
+  # The service is named because a bare `up` would start every release.
+  if up_out="$("${compose[@]}" up --detach --quiet-pull --wait "${service}" 2>&1)"; then
     break
   fi
   # Any other failure exits before the teardown below, so the EXIT trap can
@@ -63,7 +84,7 @@ curl --silent --show-error --fail --output /dev/null "${forgejo_url}/api/v1/vers
 
 # Forgejo refuses to run its CLI as root, hence -u git. The generated password
 # is printed by the CLI and discarded: the test only uses the token.
-forgejo_cli=("${compose[@]}" exec --no-TTY --user git forgejo forgejo)
+forgejo_cli=("${compose[@]}" exec --no-TTY --user git "${service}" forgejo)
 "${forgejo_cli[@]}" admin user create --admin --username e2e-admin \
   --email e2e-admin@example.invalid --random-password --must-change-password=false >/dev/null
 

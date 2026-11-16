@@ -13,27 +13,44 @@
 #   must be known before Forgejo starts.
 # - No fixed project name: the task gives every run its own, so runs sharing
 #   one daemon (CI jobs) neither collide nor tear down each other.
-# - The release is pinned by digest, so a re-tagged image cannot change what
+# - One service per supported release line, so forgemirror is tested against
+#   what operators actually run: the current LTS and the latest stable
+#   release. The task starts exactly one of them per run (E2E_FORGEJO).
+# - Releases are pinned by digest, so a re-tagged image cannot change what
 #   the test runs against. Update tag and digest together.
+# - Renovate updates both pins, but its compose manager would see one image
+#   twice and move the LTS service onto the latest major. The
+#   "# renovate: depName=" comments give each line its own name so
+#   renovate.json can hold forgejo-lts on the LTS major; Renovate bumps that
+#   major from Forgejo's release schedule. Keep each comment directly above
+#   its image line.
+x-forgejo: &forgejo
+  environment:
+    FORGEJO__database__DB_TYPE: sqlite3
+    FORGEJO__security__INSTALL_LOCK: "true"
+    FORGEJO__server__ROOT_URL: http://127.0.0.1:${E2E_FORGEJO_PORT:?set by mise run test:e2e}/
+    FORGEJO__server__OFFLINE_MODE: "true"
+    FORGEJO__server__DISABLE_SSH: "true"
+    FORGEJO__mailer__ENABLED: "false"
+    FORGEJO__service__DISABLE_REGISTRATION: "true"
+    # forgemirror runs next to the daemon, which Forgejo's default
+    # (external hosts only) would refuse to deliver to.
+    FORGEJO__webhook__ALLOWED_HOST_LIST: "*"
+    FORGEJO__log__LEVEL: Warn
+  # host-gateway gives the same name on macOS (Docker VM) and on Linux,
+  # including a DinD daemon whose network namespace the job shares.
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  # Loopback only: the instance has a well-known admin and no TLS.
+  ports:
+    - 127.0.0.1:${E2E_FORGEJO_PORT:?set by mise run test:e2e}:3000
+
 services:
-  forgejo:
+  forgejo-lts:
+    <<: *forgejo
+    # renovate: depName=forgejo-lts
     image: codeberg.org/forgejo/forgejo:15.0.11@sha256:5d050e6d623e540923ff54b1c0c7acf41c3f9174a6c7ad515cc0c63d703fcd22
-    environment:
-      FORGEJO__database__DB_TYPE: sqlite3
-      FORGEJO__security__INSTALL_LOCK: "true"
-      FORGEJO__server__ROOT_URL: http://127.0.0.1:${E2E_FORGEJO_PORT:?set by mise run test:e2e}/
-      FORGEJO__server__OFFLINE_MODE: "true"
-      FORGEJO__server__DISABLE_SSH: "true"
-      FORGEJO__mailer__ENABLED: "false"
-      FORGEJO__service__DISABLE_REGISTRATION: "true"
-      # forgemirror runs next to the daemon, which Forgejo's default
-      # (external hosts only) would refuse to deliver to.
-      FORGEJO__webhook__ALLOWED_HOST_LIST: "*"
-      FORGEJO__log__LEVEL: Warn
-    # host-gateway gives the same name on macOS (Docker VM) and on Linux,
-    # including a DinD daemon whose network namespace the job shares.
-    extra_hosts:
-      - host.docker.internal:host-gateway
-    # Loopback only: the instance has a well-known admin and no TLS.
-    ports:
-      - 127.0.0.1:${E2E_FORGEJO_PORT:?set by mise run test:e2e}:3000
+  forgejo-latest:
+    <<: *forgejo
+    # renovate: depName=forgejo-latest
+    image: codeberg.org/forgejo/forgejo:17.0.1@sha256:fcd19ff4ebc85fb098a67e8e1d0d5a84d07dd6e8a23edcfdfd5b71a6178953be
