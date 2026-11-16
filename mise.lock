@@ -47,36 +47,36 @@ url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/66007080
 provenance = "cosign"
 
 [[tools.docker-cli]]
-version = "29.9.2"
+version = "29.9.3"
 backend = "aqua:docker/cli"
 
 [tools.docker-cli."platforms.linux-arm64"]
-checksum = "sha256:873b3e0207857c3b2f28392fb922f3ea6efe37620c16d4d4aaf2fef409c90b73"
-url = "https://download.docker.com/linux/static/stable/aarch64/docker-29.9.2.tgz"
+checksum = "sha256:1b27fd739378ef938401e81ce5afb73b7ad7432d4f598814a9ff5f826bb464d2"
+url = "https://download.docker.com/linux/static/stable/aarch64/docker-29.9.3.tgz"
 
 [tools.docker-cli."platforms.linux-arm64-musl"]
-checksum = "sha256:873b3e0207857c3b2f28392fb922f3ea6efe37620c16d4d4aaf2fef409c90b73"
-url = "https://download.docker.com/linux/static/stable/aarch64/docker-29.9.2.tgz"
+checksum = "sha256:1b27fd739378ef938401e81ce5afb73b7ad7432d4f598814a9ff5f826bb464d2"
+url = "https://download.docker.com/linux/static/stable/aarch64/docker-29.9.3.tgz"
 
 [tools.docker-cli."platforms.linux-x64"]
-checksum = "sha256:9ac225999fd5e863f7694c728ef23d480616b1e5639328fa309befd4243d69eb"
-url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.9.2.tgz"
+checksum = "sha256:3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973"
+url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.9.3.tgz"
 
 [tools.docker-cli."platforms.linux-x64-musl"]
-checksum = "sha256:9ac225999fd5e863f7694c728ef23d480616b1e5639328fa309befd4243d69eb"
-url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.9.2.tgz"
+checksum = "sha256:3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973"
+url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.9.3.tgz"
 
 [tools.docker-cli."platforms.macos-arm64"]
-checksum = "blake3:d10419d5ff12642d628f3cca6661628071b36c73e9f4a452b026f73b4959bff0"
-url = "https://download.docker.com/mac/static/stable/aarch64/docker-29.9.2.tgz"
+checksum = "sha256:79145e169bca0b9571d02de8e1cd311a36e0e8fdb4599b6661a87b1bb3afbe13"
+url = "https://download.docker.com/mac/static/stable/aarch64/docker-29.9.3.tgz"
 
 [tools.docker-cli."platforms.macos-x64"]
-checksum = "sha256:089c3f618df88bdef4f1257d9d604499136a1ec5168b67d194c260acad2b522f"
-url = "https://download.docker.com/mac/static/stable/x86_64/docker-29.9.2.tgz"
+checksum = "sha256:f7d8f835391cd0a8c676d9a8d2547f909da6a2d029595943b0ce8d5f169abe47"
+url = "https://download.docker.com/mac/static/stable/x86_64/docker-29.9.3.tgz"
 
 [tools.docker-cli."platforms.windows-x64"]
-checksum = "sha256:b2be959bfed1281ddaf665c0972cba9a62ce30c542b6bcce82f055bf8886bc7d"
-url = "https://download.docker.com/win/static/stable/x86_64/docker-29.9.2.zip"
+checksum = "sha256:7c4ff7bbb31579046cd34dd8b91f7cbd3ab3482a1a85330170be726ef792d751"
+url = "https://download.docker.com/win/static/stable/x86_64/docker-29.9.3.zip"
 
 [[tools.docker-compose]]
 version = "5.6.1"

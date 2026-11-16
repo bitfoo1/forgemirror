@@ -21,7 +21,7 @@ lychee = "0.24.2"
 # test:e2e runs Forgejo in Docker; CI job images ship neither CLI. The
 # standalone compose binary is used because a CLI plugin would need
 # per-machine docker config to be found.
-docker-cli = "29.9.2"
+docker-cli = "29.9.3"
 docker-compose = "5.6.1"
 
 [hooks]
