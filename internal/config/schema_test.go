@@ -300,6 +300,7 @@ source:
   base_url: https://git.example
   token: src
 sync:
+  auto: true
   on_push: true
   schedule: 1h
 filter:

@@ -115,9 +115,8 @@ func (c *Config) validateSync() []error {
 		errs = append(errs, fmt.Errorf("%s: %w", key, err))
 	}
 
-	// The API clients and the schedule read from the Forgejo API.
-	if c.Typed() || c.Sync.Schedule > 0 {
-		const need = "required when a target has a type or sync.schedule is set"
+	if c.UsesSourceAPI() {
+		const need = "required when a target has a type, sync.schedule is set or sync.auto is false"
 		if c.Source.BaseURL == "" {
 			add("source.base_url", errors.New(need))
 		}
@@ -129,8 +128,13 @@ func (c *Config) validateSync() []error {
 	if c.Sync.Schedule < 0 {
 		add("sync.schedule", errors.New("must not be negative"))
 	}
-	if !c.Sync.OnPush && c.Sync.Schedule <= 0 {
+	// In review mode the UI starts runs, so neither trigger is needed; without
+	// the UI nothing could ever apply a plan.
+	if c.Sync.Auto && !c.Sync.OnPush && c.Sync.Schedule <= 0 {
 		add("sync", errors.New("on_push is false and no schedule is set"))
+	}
+	if !c.Sync.Auto && !c.UI.Enabled {
+		add("sync.auto", errors.New("false requires ui.enabled, the only place to apply changes"))
 	}
 
 	return errs

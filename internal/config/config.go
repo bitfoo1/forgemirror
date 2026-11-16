@@ -126,6 +126,10 @@ type Source struct {
 
 // Sync selects what starts a mirror run.
 type Sync struct {
+	// Auto applies runs started by pushes, the schedule and deletions. When
+	// false (review mode) those only compute a plan, and changes reach the
+	// targets only when an operator syncs from the UI.
+	Auto bool `koanf:"auto"`
 	// OnPush lets Forgejo push webhooks start runs.
 	OnPush bool `koanf:"on_push"`
 	// Schedule is the interval of scheduled runs; 0 disables them.
@@ -137,11 +141,18 @@ type Sync struct {
 // filter.allow_private; push-only setups with untyped targets keep relying on
 // filter.exclude_private, so existing deployments do not change silently.
 func (c *Config) PrivatePolicy() filter.PrivatePolicy {
-	if c.Typed() || c.Sync.Schedule > 0 {
+	if c.UsesSourceAPI() {
 		return filter.PrivateOptIn
 	}
 
 	return filter.PrivateUnlessExcluded
+}
+
+// UsesSourceAPI reports whether forgemirror reads from the Forgejo API:
+// typed targets read settings and labels, the schedule and review mode list
+// repositories.
+func (c *Config) UsesSourceAPI() bool {
+	return c.Typed() || c.Sync.Schedule > 0 || !c.Sync.Auto
 }
 
 // Typed reports whether any target talks to a forge API.
@@ -259,6 +270,7 @@ func defaults() map[string]any {
 		"log.format":                 LogFormatJSON,
 		"webhook.max_body_bytes":     defaultMaxBodyBytes,
 		"source.username":            defaultUsername,
+		"sync.auto":                  true,
 		"sync.on_push":               true,
 		"mirror.timeout":             defaultMirrorTimeout,
 		"mirror.max_concurrent":      defaultConcurrency,

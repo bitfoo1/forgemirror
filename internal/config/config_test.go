@@ -332,22 +332,31 @@ mirror:
 			name: "typed target needs source",
 			yaml: "webhook:\n  secret: s\ntargets:\n  - name: t\n    url: \"https://github.com/a/{{ .Name }}.git\"\n    token: x\n    type: github\n",
 			wantErr: []string{
-				"source.base_url: required when a target has a type or sync.schedule is set",
-				"source.token: required when a target has a type or sync.schedule is set",
+				"source.base_url: required when a target has a type, sync.schedule is set or sync.auto is false",
+				"source.token: required when a target has a type, sync.schedule is set or sync.auto is false",
 			},
 		},
 		{
 			name: "schedule needs source",
 			yaml: minimalYAML + "sync:\n  schedule: 1h\n",
 			wantErr: []string{
-				"source.base_url: required when a target has a type or sync.schedule is set",
-				"source.token: required when a target has a type or sync.schedule is set",
+				"source.base_url: required when a target has a type, sync.schedule is set or sync.auto is false",
+				"source.token: required when a target has a type, sync.schedule is set or sync.auto is false",
 			},
 		},
 		{
 			name:    "no trigger",
 			yaml:    minimalYAML + "sync:\n  on_push: false\n",
 			wantErr: []string{"sync: on_push is false and no schedule is set"},
+		},
+		{
+			name: "review mode needs the UI and the source API",
+			yaml: minimalYAML + "sync:\n  auto: false\n",
+			wantErr: []string{
+				"sync.auto: false requires ui.enabled",
+				"source.base_url: required when a target has a type, sync.schedule is set or sync.auto is false",
+				"source.token: required when a target has a type, sync.schedule is set or sync.auto is false",
+			},
 		},
 		{
 			name:    "negative schedule",
@@ -578,8 +587,8 @@ func TestSyncDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !cfg.Sync.OnPush || cfg.Sync.Schedule != 0 {
-		t.Errorf("Sync = %+v, want on_push true and no schedule", cfg.Sync)
+	if !cfg.Sync.Auto || !cfg.Sync.OnPush || cfg.Sync.Schedule != 0 {
+		t.Errorf("Sync = %+v, want auto and on_push true and no schedule", cfg.Sync)
 	}
 }
 
@@ -593,6 +602,22 @@ func TestWebhookSecretOptionalWhenScheduleOnly(t *testing.T) {
 	}
 	if cfg.Sync.Schedule != time.Hour {
 		t.Errorf("Sync.Schedule = %v, want 1h", cfg.Sync.Schedule)
+	}
+}
+
+func TestReviewModeWithoutTriggers(t *testing.T) {
+	t.Parallel()
+
+	yaml := "ui:\n  enabled: true\nsync:\n  on_push: false\n" + sourceYAML + typedTarget
+	cfg, err := config.Load(config.Options{
+		File:    writeFile(t, "c.yaml", yaml),
+		Environ: environ("FORGEMIRROR_SYNC__AUTO=false"),
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Sync.Auto {
+		t.Error("Sync.Auto = true, want false from the environment")
 	}
 }
 
@@ -631,19 +656,33 @@ func TestPrivatePolicy(t *testing.T) {
 	}{
 		{
 			name: "untyped push-only keeps exclude_private",
-			cfg:  config.Config{Targets: []config.Target{{Name: "plain"}}},
+			cfg: config.Config{
+				Targets: []config.Target{{Name: "plain"}},
+				Sync:    config.Sync{Auto: true, OnPush: true},
+			},
 			want: filter.PrivateUnlessExcluded,
 		},
 		{
 			name: "typed target requires allow_private",
-			cfg:  config.Config{Targets: []config.Target{{Name: "plain"}, {Name: "gh", Type: "github"}}},
+			cfg: config.Config{
+				Targets: []config.Target{{Name: "plain"}, {Name: "gh", Type: "github"}},
+				Sync:    config.Sync{Auto: true},
+			},
 			want: filter.PrivateOptIn,
 		},
 		{
 			name: "schedule requires allow_private",
 			cfg: config.Config{
 				Targets: []config.Target{{Name: "plain"}},
-				Sync:    config.Sync{Schedule: time.Hour},
+				Sync:    config.Sync{Auto: true, Schedule: time.Hour},
+			},
+			want: filter.PrivateOptIn,
+		},
+		{
+			name: "review mode requires allow_private",
+			cfg: config.Config{
+				Targets: []config.Target{{Name: "plain"}},
+				Sync:    config.Sync{OnPush: true},
 			},
 			want: filter.PrivateOptIn,
 		},

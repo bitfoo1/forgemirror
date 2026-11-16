@@ -139,12 +139,17 @@
       }
     },
     "sync": {
-      "description": "What starts a mirror run: push webhooks, a schedule, or both. A schedule needs source.base_url and a source token.",
+      "description": "What starts a mirror run: push webhooks, a schedule, or both, and whether runs apply automatically. A schedule and review mode need source.base_url and a source token.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "auto": {
+          "description": "Apply runs started by pushes, the schedule and deletions. false enables review mode: those runs only compute what a sync would change, and changes reach the targets only when an operator syncs from the web UI. false requires ui.enabled, source.base_url and a source token.",
+          "type": "boolean",
+          "default": true
+        },
         "on_push": {
-          "description": "Forgejo push webhooks start runs. Setting this to false requires a schedule. webhook.secret is only required when this is true or a target sets delete.",
+          "description": "Forgejo push webhooks start runs (in review mode: refresh the diff). Setting this to false requires a schedule unless auto is false. webhook.secret is only required when this is true or a target sets delete.",
           "type": "boolean",
           "default": true
         },

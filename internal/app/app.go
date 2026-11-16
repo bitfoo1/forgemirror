@@ -371,7 +371,7 @@ func startScheduler(
 
 // forgeClients are the API clients shared by all runs.
 type forgeClients struct {
-	// source is nil unless a target has a type or a schedule is set.
+	// source is nil unless [config.Config.UsesSourceAPI].
 	source  forge.Source
 	targets map[string]forge.Target
 }
@@ -384,7 +384,7 @@ type forgeClients struct {
 func newForgeClients(cfg *config.Config, hc *http.Client) (forgeClients, error) {
 	clients := forgeClients{targets: make(map[string]forge.Target)}
 
-	if cfg.Typed() || cfg.Sync.Schedule > 0 {
+	if cfg.UsesSourceAPI() {
 		clients.source = forgejo.NewLazy(hc, cfg.Source.BaseURL, cfg.Source.Token).Source()
 	}
 

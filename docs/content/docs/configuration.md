@@ -107,8 +107,9 @@ leaks. Without it, every clone URL is accepted.
 
 The token is only needed for private repositories; leave it unset if only
 public ones are mirrored. It becomes required, together with `base_url`, as
-soon as a target has a `type` or `sync.schedule` is set, because forgemirror
-then reads repositories, settings and labels through the Forgejo API
+soon as a target has a `type`, `sync.schedule` is set or `sync.auto` is
+`false`, because forgemirror then reads repositories, settings and labels
+through the Forgejo API
 (`base_url` + `api/v1`). The rights it needs are listed under
 [Security](../security/#token-rights).
 
@@ -123,6 +124,7 @@ unreachable instance once per repository.
 
 ```yaml
 sync:
+  auto: true      # default; false enables review mode (see below)
   on_push: true   # default; Forgejo push webhooks start runs
   schedule: 1h    # Go duration; 0s (default) disables scheduled runs
 ```
@@ -132,20 +134,28 @@ sync:
 | Push only          | default                                | `webhook.secret`                       |
 | Push and schedule  | `schedule: 1h`                         | `webhook.secret`, `source.base_url`, source token |
 | Schedule only      | `on_push: false`, `schedule: 1h`       | `source.base_url`, source token; no webhook |
+| Review mode        | `auto: false`                          | `ui.enabled`, `source.base_url`, source token |
 
 - **Schedule:** the first run starts right after startup, then one per
   interval. Each run covers every repository the source token can see that
   passes the [filter](#filter); branch rules do not apply. Runs are named
   `schedule-<RFC3339 time>` in the logs (`delivery`). A repository that is
   still being mirrored is not mirrored twice in parallel.
-- **Skip when equal:** a scheduled run first compares branches and tags
-  (`git ls-remote`) of the source and every target. When all are identical,
-  the clone and push are skipped. Settings and labels are still synchronised.
+- **Skip when equal:** every run first compares branches and tags
+  (`git ls-remote`) of the source and every target. Targets that are
+  identical get no push; when all are, the clone is skipped too. Settings
+  and labels are still synchronised.
+- **Review mode:** with `auto: false`, pushes, scheduled runs and deletions
+  only compute what a sync would change. The [web UI](../web-ui/) shows the
+  diff per repository, and nothing reaches a target until you press *Sync*
+  (per repository) or *Sync all*. `on_push` and `schedule` then decide when
+  the diffs are refreshed; neither is required. At startup all diffs are
+  computed once. Use it to review the first run of a new deployment.
 - **Schedule-only:** with `on_push: false`, `webhook.secret` is only
   required if a target sets `delete`. Without a secret, `/webhook` answers
   `404`. With a secret but `on_push: false`, push events are answered with
   `200` and ignored.
-- `on_push: false` without a schedule is an error.
+- `on_push: false` without a schedule is an error, unless `auto` is `false`.
 - **Deletions need a webhook.** Scheduled runs never delete; see
   [`delete`](#typed-targets).
 

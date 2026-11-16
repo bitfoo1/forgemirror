@@ -52,8 +52,14 @@ source:
 # What starts a mirror run. Scheduled runs and typed targets (see targets)
 # read from the Forgejo API, so they need source.base_url and a source token.
 sync:
-  # Forgejo push webhooks start runs. false requires a schedule; the webhook
-  # secret is then only needed if a target sets delete.
+  # Apply runs automatically. false enables review mode: pushes, the schedule
+  # and deletions only compute what a sync would change, and an operator
+  # syncs from the web UI. Requires ui.enabled, source.base_url and a source
+  # token.
+  auto: true
+  # Forgejo push webhooks start runs (in review mode: refresh the diff).
+  # false requires a schedule unless auto is false; the webhook secret is
+  # then only needed if a target sets delete.
   on_push: true
   # Interval between runs over all repositories the source token can see;
   # 0s disables scheduled runs. e.g. 1h
