@@ -12,6 +12,7 @@ import (
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
+	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 )
 
 const (
@@ -49,6 +50,10 @@ func (a bearerAuth) Header(context.Context) (string, string, error) {
 // Client manages projects on GitLab.com or a self-managed instance.
 type Client struct {
 	api *gl.Client
+	// transfer and token carry release file uploads, which bypass the
+	// library (see UploadAsset).
+	transfer *http.Client
+	token    config.Secret
 }
 
 var _ forge.Target = (*Client)(nil)
@@ -70,7 +75,7 @@ func New(httpClient *http.Client, apiURL string, token config.Secret) (*Client, 
 		return nil, fmt.Errorf("gitlab connect: %w", err)
 	}
 
-	return &Client{api: api}, nil
+	return &Client{api: api, transfer: httpclient.NewTransfer(), token: token}, nil
 }
 
 // wrap adds the operation as context and maps 404 to forge.ErrNotFound. The

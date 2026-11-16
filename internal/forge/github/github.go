@@ -12,6 +12,7 @@ import (
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
+	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 )
 
 const (
@@ -33,6 +34,9 @@ func (e *foreignNamespaceError) Error() string {
 // Client manages repositories on GitHub or GitHub Enterprise.
 type Client struct {
 	api *gh.Client
+	// uploads is api on the transfer HTTP client: release assets can take
+	// longer than the per-request timeout of API calls.
+	uploads *gh.Client
 }
 
 var _ forge.Target = (*Client)(nil)
@@ -41,6 +45,20 @@ var _ forge.Target = (*Client)(nil)
 // anything else is treated as GitHub Enterprise, where the library appends
 // /api/v3/ itself.
 func New(httpClient *http.Client, apiURL string, token config.Secret) (*Client, error) {
+	api, err := newAPI(httpClient, apiURL, token)
+	if err != nil {
+		return nil, err
+	}
+
+	uploads, err := newAPI(httpclient.NewTransfer(), apiURL, token)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{api: api, uploads: uploads}, nil
+}
+
+func newAPI(httpClient *http.Client, apiURL string, token config.Secret) (*gh.Client, error) {
 	opts := []gh.ClientOptionsFunc{
 		gh.WithHTTPClient(httpClient),
 		gh.WithAuthToken(token.Reveal()),
@@ -55,7 +73,7 @@ func New(httpClient *http.Client, apiURL string, token config.Secret) (*Client, 
 		return nil, fmt.Errorf("github connect: %w", err)
 	}
 
-	return &Client{api: api}, nil
+	return api, nil
 }
 
 // wrap adds the operation as context and maps 404 to forge.ErrNotFound. The

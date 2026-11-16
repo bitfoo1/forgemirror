@@ -14,6 +14,7 @@ import (
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
+	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
 
@@ -37,8 +38,11 @@ func (e *foreignNamespaceError) Error() string {
 // with different signatures.
 type Client struct {
 	httpClient *http.Client
-	baseURL    string
-	token      config.Secret
+	// transfer carries attachment uploads and downloads, which the API
+	// client's per-request timeout would cut off.
+	transfer *http.Client
+	baseURL  string
+	token    config.Secret
 	// version is the server version learned in New. The SDK stores its context
 	// inside the client, so a client is built per call to honour the caller's
 	// context; pinning the version keeps that free of extra requests.
@@ -50,6 +54,7 @@ type Client struct {
 func New(ctx context.Context, httpClient *http.Client, baseURL string, token config.Secret) (*Client, error) {
 	c := &Client{
 		httpClient: httpClient,
+		transfer:   httpclient.NewTransfer(),
 		baseURL:    strings.TrimSuffix(strings.TrimSuffix(strings.TrimRight(baseURL, "/"), apiSuffix), "/"),
 		token:      token,
 	}

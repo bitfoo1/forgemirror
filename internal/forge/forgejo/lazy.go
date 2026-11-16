@@ -42,7 +42,12 @@ type Lazy struct {
 	now            func() time.Time
 }
 
-var _ forge.Target = (*Lazy)(nil)
+var (
+	_ forge.Target        = (*Lazy)(nil)
+	_ forge.ReleaseTarget = (*Lazy)(nil)
+	_ forge.ReleaseSource = lazySource{}
+	_ forge.PackageSource = lazySource{}
+)
 
 // NewLazy returns a [Lazy] client; it makes no request.
 func NewLazy(httpClient *http.Client, baseURL string, token config.Secret) *Lazy {
