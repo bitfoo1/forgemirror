@@ -109,8 +109,12 @@ func (m *Metrics) instruments(meter metric.Meter) error {
 		metric.WithDescription("Webhook requests, by outcome."))
 	m.active, errs[3] = meter.Int64UpDownCounter("forge_mirror_active_operations",
 		metric.WithDescription("Mirror runs currently in progress."))
-	m.syncOps, errs[4] = meter.Int64Counter("forgemirror_sync_operations",
-		metric.WithDescription("Forge API operations (create, settings, labels, delete) per target, by status."))
+	m.syncOps, errs[4] = meter.Int64Counter(
+		"forgemirror_sync_operations",
+		metric.WithDescription(
+			"Forge API operations (create, settings, labels, releases, packages, delete) per target, by status.",
+		),
+	)
 	m.scheduled, errs[5] = meter.Int64Counter(
 		"forgemirror_scheduled_runs",
 		metric.WithDescription(

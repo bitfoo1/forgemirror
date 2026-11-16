@@ -74,6 +74,10 @@ type Target struct {
 	RefsOmitted int
 	Settings    []FieldChange
 	Labels      []LabelChange
+	// Releases are in the order they are applied: creations and updates by
+	// the source release date, oldest first, then deletions.
+	Releases []ReleaseChange
+	Packages []PackageChange
 	// Warnings are notes that do not block the sync, e.g. topics the target
 	// forge cannot store.
 	Warnings []string
@@ -85,7 +89,10 @@ type Target struct {
 // Changes counts the changes of the target. Unknown refs count as one: a
 // push will happen, but how much it changes is unknown.
 func (t Target) Changes() int {
-	n := len(t.Refs) + t.RefsOmitted + len(t.Settings) + len(t.Labels)
+	n := len(t.Refs) + t.RefsOmitted + len(t.Settings) + len(t.Labels) + len(t.Releases)
+	for _, p := range t.Packages {
+		n += len(p.Tags) + p.TagsOmitted
+	}
 	for _, b := range []bool{t.Create, t.Privatise, t.Delete, t.RefsUnknown} {
 		if b {
 			n++
@@ -101,7 +108,8 @@ func (t Target) NeedsPush() bool {
 }
 
 // Truncate returns a copy of r whose targets keep at most maxRefs ref changes
-// each; the rest is counted in RefsOmitted.
+// each, and at most maxRefs tag changes per package; the rest is counted in
+// RefsOmitted and TagsOmitted.
 func (r Repo) Truncate(maxRefs int) Repo {
 	r.Targets = slices.Clone(r.Targets)
 	for i := range r.Targets {
@@ -109,6 +117,14 @@ func (r Repo) Truncate(maxRefs int) Repo {
 		if len(t.Refs) > maxRefs {
 			t.RefsOmitted += len(t.Refs) - maxRefs
 			t.Refs = t.Refs[:maxRefs:maxRefs]
+		}
+		t.Packages = slices.Clone(t.Packages)
+		for j := range t.Packages {
+			p := &t.Packages[j]
+			if len(p.Tags) > maxRefs {
+				p.TagsOmitted += len(p.Tags) - maxRefs
+				p.Tags = p.Tags[:maxRefs:maxRefs]
+			}
 		}
 	}
 

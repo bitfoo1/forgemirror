@@ -24,6 +24,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/mirror"
+	"go.bitfoo.de/forgemirror/internal/registry"
 	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/schedule"
 	"go.bitfoo.de/forgemirror/internal/server"
@@ -191,14 +192,17 @@ func serveAndDrain(
 			WorkDir: cfg.Mirror.WorkDir,
 			Timeout: cfg.Mirror.Timeout,
 		}),
-		Source:        cfg.Source,
-		Targets:       cfg.Targets,
-		ForgeSource:   clients.source,
-		Forges:        clients.targets,
-		MaxConcurrent: cfg.Mirror.MaxConcurrent,
-		Auto:          cfg.Sync.Auto,
-		Logger:        logger,
-		Observer:      dispatchObs,
+		Source:      cfg.Source,
+		Targets:     cfg.Targets,
+		ForgeSource: clients.source,
+		Forges:      clients.targets,
+		Registry:    registry.New(),
+		// Attachments and images can take as long as a git push.
+		TransferTimeout: cfg.Mirror.Timeout,
+		MaxConcurrent:   cfg.Mirror.MaxConcurrent,
+		Auto:            cfg.Sync.Auto,
+		Logger:          logger,
+		Observer:        dispatchObs,
 	})
 
 	// Without a secret the endpoint must not exist: an HMAC over an empty key

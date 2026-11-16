@@ -59,6 +59,33 @@ func logLabels(ctx context.Context, logger *slog.Logger, target string, changes 
 	}
 }
 
+// logRelease records one applied release change.
+func logRelease(ctx context.Context, logger *slog.Logger, target string, c plan.ReleaseChange) {
+	fields := make([]string, 0, len(c.Fields))
+	for _, f := range c.Fields {
+		fields = append(fields, f.Field)
+	}
+	logger.InfoContext(ctx, "release "+labelPast(c.Kind()),
+		slog.String("target", target), slog.String("tag", c.Tag),
+		slog.Any("fields", fields),
+		slog.Any("assets_added", c.AssetsAdded),
+		slog.Any("assets_replaced", c.AssetsReplaced),
+		slog.Any("assets_removed", c.AssetsRemoved),
+	)
+}
+
+// logPackageTags records the tags copied for one package; the list is
+// capped like refs, since a first copy carries a tag per signature.
+func logPackageTags(ctx context.Context, logger *slog.Logger, target string, c plan.PackageChange, copied []string) {
+	if len(copied) == 0 {
+		return
+	}
+	listed := copied[:min(len(copied), refLogLimit)]
+	logger.InfoContext(ctx, "package tags copied",
+		slog.String("target", target), slog.String("package", c.Package), slog.String("image", c.Image),
+		slog.Int("count", len(copied)), slog.Any("tags", listed))
+}
+
 func labelAttrs(group string, l forge.Label) slog.Attr {
 	return slog.Group(group, slog.String("color", l.Color), slog.String("description", l.Description))
 }
@@ -143,5 +170,12 @@ func logPlanTarget(ctx context.Context, logger *slog.Logger, t plan.Target) {
 	}
 	for _, l := range t.Labels {
 		logger.DebugContext(ctx, "plan: label "+l.Kind(), slog.String("label", l.Name))
+	}
+	for _, r := range t.Releases {
+		logger.DebugContext(ctx, "plan: release "+r.Kind(), slog.String("tag", r.Tag))
+	}
+	for _, p := range t.Packages {
+		logger.DebugContext(ctx, "plan: package tags", slog.String("package", p.Package),
+			slog.String("image", p.Image), slog.Int("count", len(p.Tags)+p.TagsOmitted))
 	}
 }

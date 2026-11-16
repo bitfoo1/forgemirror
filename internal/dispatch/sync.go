@@ -18,6 +18,8 @@ const (
 	opCreate   = "create"
 	opSettings = "settings"
 	opLabels   = "labels"
+	opReleases = "releases"
+	opPackages = "packages"
 	opDelete   = "delete"
 )
 
@@ -46,6 +48,9 @@ type targetRun struct {
 	plan       plan.Target
 	desired    forge.Repo
 	syncLabels bool
+	// features says which further parts (releases, packages) the target
+	// syncs for this repository.
+	features forge.Features
 	// labels is shared read-only between all targets of a run.
 	labels []forge.Label
 	// err removes the target from the remaining steps of the run.
@@ -56,9 +61,26 @@ type targetRun struct {
 
 func (tr *targetRun) typed() bool { return tr.cfg.Type != "" }
 
+// warnf adds a note to the target's plan that does not block the sync.
+func (tr *targetRun) warnf(format string, args ...any) {
+	tr.plan.Warnings = append(tr.plan.Warnings, fmt.Sprintf(format, args...))
+}
+
+// sourceState is what a run read from the source, shared read-only by all
+// targets.
 type sourceState struct {
 	repo   forge.Repo
 	labels []forge.Label
+	// refs are the source refs; nil when they could not be listed.
+	refs map[string]string
+	// releases and packages are only loaded when a target syncs them; a
+	// failed listing is kept, so that no target acts on a partial view.
+	releases    []forge.Release
+	releasesErr error
+	packages    []forge.Package
+	packagesErr error
+	// digests maps container package → tag → manifest digest.
+	digests map[string]map[string]string
 }
 
 func (d *Dispatcher) targetRuns(repo string) []*targetRun {
@@ -178,7 +200,32 @@ func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *ta
 		}
 	}
 
+	// Attachments and image layers can be large; the transfer timeout bounds
+	// them instead of the per-request API timeout.
+	transferCtx, cancel := d.transferContext(ctx)
+	defer cancel()
+
+	if len(tr.plan.Releases) > 0 {
+		if err := d.syncReleases(transferCtx, logger, tr); err != nil {
+			errs = append(errs, fmt.Errorf("target %q: syncing releases: %w", tr.cfg.Name, err))
+		}
+	}
+
+	if len(tr.plan.Packages) > 0 {
+		if err := d.syncPackages(transferCtx, logger, tr); err != nil {
+			errs = append(errs, fmt.Errorf("target %q: syncing packages: %w", tr.cfg.Name, err))
+		}
+	}
+
 	tr.syncErr = errors.Join(errs...)
+}
+
+func (d *Dispatcher) transferContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if d.opts.TransferTimeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+
+	return context.WithTimeout(ctx, d.opts.TransferTimeout)
 }
 
 func (d *Dispatcher) syncSettings(ctx context.Context, logger *slog.Logger, tr *targetRun) error {

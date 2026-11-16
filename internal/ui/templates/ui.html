@@ -211,6 +211,18 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       {{- else}}<li class="c-chg"><span class="sign">~</span>label <b>{{.Name}}</b> <span class="old">#{{.Old.Color}}{{with .Old.Description}} {{.}}{{end}}</span> → <span class="new">#{{.New.Color}}{{with .New.Description}} {{.}}{{end}}</span></li>
       {{- end}}
     {{- end}}
+    {{- range .Releases}}
+      {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span>release <b>{{.Tag}}</b>{{with .AssetsAdded}} <span class="muted">{{len .}} {{plural (len .) "asset" "assets"}}</span>{{end}}</li>
+      {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span>release <b>{{.Tag}}</b></li>
+      {{- else}}<li class="c-chg"><span class="sign">~</span>release <b>{{.Tag}}</b>
+        {{- range .Fields}} {{.Field}}: <span class="old">{{if .Old}}{{.Old}}{{else}}(empty){{end}}</span> → <span class="new">{{if .New}}{{.New}}{{else}}(empty){{end}}</span>{{end}}
+        {{- if or .AssetsAdded .AssetsReplaced .AssetsRemoved}} <span class="muted">assets{{range .AssetsAdded}} +{{.}}{{end}}{{range .AssetsReplaced}} ~{{.}}{{end}}{{range .AssetsRemoved}} −{{.}}{{end}}</span>{{end}}</li>
+      {{- end}}
+    {{- end}}
+    {{- range .Packages}}
+    <li class="c-add"><span class="sign">+</span>package <b>{{.Package}}</b> → <code>{{.Image}}</code>: {{.Count}} {{plural .Count "tag" "tags"}}
+      {{- range .Tags}} <code class="muted">{{.Tag}}</code>{{end}}{{if .TagsOmitted}} <span class="muted">…</span>{{end}}</li>
+    {{- end}}
     {{- range .Warnings}}<li class="c-warn"><span class="sign">!</span>{{.}}</li>{{end}}
   </ul>
   {{- end}}

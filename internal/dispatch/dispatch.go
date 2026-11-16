@@ -23,6 +23,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/mirror"
 	"go.bitfoo.de/forgemirror/internal/plan"
+	"go.bitfoo.de/forgemirror/internal/registry"
 	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
@@ -40,7 +41,8 @@ type Observer interface {
 	// TargetFinished reports the outcome for one target; err is nil on success.
 	TargetFinished(ctx context.Context, repo, target string, duration time.Duration, err error)
 	// SyncFinished reports one forge API operation ("create", "settings",
-	// "labels" or "delete") on a typed target; err is nil on success.
+	// "labels", "releases", "packages" or "delete") on a typed target; err is
+	// nil on success.
 	SyncFinished(ctx context.Context, repo, target, operation string, err error)
 }
 
@@ -56,6 +58,11 @@ type Options struct {
 	ForgeSource forge.Source
 	// Forges holds the API client of every typed target, keyed by target name.
 	Forges map[string]forge.Target
+	// Registry copies container packages; nil disables package sync.
+	Registry Registry
+	// TransferTimeout bounds the release and package step of one target
+	// (mirror.timeout); zero means no bound beyond the run's context.
+	TransferTimeout time.Duration
 	// MaxConcurrent caps git processes (clones and pushes) across all runs,
 	// and separately the forge API steps across all runs.
 	MaxConcurrent int
@@ -67,6 +74,12 @@ type Options struct {
 	Observer Observer
 	// Now returns the current time; nil means [time.Now].
 	Now func() time.Time
+}
+
+// Registry reads and copies container image tags.
+type Registry interface {
+	Digests(ctx context.Context, r registry.Repository, tags []string, deniedIsMissing bool) (map[string]string, error)
+	Copy(ctx context.Context, src, dst registry.Repository, tag string) error
 }
 
 // Dispatcher implements [webhook.Dispatcher].

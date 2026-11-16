@@ -62,6 +62,11 @@ func (d *Dispatcher) planMirror(
 	if refsErr != nil {
 		logger.WarnContext(ctx, "listing source refs failed; every target gets a full push",
 			slog.Any("error", refsErr))
+	} else {
+		src.refs = srcRefs
+	}
+	if srcErr == nil {
+		d.loadArtifacts(ctx, runs, e, &src)
 	}
 	parallel(runs, func(tr *targetRun) {
 		if tr.typed() && tr.err == nil {
@@ -143,7 +148,9 @@ func (d *Dispatcher) planForge(
 		return
 	}
 	tr.addr = addr
-	tr.desired, tr.syncLabels = forge.Resolve(src.repo, tr.cfg.Layers(e.Repository.FullName)...)
+	layers := tr.cfg.Layers(e.Repository.FullName)
+	tr.desired, tr.syncLabels = forge.Resolve(src.repo, layers...)
+	tr.features = forge.ResolveFeatures(layers...)
 	tr.labels = src.labels
 
 	// Dropping topics the target rejects keeps one bad topic from failing
@@ -183,14 +190,21 @@ func (d *Dispatcher) planForge(
 	}
 	tr.plan.Settings = plan.SettingsChanges(after, forge.Diff(after, tr.desired, tr.api.Capabilities()))
 
+	d.planLabels(ctx, tr)
+	d.planReleases(ctx, tr, src)
+	d.planPackages(ctx, tr, src)
+}
+
+func (d *Dispatcher) planLabels(ctx context.Context, tr *targetRun) {
 	if !tr.syncLabels {
 		return
 	}
 	var have []forge.Label
 	if !tr.plan.Create {
-		if have, err = tr.api.Labels(ctx, addr); err != nil {
+		var err error
+		if have, err = tr.api.Labels(ctx, tr.addr); err != nil {
 			// The labels step lists them again and reports a real failure.
-			tr.plan.Warnings = append(tr.plan.Warnings, fmt.Sprintf("listing labels failed: %v", err))
+			tr.warnf("listing labels failed: %v", err)
 
 			return
 		}

@@ -258,6 +258,19 @@ func TestDiffView(t *testing.T) {
 			{Name: "bug", New: &forge.Label{Name: "bug", Color: "ff0000"}},
 			{Name: "old", Old: &forge.Label{Name: "old", Color: "000000"}},
 		},
+		Releases: []plan.ReleaseChange{
+			{Tag: "v1.0.0", New: &forge.Release{Tag: "v1.0.0"}, AssetsAdded: []string{"a.tgz", "b.tgz"}},
+			{
+				Tag: "v0.9.0", Old: &forge.Release{}, New: &forge.Release{},
+				Fields:      []plan.FieldChange{{Field: "name", Old: "old", New: "new"}},
+				AssetsAdded: []string{"c.tgz"}, AssetsReplaced: []string{"d.tgz"}, AssetsRemoved: []string{"e.tgz"},
+			},
+			{Tag: "v0.1.0", Old: &forge.Release{}},
+		},
+		Packages: []plan.PackageChange{{
+			Package: "app", Image: "ghcr.io/acme/app",
+			Tags: []plan.TagChange{{Tag: "1.0.0", New: "sha256:aa"}}, TagsOmitted: 2,
+		}},
 		Warnings: []string{`topic "Go Lang" is not supported by the target forge`},
 	}}})
 	recordPlan(t, f.store, plan.Repo{Name: "acme/clean", At: testNow(), Targets: []plan.Target{{Name: "github"}}})
@@ -267,7 +280,12 @@ func TestDiffView(t *testing.T) {
 
 	body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
 	for _, want := range []string{
-		"out of sync · 14 changes",
+		"out of sync · 20 changes",
+		"release <b>v1.0.0</b> <span class=\"muted\">2 assets</span>",
+		"release <b>v0.9.0</b> name: <span class=\"old\">old</span> → <span class=\"new\">new</span>",
+		"assets +c.tgz ~d.tgz −e.tgz",
+		"release <b>v0.1.0</b>",
+		"package <b>app</b> → <code>ghcr.io/acme/app</code>: 3 tags <code class=\"muted\">1.0.0</code>",
 		"create repository",
 		"<code>refs/heads/main</code> <code class=\"muted\">1111111</code> → <code>2222222</code>",
 		"<code>refs/heads/new</code> <code class=\"muted\">3333333</code>",
