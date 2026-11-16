@@ -8,7 +8,7 @@
 {{- /* The indicator styles would be injected as an inline <style>, which the
 Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
-<title>forgemirror</title>
+<title>ForgeMirror</title>
 <link rel="stylesheet" href="static/style.css">
 {{- /* Not deferred: it applies the stored theme before the first paint. */}}
 <script src="static/app.js"></script>
@@ -18,7 +18,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true"></span>
-    <h1>forgemirror</h1>
+    <h1>ForgeMirror</h1>
     <span class="version">{{.Version}}</span>
   </div>
   <div class="topbar-end">
@@ -93,7 +93,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   <span class="tile-note">
       {{- if .LastRun.IsZero}}first sweep running
       {{- else if .Error}}<span class="fail">last sweep failed</span> <span class="err">{{.Error}}</span>
-      {{- else}}last <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time>: {{.Repos}} repositories · next around <time datetime="{{iso (nextSweep .)}}">{{clock (nextSweep .)}} UTC</time>
+      {{- else}}last <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time>: {{.Repos}} {{plural .Repos "repository" "repositories"}} · next around <time datetime="{{iso (nextSweep .)}}">{{clock (nextSweep .)}} UTC</time>
       {{- end}}
   </span>
     {{- else}}

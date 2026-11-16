@@ -525,7 +525,11 @@ func validate(_ context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	_, err = fmt.Fprintf(cmd.Root().Writer, "configuration is valid (%d targets)\n", len(cfg.Targets))
+	targets := "targets"
+	if len(cfg.Targets) == 1 {
+		targets = "target"
+	}
+	_, err = fmt.Fprintf(cmd.Root().Writer, "configuration is valid (%d %s)\n", len(cfg.Targets), targets)
 
 	return err
 }

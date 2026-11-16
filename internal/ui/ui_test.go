@@ -148,7 +148,7 @@ func TestRoutes(t *testing.T) {
 		{
 			path: "/",
 			want: []string{
-				"<title>forgemirror</title>", "v9.9.9", `src="static/htmx.min.js"`,
+				"<title>ForgeMirror</title>", "v9.9.9", `src="static/htmx.min.js"`,
 				`hx-get="fragments/repos"`, "acme/app", "Configuration", "ops_listen_address: :9090",
 				"mirror finished", "every 1h0m0s",
 			},
@@ -202,6 +202,18 @@ func TestRoutes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestScheduleTileSingular(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.store.ScheduledRunFinished(t.Context(), 1, nil)
+
+	body := f.do(t, http.MethodGet, "/fragments/overview").Body.String()
+	if !strings.Contains(body, ": 1 repository ·") {
+		t.Errorf("schedule tile lacks %q:\n%s", ": 1 repository ·", body)
 	}
 }
 

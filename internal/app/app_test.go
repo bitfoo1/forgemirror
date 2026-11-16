@@ -108,7 +108,15 @@ func TestValidate(t *testing.T) {
 		wantErr    string
 		wantStdout string
 	}{
-		{name: "valid", config: testConfig, wantStdout: "configuration is valid (1 targets)"},
+		{name: "valid", config: testConfig, wantStdout: "configuration is valid (1 target)\n"},
+		{
+			name: "valid with two targets",
+			config: testConfig + `  - name: second
+    url: "https://example.org/{{ .FullName }}.git"
+    token: y
+`,
+			wantStdout: "configuration is valid (2 targets)\n",
+		},
 		{name: "invalid", config: "webhook:\n  secret: s\n", wantErr: "targets"},
 	}
 
@@ -769,7 +777,7 @@ mirror:
 	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished"`))
 
 	for path, want := range map[string][]string{
-		"/":                   {"<title>forgemirror</title>", "ops_listen_address: 127.0.0.1:0"},
+		"/":                   {"<title>ForgeMirror</title>", "ops_listen_address: 127.0.0.1:0"},
 		"/fragments/repos":    {"acme/app", "<code>example</code>", `class="ok"`},
 		"/fragments/logs":     {"forgemirror starting", "mirror finished"},
 		"/fragments/overview": {"<code>example</code>"},
