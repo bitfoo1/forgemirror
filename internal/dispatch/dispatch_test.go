@@ -17,6 +17,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/dispatch"
 	"go.bitfoo.de/forgemirror/internal/mirror"
+	"go.bitfoo.de/forgemirror/internal/plan"
 	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
@@ -42,7 +43,8 @@ func (f *fakeMirrorer) Refs(ctx context.Context, r mirror.Remote) (map[string]st
 		return f.refsHook(ctx, r)
 	}
 
-	return map[string]string{}, nil
+	// Different on every remote, so every target needs a push by default.
+	return map[string]string{"refs/heads/main": r.URL}, nil
 }
 
 func (f *fakeMirrorer) enter() {
@@ -77,7 +79,7 @@ func (f *fakeMirrorer) Clone(ctx context.Context, src mirror.Remote) (mirror.Wor
 
 type fakeWorkspace struct{ f *fakeMirrorer }
 
-func (w *fakeWorkspace) Push(ctx context.Context, dst mirror.Remote) error {
+func (w *fakeWorkspace) Push(ctx context.Context, dst mirror.Remote) ([]mirror.RefUpdate, error) {
 	w.f.enter()
 	defer w.f.leave()
 
@@ -86,10 +88,12 @@ func (w *fakeWorkspace) Push(ctx context.Context, dst mirror.Remote) error {
 	w.f.mu.Unlock()
 
 	if w.f.pushHook != nil {
-		return w.f.pushHook(ctx, dst)
+		if err := w.f.pushHook(ctx, dst); err != nil {
+			return nil, err
+		}
 	}
 
-	return nil
+	return []mirror.RefUpdate{{Ref: "refs/heads/main", Kind: mirror.RefUpdated, Summary: "a..b"}}, nil
 }
 
 func (w *fakeWorkspace) Close() error {
@@ -123,6 +127,8 @@ type recordingObserver struct {
 	done    atomic.Int32
 	results []targetResult
 	syncs   []syncResult
+	plans   []plan.Repo
+	applies []bool
 	// repos collects the repository of every target and sync event.
 	repos []string
 }
@@ -141,11 +147,25 @@ func (o *recordingObserver) snapshot() ([]targetResult, []syncResult) {
 	return slices.Clone(o.results), slices.Clone(o.syncs)
 }
 
-func (o *recordingObserver) RunStarted(_ context.Context, repo string) {
+func (o *recordingObserver) RunStarted(_ context.Context, repo string, apply bool) {
 	o.started.Add(1)
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.repos = append(o.repos, repo)
+	o.applies = append(o.applies, apply)
+}
+
+func (o *recordingObserver) PlanFinished(_ context.Context, p plan.Repo) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.plans = append(o.plans, p)
+}
+
+func (o *recordingObserver) planSnapshot() []plan.Repo {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	return slices.Clone(o.plans)
 }
 
 func (o *recordingObserver) RunFinished(context.Context, string) { o.done.Add(1) }
@@ -214,6 +234,7 @@ func newDispatcher(t *testing.T, m *fakeMirrorer, obs dispatch.Observer, maxConc
 		Source:        config.Source{Username: "oauth2", Token: "src-token"},
 		Targets:       targets(t),
 		MaxConcurrent: maxConcurrent,
+		Auto:          true,
 		Logger:        slog.New(slog.DiscardHandler),
 		Observer:      obs,
 	})
@@ -386,7 +407,7 @@ func TestObserversFanOut(t *testing.T) {
 	a, b := &recordingObserver{}, &recordingObserver{}
 	obs := dispatch.Observers{a, b}
 	ctx := t.Context()
-	obs.RunStarted(ctx, "acme/app")
+	obs.RunStarted(ctx, "acme/app", true)
 	obs.TargetFinished(ctx, "acme/app", "gh", time.Second, nil)
 	obs.SyncFinished(ctx, "acme/app", "gh", "labels", nil)
 	obs.RunFinished(ctx, "acme/app")

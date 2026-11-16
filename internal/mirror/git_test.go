@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +103,7 @@ func TestCloneAndPushCommandsAndCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Clone() error = %v", err)
 	}
-	if pushErr := ws.Push(t.Context(), dst); pushErr != nil {
+	if _, pushErr := ws.Push(t.Context(), dst); pushErr != nil {
 		t.Fatalf("Push() error = %v", pushErr)
 	}
 	if closeErr := ws.Close(); closeErr != nil {
@@ -120,7 +121,7 @@ func TestCloneAndPushCommandsAndCredentials(t *testing.T) {
 
 	for _, want := range []string{
 		"ARGS clone --mirror --quiet -- https://forgejo.example/acme/app.git ",
-		"ARGS push --prune --quiet https://github.com/acme/app.git +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*",
+		"ARGS push --prune --porcelain https://github.com/acme/app.git +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*",
 		"GIT_CONFIG_KEY_0=http.https://forgejo.example/acme/app.git.extraHeader",
 		"GIT_CONFIG_VALUE_0=" + header("oauth2", "src-token"),
 		"GIT_CONFIG_KEY_0=http.https://github.com/acme/app.git.extraHeader",
@@ -211,7 +212,7 @@ func TestPushFailure(t *testing.T) {
 		t.Fatalf("Clone() error = %v", err)
 	}
 
-	err = ws.Push(t.Context(), mirror.Remote{URL: "https://github.com/a.git", Token: "dst-token"})
+	_, err = ws.Push(t.Context(), mirror.Remote{URL: "https://github.com/a.git", Token: "dst-token"})
 	if err == nil || !strings.Contains(err.Error(), "pushing to https://github.com/a.git") ||
 		!strings.Contains(err.Error(), "protected branch") {
 		t.Errorf("Push() error = %v, want wrapped rejection", err)
@@ -324,5 +325,30 @@ func TestRefsFailureRedacts(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "dst-token") {
 		t.Errorf("token leaked: %v", err)
+	}
+}
+
+func TestParsePorcelain(t *testing.T) {
+	t.Parallel()
+
+	out := "To https://github.com/acme/app.git\n" +
+		"*\trefs/heads/new:refs/heads/new\t[new branch]\n" +
+		"=\trefs/tags/v1:refs/tags/v1\t[up to date]\n" +
+		" \trefs/heads/main:refs/heads/main\t0e67ebf..2eca933\n" +
+		"+\trefs/heads/dev:refs/heads/dev\t3d5f6ef...0e67ebf (forced update)\n" +
+		"-\t:refs/heads/gone\t[deleted]\r\n" +
+		"Done\n"
+
+	want := []mirror.RefUpdate{
+		{Ref: "refs/heads/new", Kind: mirror.RefCreated, Summary: "[new branch]"},
+		{Ref: "refs/heads/main", Kind: mirror.RefUpdated, Summary: "0e67ebf..2eca933"},
+		{Ref: "refs/heads/dev", Kind: mirror.RefForced, Summary: "3d5f6ef...0e67ebf (forced update)"},
+		{Ref: "refs/heads/gone", Kind: mirror.RefDeleted, Summary: "[deleted]"},
+	}
+	if got := mirror.ParsePorcelain(out); !slices.Equal(got, want) {
+		t.Errorf("ParsePorcelain =\n%#v\nwant\n%#v", got, want)
+	}
+	if got := mirror.ParsePorcelain("To x\nDone\n"); got != nil {
+		t.Errorf("ParsePorcelain(no changes) = %#v, want nil", got)
 	}
 }

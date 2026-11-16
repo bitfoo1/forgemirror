@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 
 	"go.bitfoo.de/forgemirror/internal/dispatch"
+	"go.bitfoo.de/forgemirror/internal/plan"
 	"go.bitfoo.de/forgemirror/internal/schedule"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
@@ -143,9 +144,13 @@ func (m *Metrics) Shutdown(ctx context.Context) error {
 // per-repository state instead.
 
 // RunStarted implements [dispatch.Observer].
-func (m *Metrics) RunStarted(ctx context.Context, _ string) {
+func (m *Metrics) RunStarted(ctx context.Context, _ string, _ bool) {
 	m.active.Add(ctx, 1)
 }
+
+// PlanFinished implements [dispatch.Observer]. Plans are per repository,
+// which metrics cannot afford as a label; the UI shows them instead.
+func (*Metrics) PlanFinished(context.Context, plan.Repo) {}
 
 // RunFinished implements [dispatch.Observer].
 func (m *Metrics) RunFinished(ctx context.Context, _ string) {

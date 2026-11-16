@@ -4,6 +4,10 @@
 // steps. Targets with a
 // forge type additionally get their repository created and their settings
 // and labels synchronised through the forge API.
+//
+// Every run first computes a [plan.Repo] with read-only calls. A run that
+// applies then executes it and logs every change; in review mode
+// (sync.auto false) only runs requested from the UI apply.
 package dispatch
 
 import (
@@ -11,12 +15,15 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/mirror"
+	"go.bitfoo.de/forgemirror/internal/plan"
+	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
@@ -25,9 +32,11 @@ import (
 // source repository.
 type Observer interface {
 	// RunStarted and RunFinished bracket one run (mirror or deletion) of one
-	// repository.
-	RunStarted(ctx context.Context, repo string)
+	// repository; apply is false for a run that only plans.
+	RunStarted(ctx context.Context, repo string, apply bool)
 	RunFinished(ctx context.Context, repo string)
+	// PlanFinished reports the plan of a run, before it is applied.
+	PlanFinished(ctx context.Context, p plan.Repo)
 	// TargetFinished reports the outcome for one target; err is nil on success.
 	TargetFinished(ctx context.Context, repo, target string, duration time.Duration, err error)
 	// SyncFinished reports one forge API operation ("create", "settings",
@@ -50,9 +59,14 @@ type Options struct {
 	// MaxConcurrent caps git processes (clones and pushes) across all runs,
 	// and separately the forge API steps across all runs.
 	MaxConcurrent int
-	Logger        *slog.Logger
+	// Auto applies push, scheduled and delete events (sync.auto); otherwise
+	// they only plan and only [webhook.EventSync] applies.
+	Auto   bool
+	Logger *slog.Logger
 	// Observer is optional.
 	Observer Observer
+	// Now returns the current time; nil means [time.Now].
+	Now func() time.Time
 }
 
 // Dispatcher implements [webhook.Dispatcher].
@@ -76,13 +90,17 @@ type Dispatcher struct {
 	base   context.Context
 	cancel context.CancelFunc
 
-	// mu guards running and closed. Handler goroutines call Dispatch
+	// mu guards running, known and closed. Handler goroutines call Dispatch
 	// concurrently, and runs remove themselves when done: without the mutex
 	// two pushes to one repository could both start a run (data race on the
 	// map, duplicate work).
 	mu      sync.Mutex
 	running map[string]*repoState
-	closed  bool
+	// known holds the newest repository data per full name, so that UI
+	// actions, which only carry a name, get the clone URL. Every entry passed
+	// the filter on its way in.
+	known  map[string]repo.Repository
+	closed bool
 
 	wg sync.WaitGroup
 }
@@ -99,6 +117,7 @@ type queuedEvent struct {
 	// ctx carries the event's values (not its cancellation) until its run starts.
 	ctx   context.Context
 	event webhook.Event
+	apply bool
 }
 
 var _ webhook.Dispatcher = (*Dispatcher)(nil)
@@ -107,6 +126,9 @@ var _ webhook.Dispatcher = (*Dispatcher)(nil)
 func New(opts Options) *Dispatcher {
 	if opts.Observer == nil {
 		opts.Observer = noopObserver{}
+	}
+	if opts.Now == nil {
+		opts.Now = time.Now
 	}
 	base, cancel := context.WithCancel(context.Background())
 
@@ -117,7 +139,22 @@ func New(opts Options) *Dispatcher {
 		base:    base,
 		cancel:  cancel,
 		running: make(map[string]*repoState),
+		known:   make(map[string]repo.Repository),
 	}
+}
+
+// applies reports whether a run for e changes the targets.
+func (d *Dispatcher) applies(e webhook.Event) bool {
+	switch e.Kind {
+	case webhook.EventSync:
+		return true
+	case webhook.EventRefresh:
+		return false
+	case webhook.EventPush, webhook.EventScheduled, webhook.EventDelete:
+		return d.opts.Auto
+	}
+
+	return d.opts.Auto
 }
 
 // Dispatch implements [webhook.Dispatcher]. It never blocks on git.
@@ -134,22 +171,57 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 		return
 	}
 
-	if state, busy := d.running[key]; busy {
-		// The repository is gone once a deletion is queued; letting a later
-		// push replace it would recreate the target repository.
-		if state.next != nil && state.next.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
-			logger.InfoContext(ctx, "deletion already queued; event dropped")
+	d.known[key] = e.Repository
+	current := &queuedEvent{ctx: ctx, event: e, apply: d.applies(e)}
 
-			return
+	if state, busy := d.running[key]; busy {
+		if queued := state.next; queued != nil {
+			// A queued sync must survive a later event that only plans, or a
+			// push in review mode would silently cancel the operator's sync.
+			current.apply = current.apply || queued.apply
+			// The repository is gone once a deletion is queued; letting a later
+			// push replace it would recreate the target repository.
+			if queued.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
+				queued.apply = current.apply
+				logger.InfoContext(ctx, "deletion already queued; event merged into it")
+
+				return
+			}
 		}
-		state.next = &queuedEvent{ctx: ctx, event: e}
-		logger.InfoContext(ctx, "mirror already running; queued one follow-up run")
+		state.next = current
+		logger.InfoContext(ctx, "run already in progress; queued one follow-up run")
 
 		return
 	}
 
 	d.running[key] = &repoState{}
-	d.wg.Go(func() { d.runLoop(ctx, e) })
+	d.wg.Go(func() { d.runLoop(current) })
+}
+
+// Known returns the newest repository data seen for fullName ("owner/name").
+func (d *Dispatcher) Known(fullName string) (repo.Repository, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	r, ok := d.known[fullName]
+
+	return r, ok
+}
+
+// KnownNames returns the full names of all known repositories, sorted.
+func (d *Dispatcher) KnownNames() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return slices.Sorted(maps.Keys(d.known))
+}
+
+// forget drops a repository that no longer exists on the source.
+func (d *Dispatcher) forget(fullName string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	delete(d.known, fullName)
 }
 
 // Queued returns the repositories that have a run in progress, each mapped to
@@ -192,10 +264,10 @@ func (d *Dispatcher) Shutdown(ctx context.Context) error {
 	}
 }
 
-// runLoop mirrors e, then any follow-up event queued meanwhile.
-func (d *Dispatcher) runLoop(ctx context.Context, e webhook.Event) {
-	for current := (&queuedEvent{ctx: ctx, event: e}); current != nil; current = d.nextRun(current.event) {
-		d.run(current.ctx, current.event)
+// runLoop runs first, then any follow-up event queued meanwhile.
+func (d *Dispatcher) runLoop(first *queuedEvent) {
+	for current := first; current != nil; current = d.nextRun(current.event) {
+		d.run(current.ctx, current.event, current.apply)
 	}
 }
 
@@ -221,8 +293,9 @@ func (d *Dispatcher) nextRun(e webhook.Event) *queuedEvent {
 	return nil
 }
 
-// run performs one run of e: a deletion, or a mirror run.
-func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
+// run plans e and, when apply is set, executes the plan: a deletion or a
+// mirror run.
+func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) {
 	// The run keeps the event's values but is cancelled by the dispatcher's
 	// lifetime, not by the (already finished) HTTP request.
 	ctx, cancel := context.WithCancel(eventCtx)
@@ -230,22 +303,59 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 	stop := context.AfterFunc(d.base, cancel)
 	defer stop()
 
-	repo := e.Repository.FullName
-	d.opts.Observer.RunStarted(ctx, repo)
-	defer d.opts.Observer.RunFinished(ctx, repo)
+	name := e.Repository.FullName
+	d.opts.Observer.RunStarted(ctx, name, apply)
+	defer d.opts.Observer.RunFinished(ctx, name)
 
 	logger := d.eventLogger(e)
-	if e.Kind == webhook.EventDelete {
-		d.deleteRepos(ctx, logger, e)
-
-		return
-	}
-
 	start := time.Now()
+
+	runs := d.targetRuns(name)
+	p := d.plan(ctx, logger, runs, e)
+	p.Apply = apply
+	d.opts.Observer.PlanFinished(ctx, p)
+	logPlan(ctx, logger, p)
+
+	switch {
+	case !apply:
+		if p.SourceDeleted && p.Changes() == 0 {
+			d.forget(name)
+		}
+	case p.SourceDeleted:
+		if d.deleteRepos(ctx, logger, runs) == nil {
+			d.forget(name)
+		}
+	default:
+		d.apply(ctx, logger, runs, e, start)
+	}
+}
+
+// apply executes the plan of a mirror run: create and privatise target
+// repositories, push, then bring settings and labels in line.
+func (d *Dispatcher) apply(
+	ctx context.Context,
+	logger *slog.Logger,
+	runs []*targetRun,
+	e webhook.Event,
+	start time.Time,
+) {
 	logger.InfoContext(ctx, "mirror started")
 
-	runs := d.targetRuns(repo)
-	d.prepare(ctx, logger, runs, e, start)
+	// Targets whose plan failed show up as failed pushes, as before the plan
+	// existed, so metrics and status count them.
+	for _, tr := range runs {
+		if tr.err != nil {
+			d.finishTarget(ctx, logger, tr, start, nil, tr.err)
+		}
+	}
+
+	parallel(pendingRuns(runs), func(tr *targetRun) {
+		if tr.typed() {
+			if err := d.prepareTarget(ctx, logger, tr); err != nil {
+				d.fail(ctx, logger, tr, start, err)
+			}
+		}
+	})
 	d.mirror(ctx, logger, runs, e, start)
 	parallel(runs, func(tr *targetRun) {
 		if tr.typed() && tr.err == nil {
@@ -262,7 +372,7 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event) {
 	logger.InfoContext(ctx, "mirror finished", slog.Duration("duration", time.Since(start)))
 }
 
-// mirror clones once and pushes to every target that is still in the run.
+// mirror clones once and pushes to every target whose plan has ref changes.
 func (d *Dispatcher) mirror(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -270,13 +380,14 @@ func (d *Dispatcher) mirror(
 	e webhook.Event,
 	start time.Time,
 ) {
-	pending := pendingRuns(runs)
-	if len(pending) == 0 {
-		return
+	var pending []*targetRun
+	for _, tr := range pendingRuns(runs) {
+		if tr.plan.NeedsPush() {
+			pending = append(pending, tr)
+		}
 	}
-
-	if e.Kind == webhook.EventScheduled && d.inSync(ctx, logger, pending, e) {
-		logger.InfoContext(ctx, "already in sync; clone and push skipped")
+	if len(pending) == 0 {
+		logger.InfoContext(ctx, "refs already in sync; clone and push skipped")
 
 		return
 	}
@@ -297,40 +408,10 @@ func (d *Dispatcher) mirror(
 
 	parallel(pending, func(tr *targetRun) {
 		pushStart := time.Now()
-		tr.err = d.push(ctx, ws, tr.cfg, e)
-		d.finishTarget(ctx, logger, tr, pushStart, tr.err)
+		var updates []mirror.RefUpdate
+		updates, tr.err = d.push(ctx, ws, tr.cfg, e)
+		d.finishTarget(ctx, logger, tr, pushStart, updates, tr.err)
 	})
-}
-
-// inSync reports whether every target already has exactly the source refs.
-// Any failure to list refs means "not known to be in sync", so the run falls
-// back to a full mirror instead of silently skipping it.
-func (d *Dispatcher) inSync(ctx context.Context, logger *slog.Logger, runs []*targetRun, e webhook.Event) bool {
-	want, err := d.refs(ctx, d.sourceRemote(e))
-	if err != nil {
-		logger.WarnContext(ctx, "listing source refs failed; mirroring anyway", slog.Any("error", err))
-
-		return false
-	}
-
-	for _, tr := range runs {
-		remote, remoteErr := targetRemote(tr.cfg, e)
-		if remoteErr != nil {
-			return false
-		}
-		have, refsErr := d.refs(ctx, remote)
-		if refsErr != nil {
-			logger.WarnContext(ctx, "listing target refs failed; mirroring anyway",
-				slog.String("target", tr.cfg.Name), slog.Any("error", refsErr))
-
-			return false
-		}
-		if !maps.Equal(want, have) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func (d *Dispatcher) refs(ctx context.Context, r mirror.Remote) (map[string]string, error) {
@@ -370,15 +451,20 @@ func (d *Dispatcher) clone(ctx context.Context, e webhook.Event) (mirror.Workspa
 	return d.opts.Mirrorer.Clone(ctx, d.sourceRemote(e))
 }
 
-func (d *Dispatcher) push(ctx context.Context, ws mirror.Workspace, t *config.Target, e webhook.Event) error {
+func (d *Dispatcher) push(
+	ctx context.Context,
+	ws mirror.Workspace,
+	t *config.Target,
+	e webhook.Event,
+) ([]mirror.RefUpdate, error) {
 	remote, err := targetRemote(t, e)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	release, err := d.acquire(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer release()
 
@@ -402,17 +488,26 @@ func acquireSlot(ctx context.Context, sem chan struct{}, kind string) (func(), e
 	}
 }
 
-func (d *Dispatcher) finishTarget(ctx context.Context, logger *slog.Logger, tr *targetRun, start time.Time, err error) {
+func (d *Dispatcher) finishTarget(
+	ctx context.Context,
+	logger *slog.Logger,
+	tr *targetRun,
+	start time.Time,
+	updates []mirror.RefUpdate,
+	err error,
+) {
 	duration := time.Since(start)
 	d.opts.Observer.TargetFinished(ctx, tr.repo, tr.cfg.Name, duration, err)
 
-	logger = logger.With(slog.String("target", tr.cfg.Name), slog.Duration("duration", duration))
+	logger = logger.With(slog.String("target", tr.cfg.Name))
 	if err != nil {
-		logger.ErrorContext(ctx, "target failed", slog.String("outcome", "failure"), slog.Any("error", err))
+		logger.ErrorContext(ctx, "target failed", slog.Duration("duration", duration),
+			slog.String("outcome", "failure"), slog.Any("error", err))
 
 		return
 	}
-	logger.InfoContext(ctx, "target mirrored", slog.String("outcome", "success"))
+	logger.InfoContext(ctx, "target mirrored", slog.Duration("duration", duration), slog.String("outcome", "success"))
+	logRefUpdates(ctx, logger, updates)
 }
 
 func (d *Dispatcher) eventLogger(e webhook.Event) *slog.Logger {
@@ -425,7 +520,8 @@ func (d *Dispatcher) eventLogger(e webhook.Event) *slog.Logger {
 
 type noopObserver struct{}
 
-func (noopObserver) RunStarted(context.Context, string)                                   {}
+func (noopObserver) RunStarted(context.Context, string, bool)                             {}
+func (noopObserver) PlanFinished(context.Context, plan.Repo)                              {}
 func (noopObserver) RunFinished(context.Context, string)                                  {}
 func (noopObserver) TargetFinished(context.Context, string, string, time.Duration, error) {}
 func (noopObserver) SyncFinished(context.Context, string, string, string, error)          {}
@@ -434,9 +530,16 @@ func (noopObserver) SyncFinished(context.Context, string, string, string, error)
 type Observers []Observer
 
 // RunStarted implements [Observer].
-func (obs Observers) RunStarted(ctx context.Context, repo string) {
+func (obs Observers) RunStarted(ctx context.Context, repo string, apply bool) {
 	for _, o := range obs {
-		o.RunStarted(ctx, repo)
+		o.RunStarted(ctx, repo, apply)
+	}
+}
+
+// PlanFinished implements [Observer].
+func (obs Observers) PlanFinished(ctx context.Context, p plan.Repo) {
+	for _, o := range obs {
+		o.PlanFinished(ctx, p)
 	}
 }
 

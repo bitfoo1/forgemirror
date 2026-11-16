@@ -49,13 +49,17 @@ type EventKind int
 
 // Event kinds.
 const (
-	// EventPush mirrors after a push.
+	// EventPush mirrors after a push. Push, scheduled and delete events are
+	// applied only when sync.auto is true; otherwise they only plan.
 	EventPush EventKind = iota
-	// EventScheduled mirrors periodically and skips git when the target refs
-	// already match the source.
+	// EventScheduled mirrors periodically.
 	EventScheduled
 	// EventDelete removes the repository from targets with delete enabled.
 	EventDelete
+	// EventRefresh only computes the plan, in every sync mode (UI refresh).
+	EventRefresh
+	// EventSync computes and applies the plan, in every sync mode (UI sync).
+	EventSync
 )
 
 // Dispatcher runs the mirror work for an event. Dispatch must not block on

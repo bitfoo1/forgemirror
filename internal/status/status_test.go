@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bitfoo.de/forgemirror/internal/plan"
 	"go.bitfoo.de/forgemirror/internal/status"
 )
 
@@ -36,7 +37,7 @@ func TestRunLifecycle(t *testing.T) {
 	s := newStore()
 	ctx := t.Context()
 
-	s.RunStarted(ctx, "acme/b")
+	s.RunStarted(ctx, "acme/b", true)
 	if snap := s.Snapshot(); len(snap.Repos) != 1 || !snap.Repos[0].Running {
 		t.Fatalf("after RunStarted: %+v, want acme/b running", snap.Repos)
 	}
@@ -47,7 +48,7 @@ func TestRunLifecycle(t *testing.T) {
 	s.TargetFinished(ctx, "acme/b", "gh", 2*time.Second, nil)
 	s.TargetFinished(ctx, "acme/b", "cb", time.Second, errors.New("pushing to https://codeberg.org/acme/b.git: denied"))
 	s.RunFinished(ctx, "acme/b")
-	s.RunStarted(ctx, "acme/a")
+	s.RunStarted(ctx, "acme/a", true)
 	s.RunFinished(ctx, "acme/a")
 
 	snap := s.Snapshot()
@@ -103,11 +104,11 @@ func TestDeletion(t *testing.T) {
 
 			s := newStore()
 			ctx := t.Context()
-			s.RunStarted(ctx, "acme/a")
+			s.RunStarted(ctx, "acme/a", true)
 			s.TargetFinished(ctx, "acme/a", "gh", time.Second, nil)
 			s.RunFinished(ctx, "acme/a")
 
-			s.RunStarted(ctx, "acme/a")
+			s.RunStarted(ctx, "acme/a", true)
 			for i, err := range tc.errs {
 				s.SyncFinished(ctx, "acme/a", fmt.Sprintf("t%d", i), "delete", err)
 			}
@@ -125,16 +126,88 @@ func TestDeletionFailureDoesNotStick(t *testing.T) {
 
 	s := newStore()
 	ctx := t.Context()
-	s.RunStarted(ctx, "acme/a")
+	s.RunStarted(ctx, "acme/a", true)
 	s.SyncFinished(ctx, "acme/a", "gh", "delete", errors.New("forbidden"))
 	s.RunFinished(ctx, "acme/a")
 	// A later successful deletion (e.g. after fixing the token) forgets it.
-	s.RunStarted(ctx, "acme/a")
+	s.RunStarted(ctx, "acme/a", true)
 	s.SyncFinished(ctx, "acme/a", "gh", "delete", nil)
 	s.RunFinished(ctx, "acme/a")
 
 	if n := len(s.Snapshot().Repos); n != 0 {
 		t.Errorf("repos = %d, want 0", n)
+	}
+}
+
+func TestPlans(t *testing.T) {
+	t.Parallel()
+
+	s := newStore()
+	ctx := t.Context()
+
+	refs := make([]plan.RefChange, 150)
+	for i := range refs {
+		refs[i] = plan.RefChange{Ref: fmt.Sprintf("refs/tags/v%d", i), New: "x"}
+	}
+	s.RunStarted(ctx, "acme/a", false)
+	if r := s.Snapshot().Repos[0]; !r.Running || r.Applying || r.Plan != nil {
+		t.Fatalf("planning run = %+v, want running, not applying, no plan yet", r)
+	}
+	s.PlanFinished(ctx, plan.Repo{Name: "acme/a", Targets: []plan.Target{{Name: "gh", Refs: refs}}})
+	s.RunFinished(ctx, "acme/a")
+
+	r := s.Snapshot().Repos[0]
+	if r.Plan == nil || len(r.Plan.Targets[0].Refs) != 100 || r.Plan.Targets[0].RefsOmitted != 50 {
+		t.Fatalf("plan = %+v, want 100 refs kept and 50 omitted", r.Plan)
+	}
+	if r.Plan.Changes() != 150 {
+		t.Errorf("Changes = %d, want 150", r.Plan.Changes())
+	}
+
+	s.RunStarted(ctx, "acme/a", true)
+	if applying := s.Snapshot().Repos[0]; !applying.Applying || applying.Plan == nil {
+		t.Errorf("applying run = %+v, want applying and the old plan kept", applying)
+	}
+	s.RunFinished(ctx, "acme/a")
+	if s.Snapshot().Repos[0].Applying {
+		t.Error("Applying still set after the run finished")
+	}
+}
+
+func TestSourceDeletedPlans(t *testing.T) {
+	t.Parallel()
+
+	pending := plan.Repo{SourceDeleted: true, Targets: []plan.Target{{Name: "gh", Delete: true}}}
+	tests := []struct {
+		name      string
+		apply     bool
+		plan      plan.Repo
+		deleteErr error
+		wantKept  bool
+	}{
+		{name: "reviewed deletion stays visible", plan: pending, wantKept: true},
+		{name: "nothing left to delete", plan: plan.Repo{SourceDeleted: true}},
+		{name: "applied deletion", apply: true, plan: pending},
+		{name: "failed deletion", apply: true, plan: pending, deleteErr: errors.New("forbidden"), wantKept: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newStore()
+			ctx := t.Context()
+			tc.plan.Name, tc.plan.Apply = "acme/a", tc.apply
+			s.RunStarted(ctx, "acme/a", tc.apply)
+			s.PlanFinished(ctx, tc.plan)
+			if tc.apply {
+				s.SyncFinished(ctx, "acme/a", "gh", "delete", tc.deleteErr)
+			}
+			s.RunFinished(ctx, "acme/a")
+
+			if kept := len(s.Snapshot().Repos) == 1; kept != tc.wantKept {
+				t.Errorf("repository kept = %v, want %v", kept, tc.wantKept)
+			}
+		})
 	}
 }
 
@@ -166,7 +239,7 @@ func TestConcurrentUse(t *testing.T) {
 		wg.Go(func() {
 			repo := fmt.Sprintf("acme/r%d", i%3)
 			for range 50 {
-				s.RunStarted(ctx, repo)
+				s.RunStarted(ctx, repo, true)
 				s.TargetFinished(ctx, repo, "gh", time.Millisecond, nil)
 				s.SyncFinished(ctx, repo, "gh", "labels", nil)
 				_ = s.Snapshot()

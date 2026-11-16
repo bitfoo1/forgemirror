@@ -194,6 +194,7 @@ func serveAndDrain(
 		ForgeSource:   clients.source,
 		Forges:        clients.targets,
 		MaxConcurrent: cfg.Mirror.MaxConcurrent,
+		Auto:          cfg.Sync.Auto,
 		Logger:        logger,
 		Observer:      dispatchObs,
 	})

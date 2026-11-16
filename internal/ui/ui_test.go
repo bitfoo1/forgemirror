@@ -102,11 +102,11 @@ func (f *fixture) populate(t *testing.T) {
 	t.Helper()
 
 	ctx := t.Context()
-	f.store.RunStarted(ctx, "acme/app")
+	f.store.RunStarted(ctx, "acme/app", true)
 	f.store.SyncFinished(ctx, "acme/app", "github", "create", nil)
 	f.store.TargetFinished(ctx, "acme/app", "github", 1500*time.Millisecond, nil)
 	f.store.RunFinished(ctx, "acme/app")
-	f.store.RunStarted(ctx, "acme/busy")
+	f.store.RunStarted(ctx, "acme/busy", true)
 	f.store.TargetFinished(
 		ctx,
 		"acme/busy",

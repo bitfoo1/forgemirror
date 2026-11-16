@@ -249,11 +249,7 @@ func TestEndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	gitLog := filepath.Join(dir, "git.log")
 	fakeGit := filepath.Join(dir, "git")
-	script := `#!/bin/sh
-echo "$*" >>"` + gitLog + `"
-if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
-`
-	writeExecutable(t, fakeGit, script)
+	writeExecutable(t, fakeGit, fakeGitScript(gitLog))
 
 	cfg := writeConfig(t, testConfig+`
 server:
@@ -322,7 +318,7 @@ mirror:
 	}
 	for _, want := range []string{
 		"clone --mirror --quiet -- https://git.example/acme/app.git",
-		"push --prune --quiet https://example.com/acme/app.git",
+		"push --prune --porcelain https://example.com/acme/app.git",
 	} {
 		if !strings.Contains(string(gitCalls), want) {
 			t.Errorf("git calls missing %q:\n%s", want, gitCalls)
@@ -425,13 +421,24 @@ func fakeGitBinary(t *testing.T, dir string) (binary, logFile string) { //nolint
 
 	logFile = filepath.Join(dir, "git.log")
 	binary = filepath.Join(dir, "git")
-	script := `#!/bin/sh
-echo "$*" >>"` + logFile + `"
-if [ "$1" = clone ]; then for last; do :; done; mkdir -p "$last"; fi
-`
-	writeExecutable(t, binary, script)
+	writeExecutable(t, binary, fakeGitScript(logFile))
 
 	return binary, logFile
+}
+
+// fakeGitScript logs its arguments, creates the clone directory and lists a
+// branch whose object id is the remote URL, so source and targets always
+// differ and every target needs a push; with equal refs a run rightly skips
+// clone and push.
+func fakeGitScript(logFile string) string {
+	return `#!/bin/sh
+echo "$*" >>"` + logFile + `"
+for last; do :; done
+case "$1" in
+ls-remote) printf '%s\trefs/heads/main\n' "$last" ;;
+clone) mkdir -p "$last" ;;
+esac
+`
 }
 
 func postPush(ctx context.Context, t *testing.T, addr, body string) {
@@ -569,7 +576,7 @@ func TestEndToEndTypedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "push --prune --quiet " + f.srv.URL + "/acme/app.git"; !strings.Contains(string(gitCalls), want) {
+	if want := "push --prune --porcelain " + f.srv.URL + "/acme/app.git"; !strings.Contains(string(gitCalls), want) {
 		t.Errorf("git calls missing %q:\n%s", want, gitCalls)
 	}
 	if logs := svc.logs.String(); strings.Contains(logs, "gh-token") || strings.Contains(logs, "src-token") {
@@ -651,16 +658,6 @@ func TestScheduledSync(t *testing.T) {
 	f := newForgeFake(t)
 	dir := t.TempDir()
 	fakeGit, gitLog := fakeGitBinary(t, dir)
-	// The source has a branch the target lacks; with equal (empty) refs the
-	// scheduled run would rightly skip clone and push.
-	script := `#!/bin/sh
-echo "$*" >>"` + gitLog + `"
-case "$1 $*" in
-ls-remote*git.example*) printf 'abc123\trefs/heads/main\n' ;;
-clone*) for last; do :; done; mkdir -p "$last" ;;
-esac
-`
-	writeExecutable(t, fakeGit, script)
 	ctx := t.Context()
 
 	svc := startService(ctx, t, writeConfig(t, `
@@ -699,7 +696,7 @@ mirror:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "push --prune --quiet https://example.com/acme/app.git"; !strings.Contains(string(gitCalls), want) {
+	if want := "push --prune --porcelain https://example.com/acme/app.git"; !strings.Contains(string(gitCalls), want) {
 		t.Errorf("git calls missing %q:\n%s", want, gitCalls)
 	}
 }

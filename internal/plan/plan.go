@@ -15,6 +15,13 @@ import (
 	"go.bitfoo.de/forgemirror/internal/forge"
 )
 
+// Kinds of ref and label changes.
+const (
+	KindCreate = "create"
+	KindUpdate = "update"
+	KindDelete = "delete"
+)
+
 // Repo is the plan of one source repository.
 type Repo struct {
 	// Name is the full name, "owner/name".
@@ -62,6 +69,9 @@ type Target struct {
 	// pushes everything, as git decides what actually changes.
 	RefsUnknown bool
 	Refs        []RefChange
+	// RefsOmitted counts ref changes left out of Refs to bound memory; they
+	// still count as changes.
+	RefsOmitted int
 	Settings    []FieldChange
 	Labels      []LabelChange
 	// Warnings are notes that do not block the sync, e.g. topics the target
@@ -75,7 +85,7 @@ type Target struct {
 // Changes counts the changes of the target. Unknown refs count as one: a
 // push will happen, but how much it changes is unknown.
 func (t Target) Changes() int {
-	n := len(t.Refs) + len(t.Settings) + len(t.Labels)
+	n := len(t.Refs) + t.RefsOmitted + len(t.Settings) + len(t.Labels)
 	for _, b := range []bool{t.Create, t.Privatise, t.Delete, t.RefsUnknown} {
 		if b {
 			n++
@@ -87,7 +97,22 @@ func (t Target) Changes() int {
 
 // NeedsPush reports whether the target gets a git push.
 func (t Target) NeedsPush() bool {
-	return t.Error == "" && !t.Delete && (t.RefsUnknown || len(t.Refs) > 0)
+	return t.Error == "" && !t.Delete && (t.RefsUnknown || len(t.Refs)+t.RefsOmitted > 0)
+}
+
+// Truncate returns a copy of r whose targets keep at most maxRefs ref changes
+// each; the rest is counted in RefsOmitted.
+func (r Repo) Truncate(maxRefs int) Repo {
+	r.Targets = slices.Clone(r.Targets)
+	for i := range r.Targets {
+		t := &r.Targets[i]
+		if len(t.Refs) > maxRefs {
+			t.RefsOmitted += len(t.Refs) - maxRefs
+			t.Refs = t.Refs[:maxRefs:maxRefs]
+		}
+	}
+
+	return r
 }
 
 // RefChange is one ref that a push creates (Old empty), updates or deletes
@@ -96,15 +121,15 @@ type RefChange struct {
 	Ref, Old, New string
 }
 
-// Kind is "create", "update" or "delete".
+// Kind is KindCreate, KindUpdate or KindDelete.
 func (c RefChange) Kind() string {
 	switch {
 	case c.Old == "":
-		return "create"
+		return KindCreate
 	case c.New == "":
-		return "delete"
+		return KindDelete
 	default:
-		return "update"
+		return KindUpdate
 	}
 }
 
@@ -121,15 +146,15 @@ type LabelChange struct {
 	Old, New *forge.Label
 }
 
-// Kind is "create", "update" or "delete".
+// Kind is KindCreate, KindUpdate or KindDelete.
 func (c LabelChange) Kind() string {
 	switch {
 	case c.Old == nil:
-		return "create"
+		return KindCreate
 	case c.New == nil:
-		return "delete"
+		return KindDelete
 	default:
-		return "update"
+		return KindUpdate
 	}
 }
 

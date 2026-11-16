@@ -13,11 +13,18 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"go.bitfoo.de/forgemirror/internal/plan"
 )
 
 // operationDelete is the forge operation that removes a target repository;
 // see dispatch.Observer.
 const operationDelete = "delete"
+
+// maxPlanRefs bounds the ref changes kept per target and plan. The first plan
+// of a repository with thousands of tags would otherwise keep all of them in
+// memory until the next run; the UI cannot show that many usefully anyway.
+const maxPlanRefs = 100
 
 // Options configures a [Store].
 type Options struct {
@@ -39,7 +46,10 @@ type Store struct {
 }
 
 type repoState struct {
-	running      int
+	running int
+	// applying is set while the running run applies its plan.
+	applying     bool
+	plan         *plan.Repo
 	lastStarted  time.Time
 	lastFinished time.Time
 	targets      map[string]*Target
@@ -61,12 +71,18 @@ type Snapshot struct {
 // Repo is the state of one source repository.
 type Repo struct {
 	// Name is the full name, "owner/name".
-	Name         string
-	Running      bool
+	Name    string
+	Running bool
+	// Applying is set while the running run applies its plan; a running run
+	// without it only plans.
+	Applying     bool
 	LastStarted  time.Time
 	LastFinished time.Time
 	// Targets is sorted by target name.
 	Targets []Target
+	// Plan is the newest plan; nil before the first. It is shared, not
+	// copied: callers must not modify it.
+	Plan *plan.Repo
 }
 
 // Target is the state of one repository on one target.
@@ -136,18 +152,28 @@ func (r *repoState) target(name string) *Target {
 }
 
 // RunStarted implements dispatch.Observer.
-func (s *Store) RunStarted(_ context.Context, repo string) {
+func (s *Store) RunStarted(_ context.Context, repo string, apply bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	r := s.repo(repo)
 	r.running++
+	r.applying = apply
 	r.lastStarted = s.now()
 	r.deleting, r.deleteFailed = false, false
 }
 
-// RunFinished implements dispatch.Observer. A repository whose deletion
-// succeeded on every target is forgotten.
+// PlanFinished implements dispatch.Observer.
+func (s *Store) PlanFinished(_ context.Context, p plan.Repo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	kept := p.Truncate(maxPlanRefs)
+	s.repo(p.Name).plan = &kept
+}
+
+// RunFinished implements dispatch.Observer. A repository is forgotten once
+// it is gone from the source and nothing is left to delete on the targets.
 func (s *Store) RunFinished(_ context.Context, repo string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -155,7 +181,13 @@ func (s *Store) RunFinished(_ context.Context, repo string) {
 	r := s.repo(repo)
 	r.running = max(r.running-1, 0)
 	r.lastFinished = s.now()
-	if r.deleting && !r.deleteFailed && r.running == 0 {
+	if r.running > 0 {
+		return
+	}
+	r.applying = false
+
+	gone := r.plan != nil && r.plan.SourceDeleted && (r.plan.Changes() == 0 || r.plan.Apply)
+	if (r.deleting || gone) && !r.deleteFailed {
 		delete(s.repos, repo)
 	}
 }
@@ -216,6 +248,8 @@ func (s *Store) Snapshot() Snapshot {
 		repo := Repo{
 			Name:         name,
 			Running:      r.running > 0,
+			Applying:     r.applying,
+			Plan:         r.plan,
 			LastStarted:  r.lastStarted,
 			LastFinished: r.lastFinished,
 			Targets:      make([]Target, 0, len(r.targets)),

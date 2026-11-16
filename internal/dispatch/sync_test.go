@@ -294,6 +294,7 @@ func newSyncDispatcherWithLogger(
 		Source:        config.Source{Username: "oauth2", Token: "src-token"},
 		Targets:       loadTargets(t, targetsYAML),
 		MaxConcurrent: 4,
+		Auto:          true,
 		Logger:        logger,
 		Observer:      obs,
 		Forges:        targets,
@@ -459,8 +460,8 @@ func TestRunPushFailureSkipsSettings(t *testing.T) {
 	d.Dispatch(t.Context(), event("app"))
 	shutdown(t, d)
 
-	if got := gh.snapshot(); !slices.Equal(got, []string{"Get", "push"}) {
-		t.Errorf("calls = %v, want Get and push only", got)
+	if got := gh.snapshot(); !slices.Equal(got, []string{"Get", "Labels", "push"}) {
+		t.Errorf("calls = %v, want only the plan reads and the push", got)
 	}
 	if _, syncs := obs.snapshot(); len(syncs) != 0 {
 		t.Errorf("sync results = %+v, want none", syncs)
@@ -619,8 +620,8 @@ func TestDeleteEvent(t *testing.T) {
 			d.Dispatch(t.Context(), e)
 			shutdown(t, d)
 
-			if got := gh.snapshot(); !slices.Equal(got, []string{"Delete"}) {
-				t.Errorf("github calls = %v, want Delete", got)
+			if got := gh.snapshot(); !slices.Equal(got, []string{"Get", "Delete"}) {
+				t.Errorf("github calls = %v, want Get (plan) and Delete", got)
 			}
 			if got := gl.snapshot(); len(got) != 0 {
 				t.Errorf("gitlab calls = %v, want none (delete: false)", got)
@@ -745,18 +746,18 @@ func TestRunPrivatisesBeforePush(t *testing.T) {
 		{
 			name:      "source turned private",
 			private:   true,
-			wantCalls: []string{"Get", "Update", "push"},
+			wantCalls: []string{"Get", "Labels", "Update", "push"},
 		},
 		{
 			name:      "override private",
 			override:  "    settings:\n      private: true\n",
-			wantCalls: []string{"Get", "Update", "push"},
+			wantCalls: []string{"Get", "Labels", "Update", "push"},
 		},
 		{
 			name:      "privatising fails",
 			private:   true,
 			updateErr: errors.New("org policy"),
-			wantCalls: []string{"Get", "Update"},
+			wantCalls: []string{"Get", "Labels", "Update"},
 		},
 	}
 	for _, tc := range tests {

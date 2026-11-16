@@ -76,7 +76,8 @@ func TestMirrorWithRealGit(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ws.Close() })
 
-	if pushErr := ws.Push(t.Context(), mirror.Remote{URL: target}); pushErr != nil {
+	updates, pushErr := ws.Push(t.Context(), mirror.Remote{URL: target})
+	if pushErr != nil {
 		t.Fatalf("Push() error = %v", pushErr)
 	}
 
@@ -84,6 +85,26 @@ func TestMirrorWithRealGit(t *testing.T) {
 	want := []string{"refs/heads/feature", "refs/heads/main", "refs/tags/v1.0.0"}
 	if !slices.Equal(got, want) {
 		t.Errorf("target refs = %v, want %v", got, want)
+	}
+
+	kinds := make(map[string]string, len(updates))
+	for _, u := range updates {
+		kinds[u.Ref] = u.Kind
+	}
+	wantKinds := map[string]string{
+		"refs/heads/feature": mirror.RefCreated,
+		"refs/heads/main":    mirror.RefCreated,
+		"refs/tags/v1.0.0":   mirror.RefCreated,
+		"refs/heads/stale":   mirror.RefDeleted,
+	}
+	if !maps.Equal(kinds, wantKinds) {
+		t.Errorf("reported updates = %v, want %v", kinds, wantKinds)
+	}
+
+	// A second push changes nothing and reports nothing.
+	again, pushErr := ws.Push(t.Context(), mirror.Remote{URL: target})
+	if pushErr != nil || len(again) != 0 {
+		t.Errorf("second Push() = %v, %v; want no updates", again, pushErr)
 	}
 }
 

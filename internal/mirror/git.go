@@ -86,13 +86,44 @@ type gitWorkspace struct {
 }
 
 // Push implements [Workspace].
-func (w *gitWorkspace) Push(ctx context.Context, dst Remote) error {
-	args := append([]string{"push", "--prune", "--quiet", dst.URL}, pushRefspecs()...)
-	if err := w.git.run(ctx, w.dir, dst, args...); err != nil {
-		return fmt.Errorf("pushing to %s: %w", redactURL(dst.URL), err)
+func (w *gitWorkspace) Push(ctx context.Context, dst Remote) ([]RefUpdate, error) {
+	// --porcelain reports every ref on stdout for the change log; --quiet
+	// would suppress exactly those lines. Progress is not shown either way,
+	// because stderr is not a terminal.
+	args := append([]string{"push", "--prune", "--porcelain", dst.URL}, pushRefspecs()...)
+	out, err := w.git.output(ctx, w.dir, dst, args...)
+	if err != nil {
+		return nil, fmt.Errorf("pushing to %s: %w", redactURL(dst.URL), err)
 	}
 
-	return nil
+	return parsePorcelain(out), nil
+}
+
+// porcelainFields is the number of tab-separated fields of a ref line.
+const porcelainFields = 3
+
+// parsePorcelain reads the ref lines of `git push --porcelain`
+// ("<flag>\t<from>:<to>\t<summary>"). Up-to-date refs ("=") and the "To"
+// and "Done" lines are skipped; rejected refs fail the push before this.
+func parsePorcelain(out string) []RefUpdate {
+	kinds := map[byte]string{'*': RefCreated, ' ': RefUpdated, '+': RefForced, '-': RefDeleted}
+
+	var updates []RefUpdate
+	for line := range strings.Lines(out) {
+		line = strings.TrimRight(line, "\r\n")
+		fields := strings.SplitN(line, "\t", porcelainFields)
+		if len(fields) != porcelainFields || len(fields[0]) != 1 {
+			continue
+		}
+		kind, ok := kinds[fields[0][0]]
+		if !ok {
+			continue
+		}
+		_, to, _ := strings.Cut(fields[1], ":")
+		updates = append(updates, RefUpdate{Ref: to, Kind: kind, Summary: fields[2]})
+	}
+
+	return updates
 }
 
 // Close implements [Workspace].

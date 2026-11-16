@@ -35,9 +35,27 @@ type Mirrorer interface {
 // Workspace is a local mirror clone.
 type Workspace interface {
 	// Push makes dst's branches and tags identical to the clone's: it
-	// creates, force-updates and deletes refs as needed. Safe for concurrent
-	// use by multiple goroutines.
-	Push(ctx context.Context, dst Remote) error
+	// creates, force-updates and deletes refs as needed, and returns the refs
+	// it changed. Safe for concurrent use by multiple goroutines.
+	Push(ctx context.Context, dst Remote) ([]RefUpdate, error)
 	// Close deletes the clone. It is idempotent.
 	Close() error
+}
+
+// Kinds of [RefUpdate].
+const (
+	RefCreated = "create"
+	RefUpdated = "update"
+	RefForced  = "force"
+	RefDeleted = "delete"
+)
+
+// RefUpdate is one ref a push changed on the target, as git reported it.
+type RefUpdate struct {
+	// Ref is the ref name on the target, e.g. "refs/heads/main".
+	Ref string
+	// Kind is one of RefCreated, RefUpdated, RefForced, RefDeleted.
+	Kind string
+	// Summary is git's description, e.g. "0e67ebf..2eca933" or "[new tag]".
+	Summary string
 }

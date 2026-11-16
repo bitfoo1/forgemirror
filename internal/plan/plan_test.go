@@ -151,3 +151,21 @@ func TestChanges(t *testing.T) {
 		t.Error("a repository error must fail the plan")
 	}
 }
+
+func TestTruncate(t *testing.T) {
+	t.Parallel()
+
+	refs := []plan.RefChange{{Ref: "a", New: "1"}, {Ref: "b", New: "2"}, {Ref: "c", New: "3"}}
+	orig := plan.Repo{Targets: []plan.Target{{Name: "t", Refs: refs}, {Name: "u"}}}
+
+	got := orig.Truncate(2)
+	if len(got.Targets[0].Refs) != 2 || got.Targets[0].RefsOmitted != 1 {
+		t.Errorf("Truncate = %+v, want 2 refs and 1 omitted", got.Targets[0])
+	}
+	if got.Changes() != 3 || !got.Targets[0].NeedsPush() {
+		t.Errorf("omitted refs must still count: changes %d", got.Changes())
+	}
+	if len(orig.Targets[0].Refs) != 3 || orig.Targets[0].RefsOmitted != 0 {
+		t.Error("Truncate modified the original")
+	}
+}

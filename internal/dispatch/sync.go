@@ -10,7 +10,7 @@ import (
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
-	"go.bitfoo.de/forgemirror/internal/webhook"
+	"go.bitfoo.de/forgemirror/internal/plan"
 )
 
 // Operations reported through [Observer.SyncFinished].
@@ -36,11 +36,14 @@ type targetRun struct {
 	// api is nil for untyped targets and for typed targets without a client.
 	api  forge.Target
 	addr forge.Address
-	// current is the target repository as last seen; unset when created.
+	// current is the target repository as last seen; for a repository the
+	// plan creates, what Create is asked to make.
 	current forge.Repo
 	// created means the repository was made in this run and must be read
 	// again before its settings are compared.
-	created    bool
+	created bool
+	// plan is this target's part of the run's plan.
+	plan       plan.Target
 	desired    forge.Repo
 	syncLabels bool
 	// labels is shared read-only between all targets of a run.
@@ -102,80 +105,14 @@ func runErrors(runs []*targetRun) error {
 // target that never got pushed still shows up in the mirror metrics.
 func (d *Dispatcher) fail(ctx context.Context, logger *slog.Logger, tr *targetRun, start time.Time, err error) {
 	tr.err = err
-	d.finishTarget(ctx, logger, tr, start, err)
+	d.finishTarget(ctx, logger, tr, start, nil, err)
 }
 
-// prepare loads the source state and makes sure every typed target has a
-// repository to push to. Untyped targets are left alone.
-func (d *Dispatcher) prepare(
-	ctx context.Context,
-	logger *slog.Logger,
-	runs []*targetRun,
-	e webhook.Event,
-	start time.Time,
-) {
-	var typed []*targetRun
-	for _, tr := range runs {
-		if tr.typed() {
-			typed = append(typed, tr)
-		}
-	}
-	if len(typed) == 0 {
-		return
-	}
-
-	src, err := d.loadSource(ctx, e)
-	if err != nil {
-		for _, tr := range typed {
-			d.fail(ctx, logger, tr, start, err)
-		}
-
-		return
-	}
-
-	parallel(typed, func(tr *targetRun) {
-		if prepErr := d.prepareTarget(ctx, logger, tr, e, src); prepErr != nil {
-			d.fail(ctx, logger, tr, start, prepErr)
-		}
-	})
-}
-
-func (d *Dispatcher) loadSource(ctx context.Context, e webhook.Event) (sourceState, error) {
-	if d.opts.ForgeSource == nil {
-		return sourceState{}, errNoSource
-	}
-
-	release, err := d.acquireAPI(ctx)
-	if err != nil {
-		return sourceState{}, err
-	}
-	defer release()
-
-	r := e.Repository
-	src, err := d.opts.ForgeSource.Repo(ctx, r.Owner, r.Name)
-	if err != nil {
-		return sourceState{}, fmt.Errorf("reading source repository: %w", err)
-	}
-	labels, err := d.opts.ForgeSource.Labels(ctx, r.Owner, r.Name)
-	if err != nil {
-		return sourceState{}, fmt.Errorf("reading source labels: %w", err)
-	}
-
-	return sourceState{repo: src, labels: labels}, nil
-}
-
-// prepareTarget resolves the desired state of tr and creates its repository
-// when it is missing and creation is allowed.
-func (d *Dispatcher) prepareTarget(
-	ctx context.Context,
-	logger *slog.Logger,
-	tr *targetRun,
-	e webhook.Event,
-	src sourceState,
-) error {
-	name := tr.cfg.Name
-	if tr.api == nil {
-		return fmt.Errorf("target %q: %w", name, errNoClient)
+// prepareTarget makes sure a typed target has a repository to push to:
+// it creates a missing one, or makes a public one private, as planned.
+func (d *Dispatcher) prepareTarget(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
+	if !tr.plan.Create && !tr.plan.Privatise {
+		return nil
 	}
 
 	release, err := d.acquireAPI(ctx)
@@ -184,47 +121,18 @@ func (d *Dispatcher) prepareTarget(
 	}
 	defer release()
 
-	addr, err := tr.cfg.Address(e.Repository)
-	if err != nil {
-		return err
-	}
-	tr.addr = addr
-	tr.desired, tr.syncLabels = forge.Resolve(src.repo, tr.cfg.Layers(e.Repository.FullName)...)
-	tr.labels = src.labels
-
-	// Dropping topics the target rejects keeps one bad topic from failing
-	// every settings sync, and keeps it out of the diff so it is not retried
-	// on every run.
-	var dropped []string
-	tr.desired.Topics, dropped = forge.RepresentableTopics(tr.desired.Topics, tr.api.Capabilities())
-	for _, topic := range dropped {
-		logger.WarnContext(ctx, "topic not supported by the target forge; skipped",
-			slog.String("target", name), slog.String("topic", topic))
-	}
-
-	current, err := tr.api.Get(ctx, addr)
-	switch {
-	case err == nil:
-		tr.current = current
-
+	if tr.plan.Privatise {
 		return d.privatise(ctx, logger, tr)
-	case !errors.Is(err, forge.ErrNotFound):
-		return fmt.Errorf("target %q: reading repository: %w", name, err)
-	case !tr.cfg.Create:
-		return fmt.Errorf("target %q: %w", name, errMissingRepo)
 	}
 
-	// The default branch only exists after the first push; it is set by the
-	// settings step afterwards.
-	created := tr.desired
-	created.DefaultBranch = ""
-
-	err = tr.api.Create(ctx, addr, created)
+	err = tr.api.Create(ctx, tr.addr, createdRepo(tr.desired))
 	d.syncFinished(ctx, logger, tr, opCreate, err)
 	if err != nil {
-		return fmt.Errorf("target %q: creating repository: %w", name, err)
+		return fmt.Errorf("target %q: creating repository: %w", tr.cfg.Name, err)
 	}
 	tr.created = true
+	logger.InfoContext(ctx, "repository created",
+		slog.String("target", tr.cfg.Name), slog.Bool("private", tr.desired.Private))
 
 	return nil
 }
@@ -235,16 +143,14 @@ func (d *Dispatcher) prepareTarget(
 // source on a public repository; a failure here keeps the target out of the
 // push instead.
 func (d *Dispatcher) privatise(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
-	if !tr.desired.Private || tr.current.Private {
-		return nil
-	}
-
 	private := true
-	err := tr.api.Update(ctx, tr.addr, forge.Settings{Private: &private})
+	diff := forge.Settings{Private: &private}
+	err := tr.api.Update(ctx, tr.addr, diff)
 	d.syncFinished(ctx, logger, tr, opSettings, err)
 	if err != nil {
 		return fmt.Errorf("target %q: making repository private: %w", tr.cfg.Name, err)
 	}
+	logSettings(ctx, logger, tr.cfg.Name, plan.SettingsChanges(tr.current, diff))
 	tr.current.Private = true
 
 	return nil
@@ -297,6 +203,9 @@ func (d *Dispatcher) syncSettings(ctx context.Context, logger *slog.Logger, tr *
 
 	err := tr.api.Update(ctx, tr.addr, diff)
 	d.syncFinished(ctx, logger, tr, opSettings, err)
+	if err == nil {
+		logSettings(ctx, logger, tr.cfg.Name, plan.SettingsChanges(current, diff))
+	}
 
 	return err
 }
@@ -318,21 +227,25 @@ func (d *Dispatcher) syncLabels(ctx context.Context, logger *slog.Logger, tr *ta
 	}
 
 	var errs []error
-	for _, l := range create {
-		if opErr := tr.api.CreateLabel(ctx, tr.addr, l); opErr != nil {
-			errs = append(errs, fmt.Errorf("creating label %q: %w", l.Name, opErr))
+	var done []plan.LabelChange
+	for _, c := range plan.LabelChanges(create, update, remove, current) {
+		var opErr error
+		switch c.Kind() {
+		case plan.KindCreate:
+			opErr = tr.api.CreateLabel(ctx, tr.addr, *c.New)
+		case plan.KindUpdate:
+			opErr = tr.api.UpdateLabel(ctx, tr.addr, *c.New)
+		default:
+			opErr = tr.api.DeleteLabel(ctx, tr.addr, c.Name)
 		}
-	}
-	for _, l := range update {
-		if opErr := tr.api.UpdateLabel(ctx, tr.addr, l); opErr != nil {
-			errs = append(errs, fmt.Errorf("updating label %q: %w", l.Name, opErr))
+		if opErr != nil {
+			errs = append(errs, fmt.Errorf("%s label %q: %w", labelVerb(c.Kind()), c.Name, opErr))
+
+			continue
 		}
+		done = append(done, c)
 	}
-	for _, l := range remove {
-		if opErr := tr.api.DeleteLabel(ctx, tr.addr, l.Name); opErr != nil {
-			errs = append(errs, fmt.Errorf("deleting label %q: %w", l.Name, opErr))
-		}
-	}
+	logLabels(ctx, logger, tr.cfg.Name, done)
 
 	err = errors.Join(errs...)
 	d.syncFinished(ctx, logger, tr, opLabels, err)
@@ -340,43 +253,37 @@ func (d *Dispatcher) syncLabels(ctx context.Context, logger *slog.Logger, tr *ta
 	return err
 }
 
-// deleteRepos handles a deleted source repository. Only typed targets with
-// delete enabled are touched; nothing is cloned and the source API is not
-// asked, since the repository no longer exists there.
-func (d *Dispatcher) deleteRepos(ctx context.Context, logger *slog.Logger, e webhook.Event) {
+// deleteRepos deletes the target repositories the plan marked for deletion
+// after the source repository was deleted. Nothing is cloned.
+func (d *Dispatcher) deleteRepos(ctx context.Context, logger *slog.Logger, runs []*targetRun) error {
 	start := time.Now()
 	logger.InfoContext(ctx, "deletion started")
 
-	var runs []*targetRun
-	for _, tr := range d.targetRuns(e.Repository.FullName) {
-		if !tr.typed() || !tr.cfg.Delete {
-			logger.DebugContext(ctx, "target keeps the repository; delete is not enabled",
-				slog.String("target", tr.cfg.Name))
-
-			continue
+	var planned []*targetRun
+	for _, tr := range runs {
+		if tr.err != nil {
+			d.syncFinished(ctx, logger, tr, opDelete, tr.err)
 		}
-		runs = append(runs, tr)
+		if tr.err == nil && tr.plan.Delete {
+			planned = append(planned, tr)
+		}
 	}
 
-	parallel(runs, func(tr *targetRun) { tr.err = d.deleteRepo(ctx, logger, tr, e) })
+	parallel(planned, func(tr *targetRun) { tr.err = d.deleteRepo(ctx, logger, tr) })
 
 	if err := runErrors(runs); err != nil {
 		logger.ErrorContext(ctx, "deletion finished with errors",
 			slog.Duration("duration", time.Since(start)), slog.Any("error", err))
 
-		return
+		return err
 	}
 	logger.InfoContext(ctx, "deletion finished", slog.Duration("duration", time.Since(start)))
+
+	return nil
 }
 
-func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *targetRun, e webhook.Event) error {
-	err := errNoClient
-	if tr.api != nil {
-		var addr forge.Address
-		if addr, err = tr.cfg.Address(e.Repository); err == nil {
-			err = d.deleteAt(ctx, tr.api, addr)
-		}
-	}
+func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
+	err := d.deleteAt(ctx, tr.api, tr.addr)
 	// A repository that is already gone is exactly the desired outcome.
 	if errors.Is(err, forge.ErrNotFound) {
 		err = nil
@@ -385,6 +292,9 @@ func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *ta
 		err = fmt.Errorf("target %q: deleting repository: %w", tr.cfg.Name, err)
 	}
 	d.syncFinished(ctx, logger, tr, opDelete, err)
+	if err == nil {
+		logger.InfoContext(ctx, "repository deleted", slog.String("target", tr.cfg.Name))
+	}
 
 	return err
 }
@@ -414,5 +324,7 @@ func (d *Dispatcher) syncFinished(
 
 		return
 	}
-	logger.InfoContext(ctx, "forge operation succeeded", slog.String("outcome", "success"))
+	// The change records next to each call say what changed; this line only
+	// keeps the operation outcome traceable at debug level.
+	logger.DebugContext(ctx, "forge operation succeeded", slog.String("outcome", "success"))
 }
