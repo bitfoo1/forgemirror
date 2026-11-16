@@ -25,10 +25,33 @@
       "semanticCommitScope": "ci"
     },
     {
-      "description": "Container images and charts outside CI: the bjw-s common chart, deploy manifests and the e2e Forgejo image.",
+      "description": "Container images and charts outside CI: the bjw-s common chart, deploy manifests (the e2e Forgejo images join via their own rule below).",
       "matchManagers": ["helmv3", "kustomize", "docker-compose"],
       "groupName": "images and charts",
       "semanticCommitScope": "deps"
+    },
+    {
+      "description": "The e2e Forgejo images track release lines (LTS, latest), which the compose manager cannot tell apart; the custom managers below handle them.",
+      "matchManagers": ["docker-compose"],
+      "matchFileNames": ["e2e/compose.yaml"],
+      "enabled": false
+    },
+    {
+      "description": "The e2e Forgejo images (custom manager) belong with the other images.",
+      "matchDepNames": ["forgejo-lts", "forgejo-latest"],
+      "groupName": "images and charts",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "A new LTS line changes which release the e2e test covers, so it gets its own PR instead of hiding in a group.",
+      "matchDepNames": ["forgejo-lts-line"],
+      "commitMessageTopic": "Forgejo LTS line of the e2e test",
+      "semanticCommitScope": "e2e"
+    },
+    {
+      "description": "Keeps the LTS service on the current LTS major. Renovate bumps the major itself (custom manager forgejo-lts-line matches this rule's text, so keep its shape).",
+      "matchDepNames": ["forgejo-lts"],
+      "allowedVersions": "/^15[.]/"
     }
   ],
   "customManagers": [
@@ -40,6 +63,37 @@
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "jdx/mise",
       "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "description": "e2e Forgejo images, one per release line, named by the '# renovate: depName=' comment above each image.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^e2e/compose\\.yaml$/"],
+      "matchStrings": [
+        "# renovate: depName=(?<depName>\\S+)\\s+image: (?<packageName>[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "description": "Current Forgejo LTS major in the forgejo-lts rule above. Merging its PR lets the next run move the LTS image onto the new major.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^renovate\\.json$/"],
+      "matchStrings": [
+        "\"matchDepNames\": \\[\"forgejo-lts\"\\],\\s+\"allowedVersions\": \"/\\^(?<currentValue>\\d+)\\[\\.\\]/\""
+      ],
+      "depNameTemplate": "forgejo-lts-line",
+      "datasourceTemplate": "custom.forgejo-lts",
+      "versioningTemplate": "semver-coerced"
     }
-  ]
+  ],
+  "customDatasources": {
+    "forgejo-lts": {
+      "description": "Forgejo LTS majors whose planned release date has passed, from the schedule Forgejo publishes.",
+      "defaultRegistryUrlTemplate": "https://codeberg.org/forgejo/docs/raw/branch/next/release-schedule.json",
+      "format": "json",
+      "transformTemplates": [
+        "{\"releases\": [$[lts = true and release <= $substring($now(), 0, 10)].{\"version\": major, \"releaseTimestamp\": release}]}"
+      ]
+    }
+  }
 }

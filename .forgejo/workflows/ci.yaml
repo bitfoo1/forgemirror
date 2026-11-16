@@ -91,16 +91,22 @@ jobs:
   # and compose CLIs come from mise; the daemon is the runner pod's DinD
   # sidecar. Because job and daemon share one network namespace, Forgejo's
   # published port is reachable on 127.0.0.1 and host-gateway leads back to
-  # forgemirror in the job.
+  # forgemirror in the job. One job per Forgejo release line (see
+  # e2e/compose.yaml) so the lines run in parallel and fail separately.
   e2e:
-    name: e2e
+    name: e2e (forgejo ${{ matrix.forgejo }})
     needs: verify
     if: github.ref_type != 'tag'
     runs-on: docker
+    strategy:
+      fail-fast: false
+      matrix:
+        forgejo: [lts, latest]
     container:
       image: node:26-trixie@sha256:e18c3ccdf7d71619990b0e85639f506e2028a95410999cab24cc373cbd10e0ac
     env:
       DOCKER_HOST: tcp://127.0.0.1:2375
+      E2E_FORGEJO: ${{ matrix.forgejo }}
     steps:
       - name: Checkout
         env:
