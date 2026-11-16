@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-16
+
+### Features
+
+- **config:** Add release and package sync settings (1a1ba94)
+- **forge:** Read and write releases on Forgejo, GitHub and GitLab (70ba836)
+- **registry:** Copy OCI tags between registries with their digests (be076a2)
+- **dispatch:** Plan and apply release and package sync (6f0fbd4)
+- **webhook:** Start a run on release and package events (9e273dc)
+- **ui:** Show target types as chips in the targets tile (72ade3c)
+- **forge:** Mark mirrored repositories with a note and topic (716b837)
+
+### Bug fixes
+
+- **telemetry:** [**breaking**] Use forgemirror_ prefix for all metrics (0463b9f)
+- **ui:** Spell ForgeMirror and use singular counts (1ec401e)
+
+### Documentation
+
+- **spec:** Design release and package sync (4402d89)
+- Document release and package sync (9449743)
+- Theme the site with Tokyo Night and add web UI screenshots (fd9da24)
+- Update for ForgeMirror, current features and GitHub (58bb171)
+
+### Tests
+
+- **e2e:** Mirror a release and a container image (3825a06)
+- **e2e:** Keep the shared-instance target out of the source list (9af8c01)
+- **e2e:** Test against Forgejo LTS and latest, kept current by Renovate (6ecf665)
+- **mirror:** Drop inherited GIT_* vars in real-git test helpers (7f53eea)
+- **e2e:** Hold the run with E2E_HOLD to inspect the web UI (9feadbc)
+
+### Miscellaneous
+
+- **merge:** Merge main into feat/release-package-sync (fd0254e)
+
 ## [0.4.0] - 2026-11-16
 
 ### Features
