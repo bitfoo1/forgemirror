@@ -102,3 +102,43 @@ func (e *pushEvent) repository() repo.Repository {
 		Topics:   r.Topics,
 	}
 }
+
+// artifactEvent is the subset of Forgejo's release and package payloads
+// forgemirror uses. A package payload carries no repository when the
+// package is not linked to one.
+// Reference: Forgejo modules/structs/hook.go (ReleasePayload, PackagePayload).
+type artifactEvent struct {
+	Action     string             `json:"action"`
+	Repository *payloadRepository `json:"repository"`
+	Release    *struct {
+		TagName string `json:"tag_name"`
+	} `json:"release"`
+	Package *struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	} `json:"package"`
+}
+
+// validate checks the repository like a push, which the run becomes, and
+// like a deletion, since the target URL is rendered from owner and name.
+func (e *artifactEvent) validate() error {
+	r := *e.Repository
+	if err := (&pushEvent{Ref: "-", Repository: r}).validate(); err != nil {
+		return err
+	}
+
+	return (&repositoryEvent{Repository: r}).validate()
+}
+
+// ref names what changed, for the logs only: the run mirrors the whole
+// repository.
+func (e *artifactEvent) ref() string {
+	switch {
+	case e.Release != nil && e.Release.TagName != "":
+		return "refs/tags/" + e.Release.TagName
+	case e.Package != nil && e.Package.Name != "":
+		return "package " + e.Package.Name + ":" + e.Package.Version
+	default:
+		return ""
+	}
+}

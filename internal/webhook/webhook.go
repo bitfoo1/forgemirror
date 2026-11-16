@@ -1,4 +1,4 @@
-// Package webhook receives and authenticates Forgejo push events.
+// Package webhook receives and authenticates Forgejo webhook events.
 package webhook
 
 import (
@@ -29,6 +29,8 @@ const (
 
 	pushEventName       = "push"
 	repositoryEventName = "repository"
+	releaseEventName    = "release"
+	packageEventName    = "package"
 
 	actionDeleted = "deleted"
 )
@@ -127,8 +129,11 @@ func NewHandler(opts Options) *Handler {
 
 // ServeHTTP implements [http.Handler].
 //
+// Push, release and package events queue a run; repository "deleted" events
+// queue a deletion.
+//
 // Status codes: 202 queued for mirroring; 200 authenticated but not mirrored
-// (other event type or filtered); 400 malformed payload or a clone URL the
+// (other event type, filtered, or a package without repository); 400 malformed payload or a clone URL the
 // [Source] rejects; 401 missing or wrong signature; 413 body too large; 415
 // not JSON.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +180,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case repositoryEventName:
 		h.handleRepository(ctx, w, logger, body, delivery)
+
+		return
+	case releaseEventName, packageEventName:
+		h.handleArtifact(ctx, w, logger, event, body, delivery)
 
 		return
 	default:
@@ -257,6 +266,65 @@ func (h *Handler) handleRepository(
 
 	h.opts.Dispatcher.Dispatch(context.WithoutCancel(ctx), event)
 	h.respond(ctx, w, logger, http.StatusAccepted, OutcomeAccepted, "delete queued")
+}
+
+// handleArtifact queues an ordinary run for a release or package event: the
+// run compares everything, so the payload only names the repository. That
+// keeps coalescing and review mode exactly as for pushes.
+func (h *Handler) handleArtifact(
+	ctx context.Context,
+	w http.ResponseWriter,
+	logger *slog.Logger,
+	event string,
+	body []byte,
+	delivery string,
+) {
+	if h.opts.IgnorePush {
+		h.respond(ctx, w, logger, http.StatusOK, OutcomeIgnored, event+" events disabled (sync.on_push is false)")
+
+		return
+	}
+
+	var payload artifactEvent
+	if err := json.Unmarshal(body, &payload); err != nil {
+		h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "malformed JSON payload")
+
+		return
+	}
+	if payload.Repository == nil {
+		h.respond(ctx, w, logger, http.StatusOK, OutcomeIgnored, "not linked to a repository")
+
+		return
+	}
+	if err := payload.validate(); err != nil {
+		h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "invalid payload: "+err.Error())
+
+		return
+	}
+	if h.opts.Source != nil {
+		if err := h.opts.Source.CheckCloneURL(payload.Repository.CloneURL); err != nil {
+			h.respond(ctx, w, logger, http.StatusBadRequest, OutcomeBadRequest, "invalid payload: "+err.Error())
+
+			return
+		}
+	}
+
+	run := Event{
+		Repository: (&pushEvent{Repository: *payload.Repository}).repository(),
+		Ref:        payload.ref(),
+		Delivery:   delivery,
+	}
+	logger = logger.With(slog.String("repository", run.Repository.FullName), slog.String("ref", run.Ref))
+
+	// The branch rules do not apply: no branch was pushed.
+	if decision := h.opts.Filter.Decide(run.Repository, ""); !decision.Mirror {
+		h.respond(ctx, w, logger, http.StatusOK, OutcomeFiltered, "not mirrored: "+decision.Reason)
+
+		return
+	}
+
+	h.opts.Dispatcher.Dispatch(context.WithoutCancel(ctx), run)
+	h.respond(ctx, w, logger, http.StatusAccepted, OutcomeAccepted, "mirror queued")
 }
 
 // validSignature checks the HMAC-SHA256 of body against the signature header.
