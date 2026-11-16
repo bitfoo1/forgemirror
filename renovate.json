@@ -2,15 +2,32 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":semanticCommits", ":semanticCommitTypeAll(chore)"],
   "postUpdateOptions": ["gomodTidy"],
+  "commitMessageAction": ":arrow_up: update",
+  "pin": { "commitMessageAction": ":pushpin: pin" },
+  "rollback": { "commitMessageAction": ":arrow_down: roll back" },
   "packageRules": [
     {
-      "description": "Toolchain pins in mise.toml: one PR per tool keeps a broken tool easy to spot.",
+      "description": "Grouped by the part of the project an update can break, to keep the PR count low while a red check still points at one area. Majors stay in a separate PR per group (separateMajorMinor), so one breaking update cannot hold back the routine ones.",
       "matchManagers": ["mise"],
+      "groupName": "toolchain",
       "semanticCommitScope": "mise"
     },
     {
-      "description": "Go module updates.",
+      "description": "Go modules of the service and of the docs site (Hugo modules); both are verified by the same check gate.",
       "matchManagers": ["gomod"],
+      "groupName": "Go modules",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "description": "Everything in the workflows (actions, job container image, mise binary for mise-action) only affects CI.",
+      "matchFileNames": [".forgejo/**"],
+      "groupName": "CI",
+      "semanticCommitScope": "ci"
+    },
+    {
+      "description": "Container images and charts outside CI: the bjw-s common chart, deploy manifests and the e2e Forgejo image.",
+      "matchManagers": ["helmv3", "kustomize", "docker-compose"],
+      "groupName": "images and charts",
       "semanticCommitScope": "deps"
     }
   ],
