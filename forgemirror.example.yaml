@@ -132,6 +132,11 @@ targets:
     #   labels: true # false disables label sync
     #   releases: false # true syncs published releases with attachments
     #   packages: false # true copies linked container packages (public repos only)
+    #   # Mark the repository as a mirror: the note is appended to the
+    #   # description (a template like `url`), the topic is always added.
+    #   # "" disables either.
+    #   mirror_note: "Mirror, synced by ForgeMirror. Do not push here."
+    #   mirror_topic: forgemirror
     # Matched against "owner/name" (whole value); applied in order on top of
     # `settings`, later entries win.
     # overrides:

@@ -339,8 +339,8 @@ func TestChangeLog(t *testing.T) {
 	out := logs.String()
 	for _, want := range []string{
 		`level=INFO msg="plan: out of sync" repository=acme/app`,
-		`level=DEBUG msg="plan: setting" repository=acme/app ref=refs/heads/main delivery="" target=github field=description old=old new="the app"`,
-		`level=INFO msg="setting changed" repository=acme/app ref=refs/heads/main delivery="" target=github field=description old=old new="the app"`,
+		`level=DEBUG msg="plan: setting" repository=acme/app ref=refs/heads/main delivery="" target=github field=description old=old new="` + markedDescription + `"`,
+		`level=INFO msg="setting changed" repository=acme/app ref=refs/heads/main delivery="" target=github field=description old=old new="` + markedDescription + `"`,
 		`level=INFO msg="label updated" repository=acme/app ref=refs/heads/main delivery="" target=github label=bug old.color=00ff00 old.description="" new.color=ff0000 new.description=""`,
 		`level=INFO msg="label deleted" repository=acme/app ref=refs/heads/main delivery="" target=github label=stale`,
 		`level=INFO msg="refs pushed" repository=acme/app ref=refs/heads/main delivery="" target=github created=0 updated=1 forced=0 deleted=0`,

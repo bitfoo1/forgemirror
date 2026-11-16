@@ -224,6 +224,10 @@ func loadTargets(t *testing.T, targetsYAML string) []config.Target {
 }
 
 const (
+	// markedDescription is the description of sourceRepo with the default
+	// mirror note, i.e. what an up-to-date target carries.
+	markedDescription = "the app · " + forge.DefaultMirrorNote
+
 	githubTarget = `
   - name: github
     type: github
@@ -569,9 +573,9 @@ func TestPruneLabels(t *testing.T) {
 
 			gh := &fakeForge{
 				repo: forge.Repo{
-					Description:   "the app",
+					Description:   markedDescription,
 					DefaultBranch: "main",
-					Topics:        []string{"go"},
+					Topics:        []string{"forgemirror", "go"},
 					HasIssues:     true,
 				},
 				labels: []forge.Label{{Name: "bug", Color: "#FF0000"}, {Name: "extra", Color: "000000"}},
@@ -831,7 +835,12 @@ func TestUnrepresentableTopicsDroppedWithWarning(t *testing.T) {
 	src := sourceRepo()
 	src.repo.Topics = []string{"Go", "node.js"}
 	gh := &fakeForge{
-		repo: forge.Repo{Description: "the app", DefaultBranch: "main", Topics: []string{"go"}, HasIssues: true},
+		repo: forge.Repo{
+			Description:   markedDescription,
+			DefaultBranch: "main",
+			Topics:        []string{"forgemirror", "go"},
+			HasIssues:     true,
+		},
 		caps: forge.Capabilities{ValidTopic: func(topic string) bool { return !strings.Contains(topic, ".") }},
 	}
 	var logs syncBuffer
@@ -847,5 +856,66 @@ func TestUnrepresentableTopicsDroppedWithWarning(t *testing.T) {
 	}
 	if out := logs.String(); !strings.Contains(out, "level=WARN") || !strings.Contains(out, "node.js") {
 		t.Errorf("logs = %q, want a warning naming node.js", out)
+	}
+}
+
+func TestMirrorMarker(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		settings   string
+		wantDesc   string
+		wantTopics []string
+	}{
+		{
+			name:       "default",
+			wantDesc:   markedDescription,
+			wantTopics: []string{"forgemirror", "go"},
+		},
+		{
+			name:       "topics setting keeps the marker topic",
+			settings:   "      topics: [infra]\n",
+			wantDesc:   markedDescription,
+			wantTopics: []string{"forgemirror", "infra"},
+		},
+		{
+			name:       "custom note and topic",
+			settings:   "      mirror_note: \"Mirror of {{ .FullName }}\"\n      mirror_topic: mirror\n",
+			wantDesc:   "the app · Mirror of acme/app",
+			wantTopics: []string{"go", "mirror"},
+		},
+		{
+			name:       "disabled",
+			settings:   "      mirror_note: \"\"\n      mirror_topic: \"\"\n",
+			wantDesc:   "the app",
+			wantTopics: []string{"go"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			gh := &fakeForge{missing: true}
+			target := githubTarget
+			if tc.settings != "" {
+				target += "    settings:\n" + tc.settings
+			}
+			d, _ := newSyncDispatcher(t, target, &fakeMirrorer{}, sourceRepo(), map[string]*fakeForge{"github": gh})
+
+			d.Dispatch(t.Context(), event("app"))
+			shutdown(t, d)
+
+			if len(gh.creates) != 1 {
+				t.Fatalf("creates = %v, want one", gh.creates)
+			}
+			got := gh.creates[0]
+			if got.Description != tc.wantDesc {
+				t.Errorf("Description = %q, want %q", got.Description, tc.wantDesc)
+			}
+			if !slices.Equal(got.Topics, tc.wantTopics) {
+				t.Errorf("Topics = %v, want %v", got.Topics, tc.wantTopics)
+			}
+		})
 	}
 }

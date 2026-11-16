@@ -289,6 +289,8 @@ previous layer.
 | `labels`            | `false` disables label sync for this scope; default `true`           |
 | `releases`          | `true` enables release sync for this scope; default `false`          |
 | `packages`          | `true` enables container package sync for this scope; default `false` |
+| `mirror_note`       | Note appended to the description, see [Mirror marker](#mirror-marker); `""` disables it |
+| `mirror_topic`      | Topic added to the topics, see [Mirror marker](#mirror-marker); `""` disables it; default `forgemirror` |
 
 **Precedence, last wins:** the value from the Forgejo repository, then the
 target's `settings`, then every entry of `overrides` whose `repos` pattern
@@ -318,6 +320,40 @@ as success. See [Forgejo webhook](../forgejo-webhook/#repository-events).
 `prune_labels` is off by default because deleting a label strips it from every
 issue and pull request, and new GitHub repositories start with default
 labels.
+
+### Mirror marker
+
+So that visitors know a repository is a copy and that changes made there are
+lost on the next push, ForgeMirror marks every repository of a typed target
+as a mirror:
+
+- `mirror_note` is appended to the description as `<description> · <note>`,
+  or stands alone when the description is empty. Default:
+  `Mirror, synced by ForgeMirror. Do not push here.` It is a Go
+  [text/template](https://pkg.go.dev/text/template) with the same fields as
+  `url` (`{{ .Owner }}`, `{{ .Name }}`, `{{ .FullName }}`) and must render to
+  a single line.
+- `mirror_topic` is added to the topics, also when `topics` is set. Default:
+  `forgemirror`.
+
+Both are added after all layers are applied, and `""` turns either off for
+that scope:
+
+```yaml
+settings:
+  mirror_note: "Mirror of {{ .FullName }}. Issues and pull requests are not read here."
+overrides:
+  - repos: "acme/website"
+    settings:
+      mirror_note: ""
+      mirror_topic: ""
+```
+
+Because the marker is on by default, upgrading from a version without it
+changes the description and topics of every mirror on its next run; in
+[review mode](#sync) the change shows up in the diff first. A topic the forge
+rejects is skipped with a warning, like any other topic. Untyped targets have
+no API access and are never marked.
 
 ### Releases and packages
 

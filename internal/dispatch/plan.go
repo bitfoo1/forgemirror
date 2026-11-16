@@ -150,6 +150,13 @@ func (d *Dispatcher) planForge(
 	tr.addr = addr
 	layers := tr.cfg.Layers(e.Repository.FullName)
 	tr.desired, tr.syncLabels = forge.Resolve(src.repo, layers...)
+	// The marker goes on after the layers, so that settings.topics or
+	// settings.description cannot drop it by accident.
+	if tr.desired, err = forge.ResolveMarker(layers...).Apply(tr.desired, e.Repository); err != nil {
+		tr.err = fmt.Errorf("target %q: %w", name, err)
+
+		return
+	}
 	tr.features = forge.ResolveFeatures(layers...)
 	tr.labels = src.labels
 

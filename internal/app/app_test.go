@@ -374,6 +374,7 @@ func newForgeFake(t *testing.T) *forgeFake {
 		"POST /api/v3/orgs/acme/repos":      `{}`,
 		"PATCH /api/v3/repos/acme/app":      `{}`,
 		"GET /api/v3/repos/acme/app/labels": `[]`,
+		"PUT /api/v3/repos/acme/app/topics": `{"names":["forgemirror"]}`,
 	}
 	f := &forgeFake{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -574,7 +575,7 @@ func TestEndToEndTypedTarget(t *testing.T) {
 	svc.stop(t)
 
 	for _, key := range []string{
-		"POST /api/v3/orgs/acme/repos", "PATCH /api/v3/repos/acme/app",
+		"POST /api/v3/orgs/acme/repos", "PATCH /api/v3/repos/acme/app", "PUT /api/v3/repos/acme/app/topics",
 	} {
 		if !f.called(key) {
 			t.Errorf("API call %q missing", key)

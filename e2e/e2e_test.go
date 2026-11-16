@@ -37,13 +37,15 @@ import (
 
 const (
 	repoDescription = "forgemirror end-to-end fixture"
-	bugColor        = "d73a4a"
-	docsColor       = "0075ca"
-	ciColor         = "e4e669"
-	tagName         = "v0.1.0"
-	assetName       = "app.txt"
-	assetContent    = "release attachment\n"
-	imageTag        = "1.0.0"
+	// mirrorDescription is repoDescription with the default mirror note.
+	mirrorDescription = repoDescription + " · Mirror, synced by ForgeMirror. Do not push here."
+	bugColor          = "d73a4a"
+	docsColor         = "0075ca"
+	ciColor           = "e4e669"
+	tagName           = "v0.1.0"
+	assetName         = "app.txt"
+	assetContent      = "release attachment\n"
+	imageTag          = "1.0.0"
 
 	pushDeadline     = 30 * time.Second
 	scheduleDeadline = 10 * time.Second
@@ -180,11 +182,11 @@ func checkMirror(ctx context.Context, api *forgejoAPI, sha string) error {
 	if err := api.get(ctx, "/repos/dst/app", &r); err != nil {
 		return err
 	}
-	if !r.Private || r.HasIssues || r.HasWiki || r.Description != repoDescription {
+	if !r.Private || r.HasIssues || r.HasWiki || r.Description != mirrorDescription {
 		return fmt.Errorf(
 			"dst/app settings = %+v, want private, no issues, no wiki, description %q",
 			r,
-			repoDescription,
+			mirrorDescription,
 		)
 	}
 
@@ -214,8 +216,8 @@ func checkMirror(ctx context.Context, api *forgejoAPI, sha string) error {
 	if err := api.get(ctx, "/repos/dst/app/topics", &topics); err != nil {
 		return err
 	}
-	if !slices.Equal(topics.Topics, []string{"go"}) {
-		return fmt.Errorf("dst/app topics = %v, want [go]", topics.Topics)
+	if got := slices.Sorted(slices.Values(topics.Topics)); !slices.Equal(got, []string{"forgemirror", "go"}) {
+		return fmt.Errorf("dst/app topics = %v, want [forgemirror go]", topics.Topics)
 	}
 
 	return checkLabels(ctx, api, map[string]string{"bug": bugColor, "docs": docsColor})

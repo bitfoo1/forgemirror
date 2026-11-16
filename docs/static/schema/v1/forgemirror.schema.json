@@ -382,6 +382,16 @@
         "packages": {
           "description": "Copy the container packages linked to the repository in Forgejo, with every tag, to the target's container registry. Only for public target repositories; tags are never deleted on the target. Defaults to false.",
           "type": "boolean"
+        },
+        "mirror_note": {
+          "description": "Note appended to the description (\"<description> · <note>\") to mark the repository as a mirror. A Go text/template with {{ .Owner }}, {{ .Name }} and {{ .FullName }}; must render to a single line. An empty string disables the note. Defaults to \"Mirror, synced by ForgeMirror. Do not push here.\".",
+          "type": "string",
+          "examples": ["Mirror of {{ .FullName }}, synced by ForgeMirror. Do not push here.", ""]
+        },
+        "mirror_topic": {
+          "description": "Topic added to every repository to mark it as a mirror; always lower-cased, and kept even when topics is set. An empty string disables the topic. Defaults to \"forgemirror\".",
+          "type": "string",
+          "examples": ["forgemirror", ""]
         }
       }
     },

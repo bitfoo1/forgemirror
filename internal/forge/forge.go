@@ -61,12 +61,20 @@ type Settings struct {
 	Labels          *bool     `koanf:"labels"`
 	Releases        *bool     `koanf:"releases"`
 	Packages        *bool     `koanf:"packages"`
+	// MirrorNote and MirrorTopic mark the target as a mirror (see [Marker]);
+	// nil keeps the default, "" disables.
+	MirrorNote  *string `koanf:"mirror_note"`
+	MirrorTopic *string `koanf:"mirror_topic"`
 }
 
-// Validate rejects settings that could expose a private source repository.
+// Validate rejects settings that could expose a private source repository
+// and mirror notes that cannot be rendered.
 func (s Settings) Validate() error {
 	if s.Private != nil && !*s.Private {
 		return errors.New("private: only true is allowed")
+	}
+	if s.MirrorNote != nil {
+		return validateMirrorNote(*s.MirrorNote)
 	}
 
 	return nil
