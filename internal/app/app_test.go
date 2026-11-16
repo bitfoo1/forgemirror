@@ -792,6 +792,91 @@ mirror:
 	svc.stop(t)
 }
 
+// TestReviewMode proves the review flow end to end: the startup refresh
+// plans without touching the target, a cross-site POST is rejected, and a
+// same-origin sync from the UI pushes.
+func TestReviewMode(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	f := newForgeFake(t)
+	dir := t.TempDir()
+	fakeGit, gitLog := fakeGitBinary(t, dir)
+	svc := startService(ctx, t, writeConfig(t, testConfig+`
+source:
+  base_url: `+f.srv.URL+`
+  token: src-token
+sync:
+  auto: false
+server:
+  listen_address: "127.0.0.1:0"
+  ops_listen_address: "127.0.0.1:0"
+  shutdown_timeout: 5s
+ui:
+  enabled: true
+  listen_address: "127.0.0.1:0"
+mirror:
+  git_binary: `+fakeGit+`
+  work_dir: `+dir+`
+`))
+	webAddr := waitForLog(t, svc.logs, listeningOn("web"))[1]
+
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="plan: out of sync" repository=acme/app .*apply=false`))
+	if _, page := httpGet(ctx, t, "http://"+webAddr+"/"); !strings.Contains(page, "Review mode") {
+		t.Error("page lacks the Review mode badge")
+	}
+	_, repos := httpGet(ctx, t, "http://"+webAddr+"/fragments/repos")
+	for _, want := range []string{"out of sync", "Sync all (1)"} {
+		if !strings.Contains(repos, want) {
+			t.Errorf("repos fragment lacks %q:\n%s", want, repos)
+		}
+	}
+	if calls, _ := os.ReadFile(gitLog); strings.Contains(string(calls), "push") {
+		t.Fatalf("review mode pushed before a sync:\n%s", calls)
+	}
+
+	if status := postAction(ctx, t, webAddr, "https://evil.example"); status != http.StatusForbidden {
+		t.Errorf("cross-site sync = %d, want 403", status)
+	}
+	if status := postAction(ctx, t, webAddr, "http://"+webAddr); status != http.StatusSeeOther {
+		t.Errorf("same-origin sync = %d, want 303", status)
+	}
+	waitForLog(t, svc.logs, regexp.MustCompile(`msg="mirror finished" repository=acme/app`))
+	svc.stop(t)
+
+	calls, err := os.ReadFile(gitLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "push --prune --porcelain https://example.com/acme/app.git"; !strings.Contains(string(calls), want) {
+		t.Errorf("git calls lack %q:\n%s", want, calls)
+	}
+	if !strings.Contains(svc.logs.String(), `msg="sync requested from the UI" repository=acme/app`) {
+		t.Error("the UI sync was not logged")
+	}
+}
+
+// postAction posts a sync of acme/app as a browser from origin would.
+func postAction(ctx context.Context, t *testing.T, webAddr, origin string) int {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+webAddr+"/actions/sync",
+		strings.NewReader("repo=acme%2Fapp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", origin)
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	return resp.StatusCode
+}
+
 func TestWebUIDisabled(t *testing.T) {
 	t.Parallel()
 

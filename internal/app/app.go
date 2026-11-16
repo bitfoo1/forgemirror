@@ -14,6 +14,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/control"
 	"go.bitfoo.de/forgemirror/internal/dispatch"
 	"go.bitfoo.de/forgemirror/internal/filter"
 	"go.bitfoo.de/forgemirror/internal/forge"
@@ -129,6 +130,7 @@ func serve(ctx context.Context, cmd *cli.Command) error {
 		slog.String("listen_address", cfg.Server.ListenAddress),
 		slog.String("ops_listen_address", cfg.Server.OpsListenAddress),
 		slog.Bool("ui", cfg.UI.Enabled),
+		slog.Bool("auto_sync", cfg.Sync.Auto),
 		slog.Int("targets", len(cfg.Targets)),
 	)
 
@@ -221,19 +223,14 @@ func serveAndDrain(
 		{name: "webhook", address: cfg.Server.ListenAddress, handler: server.WebhookHandler(webhookHandler)},
 		{name: "ops", address: cfg.Server.OpsListenAddress, handler: server.OpsHandler(health, metrics.Handler())},
 	}
+	var actions *control.Controller
 	if cfg.UI.Enabled {
-		web, err := ui.Handler(ui.Options{
-			Config:  cfg,
-			Store:   store,
-			Logs:    logs,
-			Queued:  dispatcher.Queued,
-			Version: version.Get().String(),
-			Logger:  logger,
-		})
+		web, controller, err := newWeb(cfg, logger, logs, store, flt, clients, dispatcher)
 		if err != nil {
 			return err
 		}
-		listeners = append(listeners, listener{name: "web", address: cfg.UI.ListenAddress, handler: web})
+		actions = controller
+		listeners = append(listeners, web)
 	}
 	bound, err := listen(ctx, listeners)
 	if err != nil {
@@ -248,6 +245,7 @@ func serveAndDrain(
 	defer cancelShutdown()
 
 	schedulerDone := startScheduler(runCtx, cfg, logger, flt, scheduleObs, clients.source, dispatcher)
+	refreshDone := startReviewRefresh(runCtx, cfg, logger, actions)
 
 	// Readiness ends as soon as shutdown begins, before the listeners close,
 	// so Kubernetes stops routing new webhooks to this pod.
@@ -266,6 +264,11 @@ func serveAndDrain(
 	case <-schedulerDone:
 	case <-shutdownCtx.Done():
 		logger.WarnContext(ctx, "scheduler did not stop before the shutdown deadline")
+	}
+	select {
+	case <-refreshDone:
+	case <-shutdownCtx.Done():
+		logger.WarnContext(ctx, "startup refresh did not stop before the shutdown deadline")
 	}
 
 	logger.InfoContext(ctx, "waiting for running mirrors")
@@ -365,6 +368,65 @@ func startScheduler(
 			Logger:     logger,
 			Observer:   observer,
 		})
+	}()
+
+	return done
+}
+
+// newWeb builds the UI listener and the controller behind its actions.
+func newWeb(
+	cfg *config.Config,
+	logger *slog.Logger,
+	logs *logging.Ring,
+	store *status.Store,
+	flt *filter.Filter,
+	clients forgeClients,
+	dispatcher *dispatch.Dispatcher,
+) (listener, *control.Controller, error) {
+	actions := control.New(control.Options{
+		Source:     clients.source,
+		Filter:     flt,
+		Dispatcher: dispatcher,
+		Pending:    func() []string { return ui.Pending(store.Snapshot()) },
+		Logger:     logger,
+	})
+	web, err := ui.Handler(ui.Options{
+		Config:  cfg,
+		Store:   store,
+		Logs:    logs,
+		Queued:  dispatcher.Queued,
+		Actions: actions,
+		Version: version.Get().String(),
+		Logger:  logger,
+	})
+	if err != nil {
+		return listener{}, nil, err
+	}
+
+	return listener{name: "web", address: cfg.UI.ListenAddress, handler: web}, actions, nil
+}
+
+// startReviewRefresh plans every repository once at startup in review mode,
+// so the UI shows diffs after a restart without a click. With a schedule the
+// first sweep does that already. The returned channel is closed when done.
+func startReviewRefresh(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	actions *control.Controller,
+) <-chan struct{} {
+	done := make(chan struct{})
+	if cfg.Sync.Auto || cfg.Sync.Schedule > 0 || actions == nil {
+		close(done)
+
+		return done
+	}
+
+	go func() {
+		defer close(done)
+		if _, err := actions.RefreshAll(ctx); err != nil && ctx.Err() == nil {
+			logger.ErrorContext(ctx, "startup refresh failed; use Refresh all in the UI", slog.Any("error", err))
+		}
 	}()
 
 	return done

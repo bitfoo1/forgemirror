@@ -1,15 +1,20 @@
-// Package ui serves the read-only web UI: overview, repository and target
-// state, recent logs and the effective configuration.
+// Package ui serves the web UI: overview, repository state with the diff a
+// sync would apply, recent logs and the effective configuration, plus the
+// refresh and sync actions.
 //
 // The UI has no authentication. Operators put a reverse proxy or SSO in
 // front of it, and it runs on its own listener so that this decision does not
-// depend on path rules. It never changes state: without a login of its own,
-// every state-changing request would be open to cross-site request forgery.
+// depend on path rules. Without a login of its own, its actions would be open
+// to cross-site request forgery through the operator's browser; Go's
+// cross-origin protection (Fetch Metadata, Origin) rejects those requests
+// without needing tokens or sessions.
 package ui
 
 import (
 	"bytes"
+	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -21,6 +26,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 
 	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/control"
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/status"
 )
@@ -30,6 +36,10 @@ const (
 	refresh = 5 * time.Second
 	// subsecond is the display precision of durations between 1s and 1m.
 	subsecond = 100 * time.Millisecond
+	// maxFormBytes bounds an action request body; it only carries a name.
+	maxFormBytes = 4 << 10
+	// shortID is the display length of git object ids, as git abbreviates.
+	shortID = 7
 )
 
 // securityHeaders apply to every response. The CSP allows only same-origin
@@ -48,8 +58,16 @@ func securityHeaders() map[string]string {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js static/style.css
+//go:embed static/htmx.min.js static/style.css static/app.js
 var staticFS embed.FS
+
+// Actions are the operator actions; [control.Controller] implements them.
+type Actions interface {
+	Refresh(ctx context.Context, fullName string) error
+	Sync(ctx context.Context, fullName string) error
+	RefreshAll(ctx context.Context) (int, error)
+	SyncAll(ctx context.Context) int
+}
 
 // Options configures [Handler].
 type Options struct {
@@ -59,7 +77,10 @@ type Options struct {
 	Logs *logging.Ring
 	// Queued returns the repositories with a run in progress, each mapped to
 	// whether a follow-up run is queued; nil means none.
-	Queued  func() map[string]bool
+	Queued func() map[string]bool
+	// Actions may be nil: the UI then shows no action buttons and answers
+	// action requests with 404.
+	Actions Actions
 	Version string
 	Logger  *slog.Logger
 	// Now returns the current time; nil means [time.Now].
@@ -73,7 +94,8 @@ type handler struct {
 	targets []string
 }
 
-// Handler returns the UI's routing table. Only GET (and HEAD) are served.
+// Handler returns the UI's routing table: GET and HEAD for pages and
+// fragments, POST for the actions.
 func Handler(opts Options) (http.Handler, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -110,8 +132,14 @@ func Handler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("GET /fragments/repos", h.render("repos"))
 	mux.HandleFunc("GET /fragments/logs", h.render("logs"))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
+	if opts.Actions != nil {
+		mux.HandleFunc("POST /actions/refresh", h.action(false))
+		mux.HandleFunc("POST /actions/sync", h.action(true))
+	}
 
-	return withHeaders(onlyRead(mux)), nil
+	// Safe methods pass unchanged; a POST from another origin is rejected
+	// before it reaches an action.
+	return withHeaders(allowedMethods(http.NewCrossOriginProtection().Handler(mux))), nil
 }
 
 func withHeaders(next http.Handler) http.Handler {
@@ -125,18 +153,78 @@ func withHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// onlyRead rejects every method but GET and HEAD before routing, so no path
-// (including unknown ones) ever accepts a state-changing request.
-func onlyRead(next http.Handler) http.Handler {
+// allowedMethods rejects every method but GET, HEAD and POST before routing;
+// the router answers POST on read-only paths with 405 itself.
+func allowedMethods(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodPost:
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Allow", "GET, HEAD, POST")
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+// action runs refresh or sync for the repository in the form field "repo",
+// or for all repositories without it. htmx gets the updated repository
+// fragment; a plain form post is redirected back to the page.
+func (h *handler) action(sync bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 
 			return
 		}
-		next.ServeHTTP(w, r)
-	})
+
+		notice, err := h.runAction(r.Context(), sync, r.PostForm.Get("repo"))
+		switch {
+		case errors.Is(err, control.ErrUnknownRepository):
+			http.Error(w, "unknown repository", http.StatusNotFound)
+
+			return
+		case err != nil:
+			h.opts.Logger.ErrorContext(r.Context(), "UI action failed", slog.Any("error", err))
+			notice = err.Error()
+		}
+
+		if r.Header.Get("Hx-Request") != "true" {
+			// The action path has exactly one level, so "../" is the page
+			// under any proxy path prefix. http.Redirect would turn it into an
+			// absolute path and lose the prefix.
+			w.Header().Set("Location", "../")
+			w.WriteHeader(http.StatusSeeOther)
+
+			return
+		}
+		h.renderWith(w, r, "repos", func(d *pageData) { d.Notice = notice })
+	}
+}
+
+func (h *handler) runAction(ctx context.Context, sync bool, name string) (string, error) {
+	actions := h.opts.Actions
+	switch {
+	case name != "" && sync:
+		return "Sync started for " + name + ".", actions.Sync(ctx, name)
+	case name != "":
+		return "Refresh started for " + name + ".", actions.Refresh(ctx, name)
+	case sync:
+		return fmt.Sprintf("Sync started for %s.", repositories(actions.SyncAll(ctx))), nil
+	default:
+		n, err := actions.RefreshAll(ctx)
+
+		return fmt.Sprintf("Refresh started for %s.", repositories(n)), err
+	}
+}
+
+func repositories(n int) string {
+	if n == 1 {
+		return "1 repository"
+	}
+
+	return fmt.Sprintf("%d repositories", n)
 }
 
 // level is an option of the log level filter.
@@ -146,52 +234,69 @@ type level struct {
 }
 
 type pageData struct {
-	Version     string
-	Refresh     time.Duration
-	Snapshot    status.Snapshot
-	Targets     []string
-	OnPush      bool
-	Running     int
-	Queued      int
-	QueuedRepos map[string]bool
-	Config      string
-	Logs        []logging.Entry
-	Levels      []level
+	Version  string
+	Refresh  time.Duration
+	Snapshot status.Snapshot
+	Targets  []string
+	OnPush   bool
+	Auto     bool
+	Actions  bool
+	Running  int
+	Queued   int
+	Repos    []repoView
+	Counts   counts
+	Notice   string
+	Config   string
+	Logs     []logging.Entry
+	Levels   []level
+}
+
+// counts summarises the repository states for the section header.
+type counts struct {
+	OutOfSync, Failed, Pending int
 }
 
 func (h *handler) render(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data := h.data(r)
-
-		// Rendering into a buffer first turns a template error into a clean
-		// 500 instead of a half-written page.
-		var buf bytes.Buffer
-		if err := h.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
-			h.opts.Logger.ErrorContext(
-				r.Context(),
-				"rendering UI",
-				slog.String("template", name),
-				slog.Any("error", err),
-			)
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = buf.WriteTo(w)
+		h.renderWith(w, r, name, nil)
 	}
+}
+
+func (h *handler) renderWith(w http.ResponseWriter, r *http.Request, name string, adjust func(*pageData)) {
+	data := h.data(r)
+	if adjust != nil {
+		adjust(&data)
+	}
+
+	// Rendering into a buffer first turns a template error into a clean
+	// 500 instead of a half-written page.
+	var buf bytes.Buffer
+	if err := h.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		h.opts.Logger.ErrorContext(
+			r.Context(),
+			"rendering UI",
+			slog.String("template", name),
+			slog.Any("error", err),
+		)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 func (h *handler) data(r *http.Request) pageData {
 	queued := h.opts.Queued()
 	d := pageData{
-		Version:     h.opts.Version,
-		Refresh:     refresh,
-		Snapshot:    h.opts.Store.Snapshot(),
-		Targets:     h.targets,
-		OnPush:      h.opts.Config.Sync.OnPush,
-		QueuedRepos: queued,
-		Config:      h.config,
+		Version:  h.opts.Version,
+		Refresh:  refresh,
+		Snapshot: h.opts.Store.Snapshot(),
+		Targets:  h.targets,
+		OnPush:   h.opts.Config.Sync.OnPush,
+		Auto:     h.opts.Config.Sync.Auto,
+		Actions:  h.opts.Actions != nil,
+		Config:   h.config,
 	}
 	for _, q := range queued {
 		d.Running++
@@ -199,6 +304,7 @@ func (h *handler) data(r *http.Request) pageData {
 			d.Queued++
 		}
 	}
+	d.Repos, d.Counts = repoViews(d.Snapshot.Repos, queued)
 
 	minLevel := parseLevel(r.URL.Query().Get("level"))
 	for _, l := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
@@ -240,6 +346,20 @@ func (h *handler) funcs() template.FuncMap {
 		"round": round,
 		"nextSweep": func(s status.Schedule) time.Time {
 			return s.LastRun.Add(s.Interval)
+		},
+		"short": func(id string) string {
+			if len(id) > shortID {
+				return id[:shortID]
+			}
+
+			return id
+		},
+		"plural": func(n int, one, many string) string {
+			if n == 1 {
+				return one
+			}
+
+			return many
 		},
 		"levelClass": func(l slog.Level) string {
 			switch {

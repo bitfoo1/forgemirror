@@ -4,119 +4,234 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 {{- /* The indicator styles would be injected as an inline <style>, which the
 Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
 <title>forgemirror</title>
 <link rel="stylesheet" href="static/style.css">
+{{- /* Not deferred: it applies the stored theme before the first paint. */}}
+<script src="static/app.js"></script>
 <script src="static/htmx.min.js" defer></script>
 </head>
 <body>
-<header>
-  <h1>forgemirror</h1>
-  <span class="meta">{{.Version}}</span>
-  <span class="meta">read-only status · refreshes every {{.Refresh}}</span>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <h1>forgemirror</h1>
+    <span class="version">{{.Version}}</span>
+  </div>
+  <div class="topbar-end">
+    {{- if .Auto}}
+    <span class="pill pill-ok" title="Pushes, scheduled runs and deletions are applied automatically">Auto sync</span>
+    {{- else}}
+    <span class="pill pill-warn" title="Changes reach the targets only when you press Sync">Review mode</span>
+    {{- end}}
+    <button type="button" id="theme-toggle" class="btn btn-ghost" hidden aria-live="polite">Theme: system</button>
+  </div>
 </header>
 <main>
-  <section id="overview" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
+  <section id="overview" class="tiles" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
     {{template "overview" .}}
   </section>
-  <section id="repos" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
+  <section id="repos" class="card" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
     {{template "repos" .}}
   </section>
-  <section>
-    <h2>Logs</h2>
-    <form class="toolbar" action="./" method="get">
-      <label for="log-level">Level</label>
-      <select id="log-level" name="level" hx-get="fragments/logs" hx-target="#logs" hx-trigger="change">
-        {{- range .Levels}}
-        <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
-        {{- end}}
-      </select>
-      <noscript><button type="submit">Filter</button></noscript>
-    </form>
-    <div id="logs" class="scroll" hx-get="fragments/logs" hx-trigger="every {{.Refresh}}" hx-include="#log-level" hx-swap="innerHTML">
+  <section class="card">
+    <div class="card-head">
+      <h2>Logs</h2>
+      <form class="toolbar" action="./" method="get">
+        <label for="log-level">Level</label>
+        <select id="log-level" name="level" hx-get="fragments/logs" hx-target="#logs" hx-trigger="change">
+          {{- range .Levels}}
+          <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+          {{- end}}
+        </select>
+        <noscript><button type="submit" class="btn">Filter</button></noscript>
+      </form>
+    </div>
+    <div id="logs" class="scroll logs-box" hx-get="fragments/logs" hx-trigger="every {{.Refresh}}" hx-include="#log-level" hx-swap="innerHTML">
       {{template "logs" .}}
     </div>
   </section>
-  <section>
-    <h2>Configuration</h2>
+  <details class="card config">
+    <summary><h2>Configuration</h2><span class="muted">effective, secrets redacted</span></summary>
     <p class="muted">Effective configuration after defaults, file, environment and flags. Secrets are redacted.</p>
     <pre>{{.Config}}</pre>
-  </section>
+  </details>
 </main>
+<footer class="foot muted">Refreshes every {{.Refresh}}</footer>
 </body>
 </html>
 {{- end}}
 
 {{define "overview" -}}
-<h2>Overview</h2>
-<dl>
-  <dt>Started</dt><dd><time datetime="{{iso .Snapshot.Started}}">{{when .Snapshot.Started}}</time> (up {{since .Snapshot.Started}})</dd>
-  <dt>Targets</dt><dd>{{range $i, $t := .Targets}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</dd>
-  <dt>Push webhooks</dt><dd>{{if .OnPush}}<span class="ok">on</span>{{else}}<span class="muted">off</span>{{end}}</dd>
-  <dt>Schedule</dt>
-  <dd>
-    {{- with .Snapshot.Schedule}}
-      {{- if .Interval}}every {{.Interval}}
-        {{- if .LastRun.IsZero}} · <span class="muted">first sweep running</span>
-        {{- else}} · last sweep <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time>:
-          {{- if .Error}} <span class="fail">failed</span> <span class="err">{{.Error}}</span>
-          {{- else}} <span class="ok">{{.Repos}} repositories</span>{{end}}
-          · next around <time datetime="{{iso (nextSweep .)}}">{{when (nextSweep .)}}</time>
-        {{- end}}
-      {{- else}}<span class="muted">off</span>{{end}}
+<div class="tile">
+  <span class="tile-label">Uptime</span>
+  <span class="tile-value">{{since .Snapshot.Started}}</span>
+  <span class="tile-note">since <time datetime="{{iso .Snapshot.Started}}">{{clock .Snapshot.Started}} UTC</time></span>
+</div>
+<div class="tile">
+  <span class="tile-label">Targets</span>
+  <span class="tile-value">{{len .Targets}}</span>
+  <span class="tile-note">{{range $i, $t := .Targets}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</span>
+</div>
+<div class="tile">
+  <span class="tile-label">Push webhooks</span>
+  <span class="tile-value">{{if .OnPush}}<span class="ok">on</span>{{else}}<span class="muted">off</span>{{end}}</span>
+  <span class="tile-note">{{if .OnPush}}{{if .Auto}}pushes are mirrored{{else}}pushes refresh the diff{{end}}{{else}}ignored{{end}}</span>
+</div>
+<div class="tile">
+  <span class="tile-label">Schedule</span>
+  {{- with .Snapshot.Schedule}}
+    {{- if .Interval}}
+  <span class="tile-value">every {{.Interval}}</span>
+  <span class="tile-note">
+      {{- if .LastRun.IsZero}}first sweep running
+      {{- else if .Error}}<span class="fail">last sweep failed</span> <span class="err">{{.Error}}</span>
+      {{- else}}last <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time>: {{.Repos}} repositories · next around <time datetime="{{iso (nextSweep .)}}">{{clock (nextSweep .)}} UTC</time>
+      {{- end}}
+  </span>
+    {{- else}}
+  <span class="tile-value muted">off</span>
+  <span class="tile-note">no scheduled runs</span>
     {{- end}}
-  </dd>
-  <dt>Running</dt><dd>{{.Running}} {{if eq .Running 1}}repository{{else}}repositories{{end}}{{if .Queued}}, {{.Queued}} with a queued follow-up run{{end}}</dd>
-</dl>
+  {{- end}}
+</div>
+<div class="tile">
+  <span class="tile-label">Running</span>
+  <span class="tile-value">{{.Running}}</span>
+  <span class="tile-note">{{plural .Running "repository" "repositories"}}{{if .Queued}}, {{.Queued}} queued{{end}}</span>
+</div>
 {{- end}}
 
 {{define "repos" -}}
-<h2>Repositories</h2>
-{{- if not .Snapshot.Repos}}
-<p class="muted">No runs since the start. Repositories appear here after their first push or scheduled sweep.</p>
-{{- else}}
-<div class="scroll">
-<table>
-  <thead><tr><th>Repository</th><th>State</th><th>Target</th><th>Last push</th><th>Forge operations</th></tr></thead>
-  <tbody>
-  {{- range $r := .Snapshot.Repos}}
-    {{- $rows := len $r.Targets}}{{if eq $rows 0}}{{$rows = 1}}{{end}}
-    <tr>
-      <td rowspan="{{$rows}}"><code>{{$r.Name}}</code></td>
-      <td rowspan="{{$rows}}">
-        {{- if $r.Running}}<span class="badge warn">running</span>{{if index $.QueuedRepos $r.Name}} <span class="badge muted">queued</span>{{end}}
-        {{- else if not $r.LastFinished.IsZero}}<span class="muted">idle since <time datetime="{{iso $r.LastFinished}}">{{when $r.LastFinished}}</time></span>{{end}}
-      </td>
-      {{- if not $r.Targets}}<td colspan="3" class="muted">unchanged, nothing pushed</td></tr>
-      {{- else}}
-      {{- range $i, $t := $r.Targets}}
-      {{- if $i}}<tr>{{end}}
-      <td><code>{{$t.Name}}</code></td>
-      <td>
-        {{- if $t.LastRun.IsZero}}<span class="muted">—</span>
-        {{- else if $t.Error}}<span class="fail">failed</span> <time datetime="{{iso $t.LastRun}}">{{when $t.LastRun}}</time><div class="err">{{$t.Error}}</div>
-        {{- else}}<span class="ok">ok</span> <time datetime="{{iso $t.LastRun}}">{{when $t.LastRun}}</time> <span class="muted">in {{round $t.Duration}}</span>{{end}}
-      </td>
-      <td>
-        {{- range $t.Operations}}
-        <div>{{.Name}}: {{if .Error}}<span class="fail">failed</span> <span class="err">{{.Error}}</span>{{else}}<span class="ok">ok</span>{{end}} <span class="muted"><time datetime="{{iso .At}}">{{when .At}}</time></span></div>
-        {{- else}}<span class="muted">—</span>{{end}}
-      </td>
-      </tr>
-      {{- end}}
-      {{- end}}
+<div class="card-head">
+  <div>
+    <h2>Repositories</h2>
+    <p class="summary">
+      {{- len .Repos}} {{plural (len .Repos) "repository" "repositories"}}
+      {{- if .Counts.OutOfSync}} · <span class="warn">{{.Counts.OutOfSync}} out of sync</span>{{end}}
+      {{- if .Counts.Failed}} · <span class="fail">{{.Counts.Failed}} failed</span>{{end}}
+    </p>
+  </div>
+  {{- if .Actions}}
+  <div class="toolbar">
+    <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
+      <button type="submit" class="btn">Refresh all</button>
+    </form>
+    <form method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML"
+      hx-confirm="Sync all {{.Counts.Pending}} out-of-sync repositories to the targets?">
+      <button type="submit" class="btn btn-primary"{{if not .Counts.Pending}} disabled{{end}}>Sync all{{if .Counts.Pending}} ({{.Counts.Pending}}){{end}}</button>
+    </form>
+  </div>
   {{- end}}
-  </tbody>
-</table>
 </div>
+{{- with .Notice}}
+<p class="notice" role="status">{{.}}</p>
 {{- end}}
+{{- if not .Repos}}
+<p class="empty muted">No repositories yet. They appear after the first push, scheduled sweep or refresh.</p>
+{{- else}}
+<ul class="repos">
+  {{- range $r := .Repos}}
+  <li class="repo state-{{$r.State}}">
+    <div class="repo-head">
+      <span class="dot" aria-hidden="true"></span>
+      <code class="repo-name">{{$r.Name}}</code>
+      {{template "state" $r}}
+      {{- if $r.Running}}
+      <span class="pill pill-info">{{if $r.Applying}}syncing{{else}}planning{{end}}</span>
+      {{- if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
+      {{- end}}
+      {{- with $r.Plan}}
+      <span class="checked muted">{{if .Apply}}synced{{else}}checked{{end}} <time datetime="{{iso .At}}">{{when .At}}</time></span>
+      {{- end}}
+      {{- if $.Actions}}
+      <div class="repo-actions">
+        <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
+          <input type="hidden" name="repo" value="{{$r.Name}}">
+          <button type="submit" class="btn btn-small">Refresh</button>
+        </form>
+        <form method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML">
+          <input type="hidden" name="repo" value="{{$r.Name}}">
+          <button type="submit" class="btn btn-small{{if eq $r.State "out-of-sync"}} btn-primary{{end}}">Sync</button>
+        </form>
+      </div>
+      {{- end}}
+    </div>
+    {{- if $r.Targets}}
+    <details class="diff" data-key="{{$r.Name}}"{{if and (eq $r.State "out-of-sync") (not $.Auto)}} data-open-default{{end}}>
+      <summary>{{if and $r.Plan $r.Plan.Apply}}Applied changes{{else}}Diff{{end}}{{if $r.Changes}} · {{$r.Changes}} {{plural $r.Changes "change" "changes"}}{{end}} · last results</summary>
+      <div class="targets">
+        {{- range $r.Targets}}{{template "target" .}}{{end}}
+      </div>
+    </details>
+    {{- end}}
+  </li>
+  {{- end}}
+</ul>
+{{- end}}
+{{- end}}
+
+{{define "state" -}}
+{{- if eq .State "failed"}}<span class="pill pill-fail">failed</span>
+{{- else if eq .State "out-of-sync"}}<span class="pill pill-warn">out of sync · {{.Changes}} {{plural .Changes "change" "changes"}}</span>
+{{- else if eq .State "unchecked"}}<span class="pill pill-muted">not checked yet</span>
+{{- else if eq .State "synced"}}<span class="pill pill-ok">synced · {{.Changes}} {{plural .Changes "change" "changes"}}</span>
+{{- else}}<span class="pill pill-ok">in sync</span>
+{{- end}}
+{{- end}}
+
+{{define "target" -}}
+<div class="target">
+  <h3><code>{{.Name}}</code>
+    {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
+  </h3>
+  {{- with .Plan}}
+  <ul class="changes">
+    {{- with .Error}}<li class="c-err"><span class="sign">!</span>{{.}}</li>{{end}}
+    {{- if .Create}}<li class="c-add"><span class="sign">+</span>create repository</li>{{end}}
+    {{- if .Privatise}}<li class="c-chg"><span class="sign">~</span>make repository private</li>{{end}}
+    {{- if .Delete}}<li class="c-del"><span class="sign">−</span>delete repository</li>{{end}}
+    {{- if .RefsUnknown}}<li class="c-chg"><span class="sign">~</span>refs unknown, full push</li>{{end}}
+    {{- range .Refs}}
+      {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span><code>{{.Ref}}</code> <code class="muted">{{short .New}}</code></li>
+      {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span><code>{{.Ref}}</code> <code class="muted">{{short .Old}}</code></li>
+      {{- else}}<li class="c-chg"><span class="sign">~</span><code>{{.Ref}}</code> <code class="muted">{{short .Old}}</code> → <code>{{short .New}}</code></li>
+      {{- end}}
+    {{- end}}
+    {{- if .RefsOmitted}}<li class="c-note"><span class="sign">…</span>{{.RefsOmitted}} more ref {{plural .RefsOmitted "change" "changes"}}</li>{{end}}
+    {{- range .Settings}}
+    <li class="c-chg"><span class="sign">~</span>{{.Field}}: <span class="old">{{if .Old}}{{.Old}}{{else}}(empty){{end}}</span> → <span class="new">{{if .New}}{{.New}}{{else}}(empty){{end}}</span></li>
+    {{- end}}
+    {{- range .Labels}}
+      {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span>label <b>{{.Name}}</b> <span class="swatch" data-color="{{.New.Color}}">#{{.New.Color}}</span>{{with .New.Description}} <span class="muted">{{.}}</span>{{end}}</li>
+      {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span>label <b>{{.Name}}</b></li>
+      {{- else}}<li class="c-chg"><span class="sign">~</span>label <b>{{.Name}}</b> <span class="old">#{{.Old.Color}}{{with .Old.Description}} {{.}}{{end}}</span> → <span class="new">#{{.New.Color}}{{with .New.Description}} {{.}}{{end}}</span></li>
+      {{- end}}
+    {{- end}}
+    {{- range .Warnings}}<li class="c-warn"><span class="sign">!</span>{{.}}</li>{{end}}
+  </ul>
+  {{- end}}
+  {{- with .Last}}
+  <div class="last muted">
+    {{- if not .LastRun.IsZero}}
+    last push:
+      {{- if .Error}} <span class="fail">failed</span> <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time><div class="err">{{.Error}}</div>
+      {{- else}} <span class="ok">ok</span> <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time> in {{round .Duration}}{{end}}
+    {{- end}}
+    {{- range .Operations}}
+    <div>{{.Name}}: {{if .Error}}<span class="fail">failed</span> <span class="err">{{.Error}}</span>{{else}}<span class="ok">ok</span>{{end}} <time datetime="{{iso .At}}">{{when .At}}</time></div>
+    {{- end}}
+  </div>
+  {{- end}}
+</div>
 {{- end}}
 
 {{define "logs" -}}
 {{- if not .Logs}}
-<p class="muted">No log records at this level yet.</p>
+<p class="empty muted">No log records at this level yet.</p>
 {{- else}}
 <table class="logs">
   <thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead>
@@ -124,8 +239,8 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   {{- range .Logs}}
     <tr>
       <td class="mono"><time datetime="{{iso .Time}}">{{clock .Time}}</time></td>
-      <td><span class="{{levelClass .Level}}">{{.Level}}</span></td>
-      <td class="msg">{{.Message}}{{range .Attrs}} <span class="mono muted">{{.Key}}=</span><span class="mono">{{.Value}}</span>{{end}}</td>
+      <td><span class="lvl lvl-{{levelClass .Level}}">{{.Level}}</span></td>
+      <td class="msg">{{.Message}}{{range .Attrs}} <span class="attr"><span class="mono muted">{{.Key}}=</span><span class="mono">{{.Value}}</span></span>{{end}}</td>
     </tr>
   {{- end}}
   </tbody>

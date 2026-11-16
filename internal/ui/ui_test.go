@@ -58,11 +58,19 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
+	return newFixtureWith(t, nil, nil)
+}
+
+// newFixtureWith adds environment variables to the test config (e.g.
+// sync.auto) and enables the actions when actions is not nil.
+func newFixtureWith(t *testing.T, env []string, actions ui.Actions) *fixture {
+	t.Helper()
+
 	path := filepath.Join(t.TempDir(), "forgemirror.yaml")
 	if err := os.WriteFile(path, []byte(testConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(config.Options{File: path, Environ: func() []string { return nil }})
+	cfg, err := config.Load(config.Options{File: path, Environ: func() []string { return env }})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -76,6 +84,7 @@ func newFixture(t *testing.T) *fixture {
 		Store:   store,
 		Logs:    ring,
 		Queued:  func() map[string]bool { return map[string]bool{"acme/busy": true} },
+		Actions: actions,
 		Version: "v9.9.9",
 		Logger:  logger,
 		Now:     func() time.Time { return testNow().Add(time.Minute) },
@@ -145,18 +154,18 @@ func TestRoutes(t *testing.T) {
 		{
 			path: "/fragments/overview",
 			want: []string{
-				"Overview",
+				"Uptime",
 				"<code>github</code>",
 				"every 1h0m0s",
 				"2 repositories",
-				"1 with a queued follow-up run",
+				"1 queued",
 			},
 			wantType: "text/html; charset=utf-8",
 		},
 		{
 			path: "/fragments/repos",
 			want: []string{
-				"acme/app", "create:", "in 1.5s", "acme/busy", "running", "queued",
+				"acme/app", "create:", "in 1.5s", "acme/busy", "syncing", "queued",
 				// The error text is escaped, never interpreted as markup.
 				"&lt;denied&gt;",
 			},
@@ -165,6 +174,7 @@ func TestRoutes(t *testing.T) {
 		{path: "/fragments/logs", want: []string{"debug line", "target failed"}, wantType: "text/html; charset=utf-8"},
 		{path: "/static/htmx.min.js", want: []string{"htmx"}, wantType: "text/javascript; charset=utf-8"},
 		{path: "/static/style.css", want: []string{"--accent"}, wantType: "text/css; charset=utf-8"},
+		{path: "/static/app.js", want: []string{"forgemirror-theme"}, wantType: "text/javascript; charset=utf-8"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
@@ -245,17 +255,28 @@ func TestNoSecretInAnyResponse(t *testing.T) {
 	}
 }
 
-func TestOnlyReadMethods(t *testing.T) {
+func TestMethods(t *testing.T) {
 	t.Parallel()
 
-	f := newFixture(t)
-	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
-		for _, path := range []string{"/", "/fragments/repos", "/anything"} {
+	f := newFixtureWith(t, nil, &fakeActions{})
+	for _, method := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch} {
+		for _, path := range []string{"/", "/fragments/repos", "/actions/sync", "/anything"} {
 			rec := f.do(t, method, path)
-			if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD" {
+			if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, HEAD, POST" {
 				t.Errorf("%s %s = %d (Allow %q), want 405", method, path, rec.Code, rec.Header().Get("Allow"))
 			}
 		}
+	}
+	for _, path := range []string{"/", "/fragments/repos"} {
+		if rec := f.do(t, http.MethodPost, path); rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s = %d, want 405", path, rec.Code)
+		}
+	}
+	if rec := f.do(t, http.MethodGet, "/actions/sync"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET /actions/sync = %d, want 405", rec.Code)
+	}
+	if rec := newFixture(t).do(t, http.MethodPost, "/actions/sync"); rec.Code != http.StatusNotFound {
+		t.Errorf("POST /actions/sync without actions = %d, want 404", rec.Code)
 	}
 	if rec := f.do(t, http.MethodHead, "/"); rec.Code != http.StatusOK {
 		t.Errorf("HEAD / = %d, want 200", rec.Code)
@@ -325,7 +346,7 @@ func TestEmptyState(t *testing.T) {
 
 	f := newFixture(t)
 	for path, want := range map[string]string{
-		"/fragments/repos":    "No runs since the start",
+		"/fragments/repos":    "No repositories yet",
 		"/fragments/logs":     "No log records",
 		"/fragments/overview": "first sweep running",
 	} {
