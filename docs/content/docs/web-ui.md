@@ -13,7 +13,8 @@ It shows:
   with its state (*out of sync*, *failed*, *synced*, *in sync*, *not checked
   yet*) and the diff of its newest plan per target: repository creation or
   deletion, branches and tags (`+` new, `~` updated, `−` deleted), settings
-  (old → new) and labels. Below each diff: the last push and the last result
+  (old → new), labels, releases (with their attachment changes) and the
+  container tags to copy per package. Below each diff: the last push and the last result
   of each forge operation. Repositories that need attention come first.
 - **Logs:** the most recent log records, filterable by level.
 - **Configuration:** the effective configuration after defaults, file,

@@ -206,7 +206,8 @@ pushed, because GitHub rejects them.
 
 A target without `type` is a plain git push destination, exactly as before.
 With a `type`, forgemirror also talks to the forge's API: it can create the
-repository, keep its settings and labels in line with Forgejo, and delete it.
+repository, keep its settings and labels in line with Forgejo, copy releases
+and container packages, and delete it.
 
 ```yaml
 targets:
@@ -234,11 +235,13 @@ targets:
 | `create`       | `false` | Create the repository when it is missing; otherwise a missing repository fails the target |
 | `delete`       | `false` | Delete the repository when Forgejo reports the source as deleted        |
 | `prune_labels` | `false` | Delete labels that do not exist on the source                           |
+| `prune_releases` | `false` | Delete releases whose tag has no published release on the source      |
+| `registry`     | derived | Container registry for package sync, as `host[:port]` or `http(s)://host[:port]`. Derived: `ghcr.io` for github.com, `registry.gitlab.com` for gitlab.com, the host of `url` for Forgejo. Required for other GitHub and GitLab hosts when packages are synced |
 | `settings`     |         | Target-wide settings, see below                                         |
 | `overrides`    |         | Settings for matching repositories, see below                           |
 
-`create`, `delete`, `prune_labels`, `api_url`, `settings` and `overrides`
-require a `type`; the namespace and name of the repository come from the
+`create`, `delete`, `prune_labels`, `prune_releases`, `registry`, `api_url`,
+`settings` and `overrides` require a `type`; the namespace and name of the repository come from the
 rendered `url` (`/group/sub/name.git` is namespace `group/sub`, name `name`).
 
 **Creating repositories:** forgemirror creates a repository in an
@@ -250,7 +253,8 @@ On Forgejo, organisation repositories are created through the deprecated but
 working `/api/v1/org/{org}/repos` route.
 
 **Order of a run, per target:**
-1. Read the source repository and labels from Forgejo.
+1. Read the source repository and labels from Forgejo; releases and
+   packages too, when a target syncs them.
 2. Read the target repository; create it if it is missing and `create` is
    set. The default branch is not sent, because it does not exist yet. An
    existing public repository that must be private is made private here, on
@@ -261,9 +265,13 @@ working `/api/v1/org/{org}/repos` route.
    here, after the push.
 6. Synchronise labels (created and updated; deleted only with
    `prune_labels: true`). `settings.labels: false` disables this step.
+7. Synchronise releases (`settings.releases: true`), see
+   [Releases and packages](#releases-and-packages).
+8. Copy container packages (`settings.packages: true`).
 
-A failed create, settings or label step is logged with the target and counted
-in [metrics](../operations/#metrics).
+A failed create, settings, label, release or package step is logged with the
+target and counted in [metrics](../operations/#metrics). Steps 7 and 8 are
+bounded by `mirror.timeout`, since attachments and images can be large.
 
 **Settings.** All keys are optional; an unset key keeps the value of the
 previous layer.
@@ -279,6 +287,8 @@ previous layer.
 | `has_wiki`          | Wiki on or off                                                       |
 | `has_pull_requests` | Pull or merge requests on or off; ignored on GitHub, which cannot disable them (logged once at startup) |
 | `labels`            | `false` disables label sync for this scope; default `true`           |
+| `releases`          | `true` enables release sync for this scope; default `false`          |
+| `packages`          | `true` enables container package sync for this scope; default `false` |
 
 **Precedence, last wins:** the value from the Forgejo repository, then the
 target's `settings`, then every entry of `overrides` whose `repos` pattern
@@ -308,6 +318,62 @@ as success. See [Forgejo webhook](../forgejo-webhook/#repository-events).
 `prune_labels` is off by default because deleting a label strips it from every
 issue and pull request, and new GitHub repositories start with default
 labels.
+
+### Releases and packages
+
+Release and package sync are off by default: unlike labels, they copy files
+that may be large and need extra token scopes (see
+[Security](../security/#token-rights)). Enable them per target or per repository:
+
+```yaml
+targets:
+  - name: github
+    type: github
+    url: "https://github.com/acme/{{ .Name }}.git"
+    token_file: /run/secrets/forgemirror/github-token
+    username: acme-bot            # registry login; see below
+    settings:
+      releases: true
+      packages: true
+```
+
+**Releases** are matched by tag. forgemirror creates missing releases (oldest
+first, so the target's "latest" release matches), and updates the name, the
+notes and the pre-release flag (GitLab has none) when they differ.
+Attachments are compared by file name and size: missing ones are uploaded, a
+different size replaces the file, and attachments the source no longer has
+are removed. Draft releases are never copied. A release whose tag the source
+does not list is skipped with a warning. Target releases without a source
+release stay, unless `prune_releases: true`. On GitLab, attachments are
+stored in the project's generic package `release-assets` (version = tag) and
+linked from the release.
+
+**Packages** are the container images Forgejo lists for the repository (a
+package must be linked to the repository; Forgejo links container images
+with the repository's name on its own). Every tag is copied with its digest,
+so signatures (`sha256-….sig`) and attestations stay valid; they are copied
+after the images they refer to. The image goes to
+`<registry>/<target namespace>/<package name>`; on GitLab to
+`<registry>/<group>/<project>/<package name>`, or the project's own image
+when the package is named like the repository. Names are lower-cased.
+Nothing is ever deleted from a target registry, and other package types
+(npm, Helm, generic, …) are skipped with a warning.
+
+Packages are only synced for public repositories: on GitHub and Forgejo a
+package's visibility does not follow the repository, so a private
+repository's images could become public.
+
+The registry login uses the target's `username` and token. Set `username`
+to the account the token belongs to: ghcr.io and GitLab check it, while
+forgejo-style targets accept any name.
+
+{{< callout type="warning" >}}
+**GitHub (ghcr.io):** a newly copied package is private and not linked to the
+repository. GitHub links images only through the
+`org.opencontainers.image.source` label, which forgemirror cannot add without
+changing the digest. After the first copy, open the package on GitHub once,
+link it to the repository and make it public.
+{{< /callout >}}
 
 ## Filter
 
@@ -409,7 +475,8 @@ without a new version, so existing files keep validating. The schema
 describes `sync` (`on_push`, `schedule`), `filter.allow_private`, and for
 targets `type`, `api_url`, `create`, `delete`, `prune_labels`, `settings`
 (`description`, `website`, `topics`, `default_branch`, `private`,
-`has_issues`, `has_wiki`, `has_pull_requests`, `labels`) and `overrides`
+`has_issues`, `has_wiki`, `has_pull_requests`, `labels`, `releases`,
+`packages`), `prune_releases`, `registry` and `overrides`
 (`repos`, `settings`). `type` is limited to `github`, `gitlab` and `forgejo`,
 and `settings.private` accepts only `true`.
 

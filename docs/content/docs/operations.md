@@ -27,7 +27,7 @@ included as well.
 | `forge_mirror_duration_seconds`         | histogram | `target`           | Duration of each push to a target; buckets from 0.5 s to 10 min |
 | `forge_mirror_webhook_requests_total`   | counter   | `outcome`          | Webhook requests by [outcome](../forgejo-webhook/#responses) |
 | `forge_mirror_active_operations`        | gauge     |                    | Mirror runs in progress                          |
-| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Forge API operations of typed targets; `operation` is `create`, `settings`, `labels` or `delete`, `status` is `success` or `failure`. Runs without settings or label changes are not counted |
+| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Forge API operations of typed targets; `operation` is `create`, `settings`, `labels`, `releases`, `packages` or `delete`, `status` is `success` or `failure`. Runs without changes for an operation are not counted |
 | `forgemirror_scheduled_runs_total`      | counter   | `status`           | Scheduled sweeps; `failure` means the source repositories could not be listed |
 | `target_info`                           | gauge     | `service_name`, `service_version` | Build information                 |
 
@@ -89,7 +89,9 @@ forgemirror writes structured logs to stderr. They are JSON by default; set
 | `repository created` / `repository deleted`       | info  | A target repository was created or deleted          |
 | `setting changed`                                 | info  | One setting on a target, with `field`, `old` and `new` |
 | `label created` / `label updated` / `label deleted` | info | One label on a target, with `old` and `new` colour and description |
-| `forge operation failed`                          | error | One create, settings, labels or delete step failed; carries `target` and `operation` (`forge operation succeeded` is logged at debug level) |
+| `release created` / `release updated` / `release deleted` | info | One release on a target, with `tag`, the changed `fields` and the attachments added, replaced and removed |
+| `package tags copied`                             | info  | Tags copied for one package, with `image`, `count` and the first 20 `tags` |
+| `forge operation failed`                          | error | One create, settings, labels, releases, packages or delete step failed; carries `target` and `operation` (`forge operation succeeded` is logged at debug level) |
 | `sync requested from the UI` / `refresh requested from the UI` | info | A button was pressed; carries `repository` or `repositories` |
 | `deletion started` / `deletion finished`          | info  | A repository deletion event was handled; `deletion finished with errors` is logged at error level |
 

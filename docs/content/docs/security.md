@@ -68,8 +68,10 @@ Use tokens with the narrowest scope; see [Token rights](#token-rights).
 ## Token rights
 
 Grant only what the features you enable need. All tokens are sent as an
-`Authorization` header and only to their own host; redirects to another host
-are refused.
+`Authorization` header and only to their own host; API redirects to another
+host are refused. Release attachment downloads may be redirected to object
+storage: such a redirect is followed without the token, and a redirect from
+HTTPS to HTTP is refused.
 
 ### Forgejo source (`source.token`)
 
@@ -80,6 +82,7 @@ It never needs a write scope.
 |-------------------|----------------------------------------------------------------------|
 | `read:repository` | Repository details, topics, `GET /repos/search` (the schedule's repository list) and cloning |
 | `read:issue`      | Labels: Forgejo files its label routes under the issue scope          |
+| `read:package`    | Only with `settings.packages`: list the repository's packages and pull images from the registry |
 | Repository access: all (public, private and limited) | A public-only token hides private repositories, so `filter.allow_private` cannot work |
 
 The repository list contains what the token's user can read, and an admin
@@ -96,9 +99,9 @@ API rights as well:
 
 | Target  | Token                                                                 |
 |---------|-----------------------------------------------------------------------|
-| GitHub  | Fine-grained token on the owner: *Administration: read and write* (create, delete, settings) and *Contents: read and write*. Classic token: `repo`, plus `delete_repo` when `delete: true`. |
-| GitLab  | `api` scope                                                           |
-| Forgejo | `write:repository`, `write:issue` (labels), and `write:organization` to create in an organisation or `write:user` to create in a user account |
+| GitHub  | Fine-grained token on the owner: *Administration: read and write* (create, delete, settings) and *Contents: read and write* (also releases). Classic token: `repo`, plus `delete_repo` when `delete: true`. Package sync needs a **classic** token with `write:packages`, because fine-grained tokens cannot write to ghcr.io. |
+| GitLab  | `api` scope (also releases); `write_registry` for package sync        |
+| Forgejo | `write:repository` (also releases), `write:issue` (labels), and `write:organization` to create in an organisation or `write:user` to create in a user account; `write:package` for package sync |
 
 Store tokens as files (`*_file`) from a secret manager rather than inline.
 
@@ -120,6 +123,12 @@ Store tokens as files (`*_file`) from a secret manager rather than inline.
   on targets where you set `delete: true`.
 - **Label pruning is opt-in.** `prune_labels` defaults to `false`, because a
   deleted label disappears from every issue and pull request.
+- **Releases and packages are opt-in.** `settings.releases` and
+  `settings.packages` default to `false`. Draft releases are never copied,
+  and release pruning (`prune_releases`) is opt-in as well. Packages of
+  private repositories are never copied, because package visibility on
+  GitHub and Forgejo does not follow the repository, and nothing is ever
+  deleted from a target registry.
 
 ## Runtime hardening
 

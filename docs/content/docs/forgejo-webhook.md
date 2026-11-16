@@ -24,7 +24,7 @@ repository owners opt in by adding a topic.
 | HTTP method      | `POST`                                                   |
 | POST content type| `application/json` (other types are rejected with 415)   |
 | Secret           | the value of `webhook.secret`                            |
-| Trigger on       | Push events; add Repository events to propagate deletions |
+| Trigger on       | Push events; add Repository events to propagate deletions, and Release and Package events for [release and package sync](../configuration/#releases-and-packages) |
 | Branch filter    | leave empty, and use forgemirror's `include_branches` instead |
 
 ## Repository events
@@ -37,6 +37,20 @@ target with `delete: true`. A target repository that no longer exists counts
 as success. The action `created` is ignored with `200`; the repository is
 created on the first push or scheduled run instead. Other event types are
 ignored with `200` as well.
+
+## Release and package events
+
+Tick *Release* and *Package* events when a target syncs
+[releases or packages](../configuration/#releases-and-packages). Each such
+event starts an ordinary run for its repository, the same as a push: the run
+compares everything, so every action (published, updated, deleted, created)
+leads to the same result. They pass the [filter](../configuration/#filter)
+without the branch rules, since no branch was pushed, are ignored while
+`sync.on_push` is `false`, and only plan in review mode. A package event for
+a package that is not linked to a repository is ignored with `200`.
+
+Without these events, a scheduled run picks up new releases and packages as
+well.
 
 ## Schedule-only needs no webhook
 
@@ -70,9 +84,9 @@ forgemirror answers right away, and mirroring happens in the background. A
 | Status | Outcome (`outcome` label)  | Meaning                                                        |
 |--------|----------------------------|----------------------------------------------------------------|
 | 202    | `accepted`                 | Mirror queued, or coalesced into a running one (`mirror queued`); or a repository deletion queued (`delete queued`) |
-| 200    | `filtered`                 | Valid push or deletion, but a filter rule excludes it; the body names the rule |
-| 200    | `ignored`                  | Not a push or repository event, a repository event other than `deleted`, or a push while `sync.on_push` is `false` (`push events disabled (sync.on_push is false)`) |
-| 400    | `bad_request`              | Malformed JSON, required fields missing, a clone URL outside `source.base_url`, or a repository event whose `full_name` is not `owner.login/name` |
+| 200    | `filtered`                 | Valid push, release, package or deletion event, but a filter rule excludes it; the body names the rule |
+| 200    | `ignored`                  | Not a push, repository, release or package event; a repository event other than `deleted`; a package not linked to a repository; or a push, release or package event while `sync.on_push` is `false` (`push events disabled (sync.on_push is false)`) |
+| 400    | `bad_request`              | Malformed JSON, required fields missing, a clone URL outside `source.base_url`, or a repository, release or package event whose `full_name` is not `owner.login/name` |
 | 401    | `unauthorized`             | Missing or wrong signature, so the secrets differ              |
 | 413    | `too_large`                | Body exceeds `webhook.max_body_bytes` (default 5 MiB)          |
 | 415    | `unsupported_media_type`   | Content type is not `application/json`                         |
