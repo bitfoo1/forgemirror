@@ -51,7 +51,7 @@ jobs:
       # mise.toml/mise.lock. github_token must be a GitHub token: the default
       # (github.token) is the Forgejo token and GitHub would reject it.
       - name: Install mise and tools
-        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: https://github.com/jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.8 # keep in step with the local mise version
           github_token: ${{ secrets.GH_TOKEN }}
@@ -114,7 +114,7 @@ jobs:
       # mise.toml/mise.lock. github_token must be a GitHub token: the default
       # (github.token) is the Forgejo token and GitHub would reject it.
       - name: Install mise and tools
-        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: https://github.com/jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.8 # keep in step with the local mise version
           github_token: ${{ secrets.GH_TOKEN }}
@@ -156,7 +156,7 @@ jobs:
       # mise.toml/mise.lock. github_token must be a GitHub token: the default
       # (github.token) is the Forgejo token and GitHub would reject it.
       - name: Install mise and tools
-        uses: https://github.com/jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        uses: https://github.com/jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.11.8 # keep in step with the local mise version
           github_token: ${{ secrets.GH_TOKEN }}
