@@ -236,7 +236,7 @@ targets:
 | `delete`       | `false` | Delete the repository when Forgejo reports the source as deleted        |
 | `prune_labels` | `false` | Delete labels that do not exist on the source                           |
 | `prune_releases` | `false` | Delete releases whose tag has no published release on the source      |
-| `registry`     | derived | Container registry for package sync, as `host[:port]` or `http(s)://host[:port]`. Derived: `ghcr.io` for github.com, `registry.gitlab.com` for gitlab.com, the host of `url` for Forgejo. Required for other GitHub and GitLab hosts when packages are synced |
+| `registry`     | derived | Container registry for package sync, as `host[:port]` or `http(s)://host[:port]`. Derived: `ghcr.io` for github.com, `registry.gitlab.com` for gitlab.com, the host of `url` for Forgejo. Required for other GitHub and GitLab hosts when `settings.packages: true` is set explicitly; with the default, their packages are skipped with a warning |
 | `settings`     |         | Target-wide settings, see below                                         |
 | `overrides`    |         | Settings for matching repositories, see below                           |
 
@@ -265,9 +265,9 @@ working `/api/v1/org/{org}/repos` route.
    here, after the push.
 6. Synchronise labels (created and updated; deleted only with
    `prune_labels: true`). `settings.labels: false` disables this step.
-7. Synchronise releases (`settings.releases: true`), see
-   [Releases and packages](#releases-and-packages).
-8. Copy container packages (`settings.packages: true`).
+7. Synchronise releases, see [Releases and packages](#releases-and-packages).
+   `settings.releases: false` disables this step.
+8. Copy container packages. `settings.packages: false` disables this step.
 
 A failed create, settings, label, release or package step is logged with the
 target and counted in [metrics](../operations/#metrics). Steps 7 and 8 are
@@ -287,8 +287,8 @@ previous layer.
 | `has_wiki`          | Wiki on or off                                                       |
 | `has_pull_requests` | Pull or merge requests on or off; ignored on GitHub, which cannot disable them (logged once at startup) |
 | `labels`            | `false` disables label sync for this scope; default `true`           |
-| `releases`          | `true` enables release sync for this scope; default `false`          |
-| `packages`          | `true` enables container package sync for this scope; default `false` |
+| `releases`          | `false` disables release sync for this scope; default `true`         |
+| `packages`          | `false` disables container package sync for this scope; default `true` |
 | `mirror_note`       | Note appended to the description, see [Mirror marker](#mirror-marker); `""` disables it |
 | `mirror_topic`      | Topic added to the topics, see [Mirror marker](#mirror-marker); `""` disables it; default `forgemirror` |
 
@@ -357,9 +357,12 @@ no API access and are never marked.
 
 ### Releases and packages
 
-Release and package sync are off by default: unlike labels, they copy files
-that may be large and need extra token scopes (see
-[Security](../security/#token-rights)). Enable them per target or per repository:
+Release and package sync are on by default for typed targets, like labels.
+They copy files that may be large and need extra token scopes (see
+[Security](../security/#token-rights)); without them, the step is skipped
+with a plan warning or fails and shows up in the
+[metrics](../operations/#metrics). Disable them per target or
+per repository:
 
 ```yaml
 targets:
@@ -369,8 +372,11 @@ targets:
     token_file: /run/secrets/forgemirror/github-token
     username: acme-bot            # registry login; see below
     settings:
-      releases: true
-      packages: true
+      packages: false             # no container images for any repository
+    overrides:
+      - repos: "acme/big-binaries"
+        settings:
+          releases: false         # keep releases off for this repository
 ```
 
 **Releases** are matched by tag. ForgeMirror creates missing releases (oldest

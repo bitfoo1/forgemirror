@@ -279,13 +279,13 @@ func TestResolveFeatures(t *testing.T) {
 		layers []forge.Settings
 		want   forge.Features
 	}{
-		{"defaults", nil, forge.Features{Labels: true}},
+		{"defaults", nil, forge.Features{Labels: true, Releases: true, Packages: true}},
 		{
-			"target enables, override disables packages",
-			[]forge.Settings{{Releases: new(true), Packages: new(true)}, {Packages: new(false)}},
-			forge.Features{Labels: true, Releases: true},
+			"target disables, override enables packages",
+			[]forge.Settings{{Releases: new(false), Packages: new(false)}, {Packages: new(true)}},
+			forge.Features{Labels: true, Packages: true},
 		},
-		{"labels off", []forge.Settings{{Labels: new(false)}}, forge.Features{}},
+		{"labels off", []forge.Settings{{Labels: new(false)}}, forge.Features{Releases: true, Packages: true}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -132,8 +132,10 @@ func parseRegistry(raw string) (string, bool, error) {
 	return u.Host, u.Scheme == schemeHTTP, nil
 }
 
-// syncsPackages reports whether package sync is enabled in the target
-// settings or any override.
+// syncsPackages reports whether package sync is explicitly enabled in the
+// target settings or any override. The default (on) is deliberately not
+// counted: a GitHub Enterprise or self-hosted GitLab target without a
+// registry must still start; its packages are skipped with a plan warning.
 func (t *Target) syncsPackages() bool {
 	if t.Settings.Packages != nil && *t.Settings.Packages {
 		return true

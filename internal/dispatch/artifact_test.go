@@ -337,19 +337,39 @@ func TestReleaseSyncNeverPrunesOnFailedListing(t *testing.T) {
 	}
 }
 
-func TestReleasesOffByDefault(t *testing.T) {
+func TestReleaseAndPackageDefaults(t *testing.T) {
 	t.Parallel()
 
-	src := newArtifactSource()
-	src.releases = []forge.Release{{Tag: "v1"}}
-	gh := existingForge()
-	d, _ := newArtifactDispatcher(t, artifactSetup{targets: githubTarget, src: src, forge: gh, auto: true})
+	tests := []struct {
+		name       string
+		settings   string
+		wantOps    []string
+		wantCopies int
+	}{
+		{name: "on by default", wantOps: []string{"list", "create v1"}, wantCopies: 2},
+		{name: "opted out", settings: "    settings: {releases: false, packages: false}\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	d.Dispatch(t.Context(), event("app"))
-	shutdown(t, d)
+			src := packageSource()
+			src.releases = []forge.Release{{Tag: "v1"}}
+			gh := existingForge()
+			reg := packageRegistry()
+			targets := strings.Replace(githubTarget, "acme/", "mirror/", 1) + tc.settings
+			d, _ := newArtifactDispatcher(t, artifactSetup{targets: targets, src: src, forge: gh, reg: reg, auto: true})
 
-	if ops := gh.opsSnapshot(); len(ops) != 0 {
-		t.Errorf("release calls = %v, want none without settings.releases", ops)
+			d.Dispatch(t.Context(), event("app"))
+			shutdown(t, d)
+
+			if ops := gh.opsSnapshot(); !slices.Equal(ops, tc.wantOps) {
+				t.Errorf("release calls = %v, want %v", ops, tc.wantOps)
+			}
+			if got := reg.snapshot(); len(got) != tc.wantCopies {
+				t.Errorf("copies = %v, want %d", got, tc.wantCopies)
+			}
+		})
 	}
 }
 

@@ -317,7 +317,7 @@
           "default": false
         },
         "registry": {
-          "description": "Container registry of the target for package sync, as host[:port] or http(s)://host[:port]. Derived when empty: github.com uses ghcr.io, gitlab.com registry.gitlab.com, Forgejo the host of url; other hosts must set it. Requires type.",
+          "description": "Container registry of the target for package sync, as host[:port] or http(s)://host[:port]. Derived when empty: github.com uses ghcr.io, gitlab.com registry.gitlab.com, Forgejo the host of url; other hosts must set it when settings.packages is explicitly true, otherwise their packages are skipped with a warning. Requires type.",
           "type": "string",
           "examples": ["ghcr.io", "containers.ghe.example.org"]
         },
@@ -376,11 +376,11 @@
           "type": "boolean"
         },
         "releases": {
-          "description": "Synchronise published releases (tag, title, notes, prerelease flag and attachments); drafts are never synced. Defaults to false.",
+          "description": "Synchronise published releases (tag, title, notes, prerelease flag and attachments); drafts are never synced; false disables release sync for this scope. Defaults to true.",
           "type": "boolean"
         },
         "packages": {
-          "description": "Copy the container packages linked to the repository in Forgejo, with every tag, to the target's container registry. Only for public target repositories; tags are never deleted on the target. Defaults to false.",
+          "description": "Copy the container packages linked to the repository in Forgejo, with every tag, to the target's container registry. Only for public target repositories; tags are never deleted on the target; false disables package sync for this scope. Defaults to true.",
           "type": "boolean"
         },
         "mirror_note": {

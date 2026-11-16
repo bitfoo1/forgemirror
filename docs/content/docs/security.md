@@ -87,7 +87,7 @@ It never needs a write scope.
 |-------------------|----------------------------------------------------------------------|
 | `read:repository` | Repository details, topics, `GET /repos/search` (the schedule's repository list) and cloning |
 | `read:issue`      | Labels: Forgejo files its label routes under the issue scope          |
-| `read:package`    | Only with `settings.packages`: list the repository's packages and pull images from the registry |
+| `read:package`    | Package sync (on unless `settings.packages: false`): list the repository's packages and pull images from the registry |
 | Repository access: all (public, private and limited) | A public-only token hides private repositories, so `filter.allow_private` cannot work |
 
 The repository list contains what the token's user can read, and an admin
@@ -128,9 +128,11 @@ Store tokens as files (`*_file`) from a secret manager rather than inline.
   on targets where you set `delete: true`.
 - **Label pruning is opt-in.** `prune_labels` defaults to `false`, because a
   deleted label disappears from every issue and pull request.
-- **Releases and packages are opt-in.** `settings.releases` and
-  `settings.packages` default to `false`. Draft releases are never copied,
-  and release pruning (`prune_releases`) is opt-in as well. Packages of
+- **Releases and packages are on by default, deletion stays opt-in.**
+  `settings.releases` and `settings.packages` default to `true`; set them to
+  `false` to keep a target's token free of release or package scopes. Draft
+  releases are never copied, and release pruning (`prune_releases`) is
+  opt-in. Packages of
   private repositories are never copied, because package visibility on
   GitHub and Forgejo does not follow the repository, and nothing is ever
   deleted from a target registry.

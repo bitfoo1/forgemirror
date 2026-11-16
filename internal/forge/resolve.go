@@ -51,11 +51,12 @@ type Features struct {
 	Packages bool
 }
 
-// ResolveFeatures applies the layers in order (last wins). Labels default to
-// on; releases and packages default to off, because they publish binaries and
-// need token scopes an existing deployment may not have.
+// ResolveFeatures applies the layers in order (last wins). Everything
+// defaults to on, so a mirror is complete without extra configuration; the
+// risky parts stay guarded elsewhere (drafts and private packages are never
+// copied, pruning is opt-in).
 func ResolveFeatures(layers ...Settings) Features {
-	f := Features{Labels: true}
+	f := Features{Labels: true, Releases: true, Packages: true}
 	for _, l := range layers {
 		if l.Labels != nil {
 			f.Labels = *l.Labels

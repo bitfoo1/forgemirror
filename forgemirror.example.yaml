@@ -130,8 +130,8 @@ targets:
     #   has_wiki: false
     #   has_pull_requests: true
     #   labels: true # false disables label sync
-    #   releases: false # true syncs published releases with attachments
-    #   packages: false # true copies linked container packages (public repos only)
+    #   releases: true # false disables release sync (published releases with attachments)
+    #   packages: true # false disables copying linked container packages (public repos only)
     #   # Mark the repository as a mirror: the note is appended to the
     #   # description (a template like `url`), the topic is always added.
     #   # "" disables either.
