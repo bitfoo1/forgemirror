@@ -28,7 +28,7 @@ config:
     work_dir: /work
   filter: {}
   ui:
-    # -- Serve the read-only web UI on port 8080 (service port "web").
+    # -- Serve the web UI (status, diffs, refresh and sync) on port 8080 (service port "web").
     enabled: false
   # -- Required: at least one target. `url` is a Go text/template, e.g.
   #   - name: github

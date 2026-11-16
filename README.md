@@ -55,9 +55,12 @@ internet. Every push leads to one clone and parallel pushes to all targets.
 - 🔒 **Secrets stay secret:** tokens never touch disk, process arguments or
   logs. Each token is sent only to its own remote, and `source.base_url` pins
   clone URLs to your Forgejo.
-- 🖥️ **Status page:** an optional read-only web UI shows every repository
-  and target, recent logs and the effective configuration. It runs on its
-  own port, ready for your proxy or SSO.
+- 🔍 **Review before publishing:** every run first computes what it would
+  change, and the logs record every ref, setting and label it changed. With
+  `sync.auto: false` nothing is pushed until you press *Sync* in the web UI.
+- 🖥️ **Web UI:** an optional status page shows every repository with its
+  diff per target, recent logs and the effective configuration, in Tokyo
+  Night light and dark. It runs on its own port, ready for your proxy or SSO.
 - 📈 **Ready to operate:** Prometheus metrics, structured logs, health probes
   on a separate port, graceful shutdown, a Helm chart and signed multi-arch
   images.

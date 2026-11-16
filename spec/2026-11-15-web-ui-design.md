@@ -36,7 +36,9 @@ be exposable through an ingress too, without exposing anything else.
 - Authentication, authorization, user accounts in forgemirror.
 - Actions from the UI (sync now, retry). Without own authentication every
   state-changing request is a CSRF target; a proxy does not prevent that.
-  Possible later behind a CSRF token, not now.
+  Possible later behind a CSRF token, not now. *Superseded by
+  `2026-11-16-review-mode-design.md`: refresh and sync actions behind Go's
+  cross-origin protection.*
 - Persistence: state and logs live in memory and are lost on restart.
 - Live log streaming (SSE/WebSocket). Polling is enough for a status page.
 - An ingress for the ops port.

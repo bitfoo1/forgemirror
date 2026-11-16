@@ -13,7 +13,8 @@ weight: 7
   no reason to make the endpoint publicly reachable.
 - **The web UI has no login.** It is off by default and runs on its own
   port. When enabled, protect that port with a proxy or SSO; see
-  [Web UI](../web-ui/#secure-it). It shows no secrets and changes nothing.
+  [Web UI](../web-ui/#secure-it). It shows no secrets; its only actions
+  are refresh and sync, protected against cross-site requests.
 - **Probes and metrics stay internal.** They are served on the ops port,
   separate from the webhook, so exposing the webhook exposes nothing else.
 - **Targets get everything.** The mirror copies all branches and tags. Use

@@ -69,7 +69,8 @@ so a pod is never deployed in a state where it would just crash-loop.
 | `controllers.forgemirror.containers.app.image.tag` | appVersion | Image tag                                                                             |
 | `controllers.forgemirror.containers.app.resources` | 50m / 64Mi, 512Mi limit | Raise the limit for large repositories or a higher `config.mirror.max_concurrent` |
 | `persistence.work.sizeLimit`          | `5Gi`           | emptyDir for temporary clones                                                                     |
-| `config.ui.enabled`                   | `false`         | Serve the read-only web UI on service port `web` (8080)                                           |
+| `config.ui.enabled`                   | `false`         | Serve the web UI (status, diffs, refresh and sync) on service port `web` (8080)                   |
+| `config.sync.auto`                    | `true`          | `false` = review mode: changes wait for *Sync* in the web UI; requires `config.ui.enabled` and source API credentials |
 | `ingress.web.enabled`                 | `false`         | Ingress to the web UI; requires `config.ui.enabled`. Secure it with `annotations`                 |
 | `ingress.webhook.enabled`             | `false`         | Ingress to the webhook, for a Forgejo outside the cluster                                         |
 | `ingress.<name>.className`, `.annotations`, `.hosts`, `.tls` | see values.yaml | Plain bjw-s ingress values, no provider-specific settings           |

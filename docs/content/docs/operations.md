@@ -75,14 +75,22 @@ forgemirror writes structured logs to stderr. They are JSON by default; set
 | `target mirrored`                                 | info  | Push to one target succeeded                        |
 | `target failed`                                   | error | Push to one target failed; includes git's output    |
 | `mirror failed`                                   | error | Clone failed; no target was updated                 |
-| `mirror already running; queued one follow-up run`| info  | Push arrived during a run, so a follow-up run is coalesced |
+| `run already in progress; queued one follow-up run`| info  | An event arrived during a run, so a follow-up run is coalesced |
 | `shutting down; event dropped`                    | warn  | Push arrived after shutdown began                   |
 | `shutting down; queued follow-up run dropped` | warn | A coalesced follow-up run was not started because of shutdown |
 | `scheduled sync enabled`                          | info  | The schedule is active; carries `interval`          |
 | `scheduled run dispatched`                        | info  | A sweep queued runs; carries `repositories` and `listed` |
 | `scheduled run failed`                            | error | The source repositories could not be listed; retried on the next tick |
-| `already in sync; clone and push skipped`         | info  | Scheduled run found identical branches and tags on all targets |
-| `forge operation succeeded` / `forge operation failed` | info / error | One create, settings, labels or delete step; carries `target` and `operation` |
+| `plan: in sync` / `plan: out of sync`             | info  | The plan of a run; carries `apply` (false: only planned), `changes`, `targets`, `source_deleted`. Each planned change is logged at debug level (`plan: ref create`, `plan: setting`, …) |
+| `plan: target cannot be synced`                   | warn  | The plan of one target failed, e.g. its repository is missing and `create` is false |
+| `refs already in sync; clone and push skipped`    | info  | No target needs a push                              |
+| `refs pushed`                                     | info  | Per target: counts of `created`, `updated`, `forced`, `deleted` refs |
+| `ref pushed`                                      | info  | One ref with `change` and git's `summary` (e.g. `0e67ebf..2eca933`); the first 20 per target at info, the rest at debug |
+| `repository created` / `repository deleted`       | info  | A target repository was created or deleted          |
+| `setting changed`                                 | info  | One setting on a target, with `field`, `old` and `new` |
+| `label created` / `label updated` / `label deleted` | info | One label on a target, with `old` and `new` colour and description |
+| `forge operation failed`                          | error | One create, settings, labels or delete step failed; carries `target` and `operation` (`forge operation succeeded` is logged at debug level) |
+| `sync requested from the UI` / `refresh requested from the UI` | info | A button was pressed; carries `repository` or `repositories` |
 | `deletion started` / `deletion finished`          | info  | A repository deletion event was handled; `deletion finished with errors` is logged at error level |
 
 git output in logs and errors is redacted: tokens and authorization headers
