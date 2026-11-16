@@ -19,7 +19,7 @@ mise tasks          # list all tasks
 | `mise run check`             | Full gate: fmt, tidy, vet, lint, tests (race, ≥ 80 % coverage), govulncheck, manifests, chart, docs |
 | `mise run fmt`               | Format (gofumpt, goimports, golines)                        |
 | `mise run test -- -run Name` | Run selected tests                                          |
-| `mise run test:e2e`          | End-to-end test against Forgejo LTS and latest in Docker (`e2e/`; needs a Docker daemon; `E2E_FORGEJO=lts\|latest` runs one) |
+| `mise run test:e2e`          | End-to-end test against Forgejo LTS and latest in Docker (`e2e/`; needs a Docker daemon; `E2E_FORGEJO=lts\|latest` runs one; `E2E_HOLD=10m` pauses before the delete step to inspect the web UI, raise the deadline with `-- -timeout 20m`) |
 | `mise run run -- <args>`     | Run the service from source                                 |
 | `mise run build`             | Build `bin/forgemirror`                                     |
 | `mise run snapshot`          | Full goreleaser build without publishing                    |

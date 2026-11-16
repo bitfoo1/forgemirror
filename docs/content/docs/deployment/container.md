@@ -8,7 +8,7 @@ weight: 3
 The image (`{{< param "project.image" >}}`) is built with ko:
 - **Base:** `cgr.dev/chainguard/git`, which provides git and CA certificates.
 - **User:** runs as UID 65532.
-- **Entrypoint:** the forgemirror binary.
+- **Entrypoint:** the ForgeMirror binary.
 - **Platforms:** linux/amd64 and linux/arm64.
 
 ```yaml {filename="compose.yaml"}
@@ -38,7 +38,7 @@ Compose mounts secrets at `/run/secrets/<name>`, so reference them as
 
 ```ini {filename="/etc/systemd/system/forgemirror.service"}
 [Unit]
-Description=forgemirror
+Description=ForgeMirror
 After=network-online.target
 Wants=network-online.target
 

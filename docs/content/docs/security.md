@@ -6,9 +6,11 @@ weight: 7
 ## Threat model
 
 - **Forgejo stays private.** Forgejo only makes outgoing webhook calls to
-  forgemirror. forgemirror connects outward to Forgejo (clone) and to the
-  targets (push). Nothing on the internet needs access to Forgejo.
-- **forgemirror is not an internet service.** Expose `/webhook` only to
+  ForgeMirror. ForgeMirror connects outward: to Forgejo to clone, read its
+  API and pull container images, and to the targets to push, call their
+  forge APIs and push container images. Nothing on the internet needs access
+  to Forgejo.
+- **ForgeMirror is not an internet service.** Expose `/webhook` only to
   Forgejo's network. The webhook secret authenticates requests, but there is
   no reason to make the endpoint publicly reachable.
 - **The web UI has no login.** It is off by default and runs on its own
@@ -17,9 +19,12 @@ weight: 7
   are refresh and sync, protected against cross-site requests.
 - **Probes and metrics stay internal.** They are served on the ops port,
   separate from the webhook, so exposing the webhook exposes nothing else.
-- **Targets get everything.** The mirror copies all branches and tags. Use
+- **Targets get everything.** The mirror copies all branches and tags. A
+  [typed target](../configuration/#typed-targets) also gets the repository
+  settings and labels, and, when enabled, every published release with its
+  attachments and, for public repositories, every container image tag. Use
   [filters](../configuration/#filter) to keep repositories with sensitive
-  history from being mirrored at all.
+  history or artifacts from being mirrored at all.
 - **Every Forgejo user can trigger a mirror.** With a system or organization
   webhook, any user who can push to a covered repository starts a mirror run.
   `require_topic` does not restrict this, because repository owners set
@@ -29,7 +34,7 @@ weight: 7
 ## Webhook authentication
 
 Every request must carry an HMAC-SHA256 signature of its body, made with
-`webhook.secret`. forgemirror checks the signature before it parses the body.
+`webhook.secret`. ForgeMirror checks the signature before it parses the body.
 Signatures are compared in constant time, and request bodies are capped at
 `webhook.max_body_bytes`. Use a long random secret:
 
@@ -59,7 +64,7 @@ inherited `GIT_*` variables removed) and never prompts
 (`GIT_TERMINAL_PROMPT=0`).
 
 Set [`source.base_url`](../configuration/#source). The clone URL comes from
-the webhook payload; with `base_url`, forgemirror rejects payloads whose
+the webhook payload; with `base_url`, ForgeMirror rejects payloads whose
 clone URL points anywhere else, so not even a leaked webhook secret can send
 the Forgejo token to another host.
 

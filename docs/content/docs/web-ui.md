@@ -4,10 +4,13 @@ weight: 6
 ---
 
 A status page on its own port, where you can also review and start syncs.
+
+{{< screenshot name="web-ui" alt="The ForgeMirror web UI: overview tiles with the configured target types, and a mirrored repository with the last result of every sync step on its Forgejo target." >}}
+
 It shows:
 - **Overview:** version, uptime, targets, whether push webhooks are on, the
   schedule with its last sweep, and how many repositories are being
-  mirrored right now. The header says whether forgemirror syncs
+  mirrored right now. The header says whether ForgeMirror syncs
   automatically (*Auto sync*) or waits for you (*Review mode*).
 - **Repositories:** every repository planned or mirrored since the start,
   with its state (*out of sync*, *failed*, *synced*, *in sync*, *not checked
@@ -85,7 +88,7 @@ The UI has no login of its own. Anyone who can reach its port sees your
 repository names, error messages and configuration (without secrets).
 {{< /callout >}}
 
-forgemirror deliberately leaves authentication to the infrastructure you
+ForgeMirror deliberately leaves authentication to the infrastructure you
 already run: a reverse proxy with basic auth, an SSO proxy such as
 oauth2-proxy or Authelia, or your ingress controller's auth middleware. The
 UI runs on its own listener, so the whole port can be protected as one unit;
@@ -94,14 +97,14 @@ no path rules are needed, and the webhook and ops ports are unaffected.
 Only the buttons change anything; they send `POST` requests, everything
 else is `GET` or `HEAD`. Without a login of its own, a button would be open
 to cross-site request forgery: another website could make your browser
-press it. forgemirror rejects such requests with Go's cross-origin
+press it. ForgeMirror rejects such requests with Go's cross-origin
 protection, which checks the browser's `Sec-Fetch-Site` header and, for
 older browsers, compares `Origin` with `Host`. Your proxy must therefore
 pass `Host` and `Origin` through unchanged. Requests without either header
 (e.g. `curl`) are not browser requests and are let through; your proxy's
 authentication covers them. Every action is logged (`sync requested from
 the UI`) with the repository; who pressed it is known to your proxy, not to
-forgemirror.
+ForgeMirror.
 
 Responses carry a strict Content-Security-Policy, forbid framing and are
 never cached.

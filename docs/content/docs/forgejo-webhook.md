@@ -25,12 +25,12 @@ repository owners opt in by adding a topic.
 | POST content type| `application/json` (other types are rejected with 415)   |
 | Secret           | the value of `webhook.secret`                            |
 | Trigger on       | Push events; add Repository events to propagate deletions, and Release and Package events for [release and package sync](../configuration/#releases-and-packages) |
-| Branch filter    | leave empty, and use forgemirror's `include_branches` instead |
+| Branch filter    | leave empty, and use ForgeMirror's `include_branches` instead |
 
 ## Repository events
 
 Tick *Repository* events as well when a target sets
-[`delete: true`](../configuration/#typed-targets). forgemirror reacts to the
+[`delete: true`](../configuration/#typed-targets). ForgeMirror reacts to the
 action `deleted` only: it passes the repository through the
 [filter](../configuration/#filter) and then deletes the repository on every
 target with `delete: true`. A target repository that no longer exists counts
@@ -54,21 +54,21 @@ well.
 
 ## Schedule-only needs no webhook
 
-With `sync.on_push: false` and a `sync.schedule`, forgemirror pulls the
+With `sync.on_push: false` and a `sync.schedule`, ForgeMirror pulls the
 repository list from Forgejo and no webhook is required. Without a
 `webhook.secret` the `/webhook` endpoint answers `404`. A secret is only
 needed if a target sets `delete`, because deletions arrive as webhook events;
 scheduled runs never delete. See [Sync](../configuration/#sync).
 
-## Allow Forgejo to reach forgemirror
+## Allow Forgejo to reach ForgeMirror
 
 Forgejo refuses to deliver webhooks to private addresses by default
-(`ALLOWED_HOST_LIST = external`). If forgemirror runs in the same network or
+(`ALLOWED_HOST_LIST = external`). If ForgeMirror runs in the same network or
 cluster, allow it in Forgejo's `app.ini` and restart Forgejo:
 
 ```ini
 [webhook]
-; keep "external" for other webhooks; add only forgemirror's host
+; keep "external" for other webhooks; add only ForgeMirror's host
 ALLOWED_HOST_LIST = external,forgemirror.forgemirror.svc.cluster.local
 ```
 
@@ -77,7 +77,7 @@ that mentions the host not being allowed.
 
 ## Responses
 
-forgemirror answers right away, and mirroring happens in the background. A
+ForgeMirror answers right away, and mirroring happens in the background. A
 `202` only means "queued"; the logs and
 [metrics](../operations/#metrics) show the outcome.
 
@@ -95,7 +95,7 @@ forgemirror answers right away, and mirroring happens in the background. A
 ## Signature
 
 Forgejo signs the raw request body with HMAC-SHA256 and sends the hex digest
-in `X-Forgejo-Signature`. forgemirror compares the digests in constant time.
+in `X-Forgejo-Signature`. ForgeMirror compares the digests in constant time.
 It also accepts the `X-Gitea-*` headers, which Forgejo sends alongside its own.
 `X-Forgejo-Delivery` is logged as `delivery`, so a log line can be matched to
 the delivery shown in Forgejo.

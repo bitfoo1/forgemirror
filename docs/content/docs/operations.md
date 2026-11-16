@@ -7,7 +7,7 @@ weight: 5
 
 | Listener (default)  | Endpoint        | Purpose                                                                 |
 |---------------------|-----------------|-------------------------------------------------------------------------|
-| webhook (`:8081`)   | `POST /webhook` | Forgejo push and repository events; `404` when no `webhook.secret` is set (schedule-only) |
+| webhook (`:8081`)   | `POST /webhook` | Forgejo push, repository, release and package events; `404` when no `webhook.secret` is set (schedule-only) |
 | ops (`:9090`)       | `GET /healthz`  | Liveness: `200` while the process serves HTTP                            |
 | ops (`:9090`)       | `GET /readyz`   | Readiness: `503` before serving and once shutdown begins, so load balancers stop sending webhooks |
 | ops (`:9090`)       | `GET /metrics`  | Prometheus metrics                                                      |
@@ -17,7 +17,7 @@ See [Listeners](../configuration/#listeners) for why there are three.
 
 ## Metrics
 
-forgemirror records metrics with OpenTelemetry and exposes them in the
+ForgeMirror records metrics with OpenTelemetry and exposes them in the
 Prometheus format. Go runtime (`go_*`) and process (`process_*`) metrics are
 included as well.
 
@@ -41,22 +41,22 @@ Example alerts:
 groups:
   - name: forgemirror
     rules:
-      - alert: ForgemirrorTargetFailing
+      - alert: ForgeMirrorTargetFailing
         expr: increase(forgemirror_operations_total{status="failure"}[30m]) > 0
         labels: { severity: warning }
         annotations:
           summary: "Mirroring to {{ $labels.target }} fails"
-      - alert: ForgemirrorSyncFailing
+      - alert: ForgeMirrorSyncFailing
         expr: increase(forgemirror_sync_operations_total{status="failure"}[30m]) > 0
         labels: { severity: warning }
         annotations:
           summary: "{{ $labels.operation }} on {{ $labels.target }} fails"
-      - alert: ForgemirrorScheduledRunFailing
+      - alert: ForgeMirrorScheduledRunFailing
         expr: increase(forgemirror_scheduled_runs_total{status="failure"}[2h]) > 0
         labels: { severity: warning }
         annotations:
           summary: "Scheduled sync cannot list Forgejo repositories"
-      - alert: ForgemirrorWebhookUnauthorized
+      - alert: ForgeMirrorWebhookUnauthorized
         expr: increase(forgemirror_webhook_requests_total{outcome="unauthorized"}[15m]) > 0
         labels: { severity: warning }
         annotations:
@@ -65,7 +65,7 @@ groups:
 
 ## Logs
 
-forgemirror writes structured logs to stderr. They are JSON by default; set
+ForgeMirror writes structured logs to stderr. They are JSON by default; set
 `log.format: text` for logfmt-style lines. Mirror events carry `repository`,
 `ref`, `delivery`, and per target also `target`, `outcome` and `duration`.
 
@@ -117,7 +117,7 @@ or `TimeoutStopSec` (systemd).
 
 | Symptom                                    | Cause and fix                                                  |
 |--------------------------------------------|----------------------------------------------------------------|
-| Forgejo delivery fails with "host not allowed" | Allow forgemirror in `[webhook] ALLOWED_HOST_LIST`; see [Forgejo webhook](../forgejo-webhook/#allow-forgejo-to-reach-forgemirror) |
+| Forgejo delivery fails with "host not allowed" | Allow ForgeMirror in `[webhook] ALLOWED_HOST_LIST`; see [Forgejo webhook](../forgejo-webhook/#allow-forgejo-to-reach-forgemirror) |
 | `401` responses                            | `webhook.secret` and the secret in Forgejo differ               |
 | `415` responses                            | Webhook content type is form-encoded; set `application/json`    |
 | `200 not mirrored: …`                      | A filter rule excludes the push; the body names the rule        |
@@ -127,6 +127,6 @@ or `TimeoutStopSec` (systemd).
 | `mirror failed` on private repositories    | `source.token` is missing or lacks read access                  |
 | `target … does not exist and create is false` | The target repository is missing; create it or set `create: true` on the typed target |
 | `cannot create repository in namespace …`  | The namespace is neither an organisation or group nor the token's user |
-| Typed targets fail while Forgejo is down   | Expected: forgemirror starts anyway, connects on first use and waits 10 s after a failed attempt |
+| Typed targets fail while Forgejo is down   | Expected: ForgeMirror starts anyway, connects on first use and waits 10 s after a failed attempt |
 | Private repository is not mirrored         | No matching `filter.allow_private` (required with typed targets or `sync.schedule`; otherwise only with `filter.exclude_private`), or a source token with public-only repository access |
 | Pod evicted                                | Clones exceed the `/work` emptyDir `sizeLimit`; raise it        |

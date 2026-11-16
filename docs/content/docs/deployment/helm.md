@@ -6,7 +6,7 @@ weight: 1
 The chart builds on the
 [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/docs/common-library/)
 and is published as a signed OCI artifact with every release. The chart
-version always equals the forgemirror version.
+version always equals the ForgeMirror version.
 
 Defaults:
 - **Workload:** one replica with the `Recreate` strategy.
@@ -57,7 +57,7 @@ credentials:
 
 `config` is rendered verbatim into `forgemirror.yaml`; see
 [Configuration](../../configuration/). The chart excludes it from bjw-s
-template evaluation, so `{{ .Name }}` reaches forgemirror unchanged. Rendering
+template evaluation, so `{{ .Name }}` reaches ForgeMirror unchanged. Rendering
 fails if `config.targets` is empty or no credentials are given, so a pod is
 never deployed in a state where it would just crash-loop.
 

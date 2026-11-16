@@ -1,8 +1,8 @@
-# forgemirror documentation (Hugo + Hextra).
+# ForgeMirror documentation (Hugo + Hextra).
 # baseURL is set at build time (--baseURL / DOCS_BASE_URL), so the same source
 # builds for local preview and for whichever host serves the site.
 baseURL: /
-title: forgemirror
+title: ForgeMirror
 locale: en-US
 enableGitInfo: true
 enableRobotsTXT: true
@@ -46,17 +46,21 @@ menu:
       weight: 2
       params:
         type: search
-    - name: Source
+    # The public GitHub mirror, because git.bitfoo.de is not reachable from
+    # the internet.
+    - name: GitHub
       weight: 3
-      url: https://git.bitfoo.de/dvonessen/forgemirror
+      url: https://github.com/bitfoo1/forgemirror
       params:
-        icon: code
+        icon: github
 
 params:
   # Project locations used throughout the pages via {{< param "project.…" >}}.
-  # Change them here when the public home of releases/images moves.
+  # repo is the public GitHub mirror, because git.bitfoo.de is not reachable
+  # from the internet. Releases, image and chart are only published on
+  # git.bitfoo.de so far; switch them here once they are synced to GitHub.
   project:
-    repo: https://git.bitfoo.de/dvonessen/forgemirror
+    repo: https://github.com/bitfoo1/forgemirror
     releases: https://git.bitfoo.de/dvonessen/forgemirror/releases
     image: git.bitfoo.de/dvonessen/forgemirror
     chart: oci://git.bitfoo.de/dvonessen/charts/forgemirror
@@ -76,7 +80,7 @@ params:
     displayPoweredBy: true
   editURL:
     enable: true
-    base: https://git.bitfoo.de/dvonessen/forgemirror/_edit/main/docs/content
+    base: https://github.com/bitfoo1/forgemirror/edit/main/docs/content
   displayUpdatedDate: true
   dateFormat: "2006-01-02"
   search:

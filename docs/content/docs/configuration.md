@@ -3,7 +3,7 @@ title: Configuration
 weight: 2
 ---
 
-forgemirror reads one YAML file. Any key can be overridden with an
+ForgeMirror reads one YAML file. Any key can be overridden with an
 environment variable or a CLI flag, and every secret can be read from a file.
 
 ## Sources and precedence
@@ -23,7 +23,7 @@ FORGEMIRROR_WEBHOOK__SECRET_FILE=/run/secrets/forgemirror/webhook-secret
 ```
 
 **Config file location:** the file comes from `--config` / `-c`, or from
-`FORGEMIRROR_CONFIG`. Without either, forgemirror uses the first of these
+`FORGEMIRROR_CONFIG`. Without either, ForgeMirror uses the first of these
 that exists:
 - `./forgemirror.yaml`
 - `$XDG_CONFIG_HOME/forgemirror/forgemirror.yaml` on Linux, or
@@ -52,7 +52,7 @@ forgemirror --config forgemirror.yaml validate
 
 ## Listeners
 
-forgemirror serves three audiences on three ports, so each one can be
+ForgeMirror serves three audiences on three ports, so each one can be
 exposed or locked down as a whole, without path rules in a proxy:
 
 | Key                         | Default | Serves                                 | Audience                     |
@@ -90,7 +90,7 @@ For how tokens reach git, see [Security](../security/#credentials).
 
 ## Source
 
-`source` is the Forgejo instance forgemirror clones from.
+`source` is the Forgejo instance ForgeMirror clones from.
 
 ```yaml
 source:
@@ -108,13 +108,13 @@ leaks. Without it, every clone URL is accepted.
 The token is only needed for private repositories; leave it unset if only
 public ones are mirrored. It becomes required, together with `base_url`, as
 soon as a target has a `type`, `sync.schedule` is set or `sync.auto` is
-`false`, because forgemirror then reads repositories, settings and labels
+`false`, because ForgeMirror then reads repositories, settings and labels
 through the Forgejo API
 (`base_url` + `api/v1`). The rights it needs are listed under
 [Security](../security/#token-rights).
 
 Forgejo clients connect on first use, not at startup, and a failed connection
-attempt is not repeated for 10 seconds. forgemirror therefore starts even
+attempt is not repeated for 10 seconds. ForgeMirror therefore starts even
 when Forgejo is unreachable, and a scheduled sweep does not hammer an
 unreachable instance once per repository.
 
@@ -196,7 +196,7 @@ Each URL is checked at startup:
 
 {{< callout type="info" >}}
 Without a `type`, target repositories must already exist (or be created by
-[`create`](#typed-targets) on a typed target). forgemirror pushes all
+[`create`](#typed-targets) on a typed target). ForgeMirror pushes all
 branches and tags with `--prune`, so the target becomes an exact copy and
 branches deleted on Forgejo disappear there too. Pull request refs are not
 pushed, because GitHub rejects them.
@@ -205,7 +205,7 @@ pushed, because GitHub rejects them.
 ### Typed targets
 
 A target without `type` is a plain git push destination, exactly as before.
-With a `type`, forgemirror also talks to the forge's API: it can create the
+With a `type`, ForgeMirror also talks to the forge's API: it can create the
 repository, keep its settings and labels in line with Forgejo, copy releases
 and container packages, and delete it.
 
@@ -244,7 +244,7 @@ targets:
 `settings` and `overrides` require a `type`; the namespace and name of the repository come from the
 rendered `url` (`/group/sub/name.git` is namespace `group/sub`, name `name`).
 
-**Creating repositories:** forgemirror creates a repository in an
+**Creating repositories:** ForgeMirror creates a repository in an
 organisation or group, or in the token's own account. Any other namespace
 is refused with `cannot create repository in namespace …: not an
 organisation and not the token's user`, because the forge would otherwise
@@ -259,7 +259,7 @@ working `/api/v1/org/{org}/repos` route.
    set. The default branch is not sent, because it does not exist yet. An
    existing public repository that must be private is made private here, on
    its own; if that fails, the target is not pushed.
-3. Scheduled runs only: skip the push if all branches and tags are equal.
+3. Skip the push if all branches and tags are already equal.
 4. Mirror push.
 5. Compare settings and update only what differs; the default branch is set
    here, after the push.
@@ -337,7 +337,7 @@ targets:
       packages: true
 ```
 
-**Releases** are matched by tag. forgemirror creates missing releases (oldest
+**Releases** are matched by tag. ForgeMirror creates missing releases (oldest
 first, so the target's "latest" release matches), and updates the name, the
 notes and the pre-release flag (GitLab has none) when they differ.
 Attachments are compared by file name and size: missing ones are uploaded, a
@@ -370,7 +370,7 @@ forgejo-style targets accept any name.
 {{< callout type="warning" >}}
 **GitHub (ghcr.io):** a newly copied package is private and not linked to the
 repository. GitHub links images only through the
-`org.opencontainers.image.source` label, which forgemirror cannot add without
+`org.opencontainers.image.source` label, which ForgeMirror cannot add without
 changing the digest. After the first copy, open the package on GitHub once,
 link it to the repository and make it public.
 {{< /callout >}}

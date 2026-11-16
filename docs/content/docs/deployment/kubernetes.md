@@ -4,7 +4,7 @@ linkTitle: Kubernetes
 weight: 2
 ---
 
-Plain manifests in [`deploy/`]({{< param "project.repo" >}}/src/branch/main/deploy),
+Plain manifests in [`deploy/`]({{< param "project.repo" >}}/tree/main/deploy),
 assembled with the kustomize built into `kubectl`. They produce the same
 hardened setup as the [Helm chart](../helm/).
 

@@ -3,7 +3,7 @@ title: Getting started
 weight: 1
 ---
 
-This guide runs forgemirror locally or in a container and mirrors a first
+This guide runs ForgeMirror locally or in a container and mirrors a first
 repository. For production, see [Deployment](../deployment/).
 
 ## Prerequisites
@@ -12,7 +12,9 @@ repository. For production, see [Deployment](../deployment/).
   webhook) or a repository owner (for a repository webhook).
 - **Target tokens:** a token with push access for each target forge, for
   example a GitHub fine-grained token with *Contents: read and write* on the
-  destination repositories.
+  destination repositories. A [typed target](../configuration/#typed-targets)
+  that creates repositories or syncs settings, releases or packages needs
+  more; see [Token rights](../security/#token-rights).
 - **Source token:** a Forgejo token with read access, if private repositories
   should be mirrored.
 - **Existing target repositories:** a plain target pushes to repositories
@@ -65,11 +67,29 @@ Check it:
 
 ```sh
 forgemirror --config forgemirror.yaml validate
-# configuration is valid (1 targets)
+# configuration is valid (1 target)
 ```
 
 All options, including filters and secrets read from files, are covered in
 [Configuration](../configuration/).
+
+{{< callout type="info" >}}
+  **Try it in review mode first.** With the settings below nothing reaches a
+  target until you press *Sync* in the [web UI](../web-ui/) at
+  `http://localhost:8080`, so you can check what would be published before
+  it is. Review mode reads the repository list from Forgejo, hence the
+  source settings; add `-p 8080:8080` to `docker run`.
+
+  ```yaml
+  source:
+    base_url: https://git.example.org/  # your Forgejo
+    token: forgejo-read-token
+  sync:
+    auto: false
+  ui:
+    enabled: true
+  ```
+{{< /callout >}}
 
 ### Start the service
 

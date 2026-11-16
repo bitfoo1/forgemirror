@@ -1,5 +1,5 @@
 ---
-title: forgemirror
+title: ForgeMirror
 layout: hextra-home
 ---
 
@@ -20,7 +20,7 @@ layout: hextra-home
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  forgemirror listens for Forgejo push webhooks and mirrors the repository&nbsp;<br class="hx:sm:block hx:hidden" />to GitHub, Codeberg, GitLab or any other Git forge within seconds.
+  ForgeMirror listens for Forgejo push webhooks and mirrors the repository&nbsp;<br class="hx:sm:block hx:hidden" />to GitHub, Codeberg, GitLab or any other Git forge within seconds.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -28,19 +28,37 @@ layout: hextra-home
 {{< hextra/hero-button text="Read the docs" link="docs/" >}}
 </div>
 
-<div class="hx:mt-6"></div>
+{{< screenshot name="web-ui" class="fm-ribbon" alt="The ForgeMirror web UI: overview tiles with the configured target types, and a mirrored repository with the last result of every sync step on its Forgejo target." >}}
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
     title="Push-driven"
     class="fm-card"
-    subtitle="No polling and no cron. Every push triggers one clone and a parallel push to all targets, and pushes that arrive during a run are coalesced."
+    subtitle="Every push triggers one clone and a parallel push to all targets; pushes that arrive during a run are coalesced. A schedule can sweep every repository too."
     icon="lightning-bolt"
+  >}}
+  {{< hextra/feature-card
+    title="Review before publishing"
+    class="fm-card"
+    subtitle="Every run plans first. The web UI shows the diff per target, and in review mode nothing is pushed until you press Sync."
+    icon="eye"
+  >}}
+  {{< hextra/feature-card
+    title="Creates and syncs repositories"
+    class="fm-card"
+    subtitle="On GitHub, GitLab and Forgejo targets: create missing repositories and keep settings and labels in line. A private repository never becomes public."
+    icon="collection"
+  >}}
+  {{< hextra/feature-card
+    title="Releases and container images"
+    class="fm-card"
+    subtitle="Copies releases with their attachments, and the container images of public repositories with signatures intact."
+    icon="cube"
   >}}
   {{< hextra/feature-card
     title="Works behind a firewall"
     class="fm-card"
-    subtitle="Forgejo only has to reach forgemirror. Nothing on the internet needs access to your instance."
+    subtitle="Forgejo only has to reach ForgeMirror. Nothing on the internet needs access to your instance."
     icon="shield-check"
   >}}
   {{< hextra/feature-card

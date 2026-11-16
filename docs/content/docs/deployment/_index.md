@@ -3,7 +3,7 @@ title: Deployment
 weight: 4
 ---
 
-forgemirror is a single stateless process. It needs:
+ForgeMirror is a single stateless process. It needs:
 - **Disk:** a writable directory for temporary clones (`mirror.work_dir`,
   default: the OS temp directory).
 - **Network:** outbound HTTPS to Forgejo and to the targets, and an inbound

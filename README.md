@@ -1,15 +1,15 @@
 <div align="center">
 
-# forgemirror
+# ForgeMirror
 
 **Your Forgejo stays private. Your code goes public, instantly.**
 
-forgemirror listens for Forgejo push webhooks and mirrors the repository to
+ForgeMirror listens for Forgejo push webhooks and mirrors the repository to
 GitHub, Codeberg, GitLab or any other Git forge within seconds.
 
-[![Docs](https://img.shields.io/badge/docs-forgemirror.bitfoo.de-7c5cdb)](https://forgemirror.bitfoo.de)
+[![Docs](https://img.shields.io/badge/docs-forgemirror.bitfoo.de-7aa2f7)](https://forgemirror.bitfoo.de)
 [![Go](https://img.shields.io/badge/go-1.27-00add8?logo=go&logoColor=white)](go.mod)
-[![License: MIT](https://img.shields.io/badge/license-MIT-0891b2)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-bb9af7)](LICENSE)
 [![Signed with cosign](https://img.shields.io/badge/signed-cosign-4b5563)](#verify-a-release)
 
 [Documentation](https://forgemirror.bitfoo.de) ·
@@ -24,21 +24,24 @@ GitHub, Codeberg, GitLab or any other Git forge within seconds.
 ```mermaid
 flowchart LR
   dev([git push]) --> forgejo[Forgejo<br/>private]
-  forgejo -- "push webhook<br/>(HMAC-signed)" --> fm[forgemirror]
-  fm -- "git clone --mirror" --> forgejo
-  fm -- "git push --mirror" --> gh[GitHub]
+  forgejo -- "webhook (HMAC-signed)<br/>push · release · package · deleted" --> fm[ForgeMirror]
+  sched([schedule]) --> fm
+  ui([web UI: review · sync]) --> fm
+  fm -- "git clone --mirror<br/>Forgejo API" --> forgejo
+  fm -- "git push --prune<br/>forge APIs · registries" --> gh[GitHub]
   fm --> cb[Codeberg]
   fm --> gl[GitLab / any forge]
 ```
 
-Forgejo only has to reach forgemirror, and forgemirror only connects
+Forgejo only has to reach ForgeMirror, and ForgeMirror only connects
 outward, so the Forgejo instance never needs to be reachable from the
-internet. Every push leads to one clone and parallel pushes to all targets.
+internet. Every run first plans what would change, then clones once and
+pushes to all targets in parallel; targets already in sync are skipped.
 
 ## Features
 
-- ⚡ **Push-driven:** no polling and no cron. Pushes that arrive during a run
-  are coalesced into one follow-up run.
+- ⚡ **Push-driven:** mirrors within seconds of a push, no polling needed.
+  Pushes that arrive during a run are coalesced into one follow-up run.
 - 🧩 **One target, many repositories:** target URLs are Go templates, so
   `https://codeberg.org/{{ .Owner }}/{{ .Name }}.git` covers every repository.
 - 🏗️ **Creates and syncs repositories:** typed targets (GitHub, GitLab,
@@ -46,6 +49,9 @@ internet. Every push leads to one clone and parallel pushes to all targets.
   branch, visibility, issues/wiki/pull requests and labels in line, with
   per-target defaults and per-repository overrides. A private repository
   never becomes public.
+- 📦 **Releases and container images:** copies releases with their
+  attachments, and the container images of public repositories with their
+  signatures, to the target forge and its registry.
 - ⏱️ **Scheduled sync:** run on an interval instead of, or besides, push
   webhooks; unchanged repositories are skipped. Optionally delete a mirror
   when its Forgejo repository is deleted.
