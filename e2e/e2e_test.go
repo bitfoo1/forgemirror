@@ -540,6 +540,10 @@ sync:
 filter:
   exclude_private: true
   allow_private: "src/app"
+  # Source and target share one instance: once dst/app turns public (the
+  # artifacts step), the schedule would list it as a source and mirror it
+  # onto itself, recreating it after the delete step removed it.
+  include_repos: "src/.*"
 targets:
   - name: dst
     url: "%s/dst/{{ .Name }}.git"
