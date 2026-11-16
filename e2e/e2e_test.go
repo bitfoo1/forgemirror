@@ -442,7 +442,10 @@ func pushCommitAndTag(t *testing.T, e env) string {
 	basic := base64.StdEncoding.EncodeToString([]byte(e.user + ":" + e.token))
 	// The credentials travel in GIT_CONFIG_* variables, not in the remote URL
 	// or -c arguments, so they never show up in process lists or git output.
-	gitEnv := append(os.Environ(),
+	// Inherited GIT_* variables (hooks export GIT_DIR) would redirect these
+	// commands into the developer's repository.
+	gitEnv := append(
+		slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "GIT_") }),
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_CONFIG_COUNT=1",

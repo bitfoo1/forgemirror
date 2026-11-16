@@ -19,7 +19,11 @@ func gitCmd(t *testing.T, dir string, args ...string) string {
 
 	cmd := exec.CommandContext(t.Context(), "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	// git hooks export GIT_DIR and friends; inherited (e.g. by the pre-push
+	// gate run from a linked worktree), they redirect these commands into the
+	// developer's repository instead of the temp dirs.
+	cmd.Env = append(
+		slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "GIT_") }),
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull,
 		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
