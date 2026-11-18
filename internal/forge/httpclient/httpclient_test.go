@@ -25,6 +25,25 @@ func get(t *testing.T, c *http.Client, url string, hdr map[string]string) (*http
 	return c.Do(req)
 }
 
+// TestOwnTransport: idle-connection cleanup on the shared default transport
+// must not break requests of forge clients.
+func TestOwnTransport(t *testing.T) {
+	t.Parallel()
+
+	for name, c := range map[string]*http.Client{
+		"api":      httpclient.New(time.Second),
+		"transfer": httpclient.NewTransfer(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if c.Transport == nil || c.Transport == http.DefaultTransport {
+				t.Errorf("Transport = %v, want an own transport", c.Transport)
+			}
+		})
+	}
+}
+
 func TestRefusesCrossHostRedirect(t *testing.T) {
 	t.Parallel()
 

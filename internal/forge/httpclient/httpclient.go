@@ -23,7 +23,8 @@ var (
 // https to http redirect, which would send it in clear text.
 func New(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout: timeout,
+		Transport: newTransport(),
+		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxRedirects {
 				return errTooManyRedirects
@@ -40,4 +41,19 @@ func New(timeout time.Duration) *http.Client {
 			return nil
 		},
 	}
+}
+
+// newTransport clones the default transport so that the client owns its
+// connection pool. On the shared [http.DefaultTransport], any
+// CloseIdleConnections call elsewhere (httptest.Server.Close does one) can
+// fail a request: a response without a body (e.g. 204 on DELETE) returns the
+// connection to the idle pool before the caller receives it, and closing it
+// in that window yields "transport connection broken", which Go does not
+// retry.
+func newTransport() http.RoundTripper {
+	if t, ok := http.DefaultTransport.(*http.Transport); ok {
+		return t.Clone()
+	}
+
+	return http.DefaultTransport
 }
