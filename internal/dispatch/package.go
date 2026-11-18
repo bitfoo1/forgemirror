@@ -116,7 +116,7 @@ func (d *Dispatcher) planPackages(ctx context.Context, tr *targetRun, src source
 }
 
 // syncPackages copies the planned tags. A failed tag does not stop the
-// others.
+// others, except for an access denial (see [Dispatcher.copyTags]).
 func (d *Dispatcher) syncPackages(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
 	owner, _, _ := strings.Cut(tr.repo, "/")
 
@@ -152,13 +152,24 @@ func (d *Dispatcher) copyTags(
 
 	var copied []string
 	var errs []error
-	for _, t := range c.Tags {
-		if copyErr := d.opts.Registry.Copy(ctx, src, dst, t.Tag); copyErr != nil {
-			errs = append(errs, copyErr)
+	for i, t := range c.Tags {
+		copyErr := d.opts.Registry.Copy(ctx, src, dst, t.Tag)
+		if copyErr == nil {
+			copied = append(copied, t.Tag)
 
 			continue
 		}
-		copied = append(copied, t.Tag)
+		// A denial comes from the token or its scope, so every further tag of
+		// the package would fail the same way and only repeat the error.
+		if registry.IsDenied(copyErr) {
+			if rest := len(c.Tags) - i - 1; rest > 0 {
+				copyErr = fmt.Errorf("%w (access denied, %d remaining tags skipped)", copyErr, rest)
+			}
+			errs = append(errs, copyErr)
+
+			break
+		}
+		errs = append(errs, copyErr)
 	}
 
 	return copied, errors.Join(errs...)

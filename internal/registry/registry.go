@@ -108,19 +108,24 @@ func (c *Client) Digests(
 }
 
 func missing(err error, deniedIsMissing bool) bool {
+	if IsDenied(err) {
+		return deniedIsMissing
+	}
+
+	var terr *transport.Error
+
+	return errors.As(err, &terr) && terr.StatusCode == http.StatusNotFound
+}
+
+// IsDenied reports whether err is a registry refusing the credentials or
+// their scope (HTTP 401 or 403).
+func IsDenied(err error) bool {
 	var terr *transport.Error
 	if !errors.As(err, &terr) {
 		return false
 	}
 
-	switch terr.StatusCode {
-	case http.StatusNotFound:
-		return true
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return deniedIsMissing
-	default:
-		return false
-	}
+	return terr.StatusCode == http.StatusUnauthorized || terr.StatusCode == http.StatusForbidden
 }
 
 // Copy copies tag from src to dst. Manifests and indexes are written as read,

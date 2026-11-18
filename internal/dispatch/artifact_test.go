@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/dispatch"
@@ -116,11 +119,12 @@ func (f *releaseForge) DeleteAsset(_ context.Context, _ forge.Address, r forge.R
 
 // fakeRegistry holds tag digests per repository and records copies.
 type fakeRegistry struct {
-	mu      sync.Mutex
-	digests map[string]map[string]string
-	copies  []string
-	denied  []string
-	copyErr error
+	mu       sync.Mutex
+	digests  map[string]map[string]string
+	copies   []string
+	denied   []string
+	copyErr  error
+	attempts int
 }
 
 func (r *fakeRegistry) Digests(
@@ -147,6 +151,7 @@ func (r *fakeRegistry) Digests(
 func (r *fakeRegistry) Copy(_ context.Context, src, dst registry.Repository, tag string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.attempts++
 	if r.copyErr != nil {
 		return r.copyErr
 	}
@@ -490,23 +495,43 @@ func TestPackageSyncFailures(t *testing.T) {
 		}
 	})
 
-	t.Run("copy fails", func(t *testing.T) {
-		t.Parallel()
+	for _, tc := range []struct {
+		name         string
+		err          error
+		wantAttempts int
+		wantMsg      string
+	}{
+		{name: "copy fails", err: errors.New("boom"), wantAttempts: 2, wantMsg: "boom"},
+		{
+			name:         "copy denied",
+			err:          &transport.Error{StatusCode: http.StatusForbidden},
+			wantAttempts: 1,
+			wantMsg:      "access denied, 1 remaining tags skipped",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		reg := packageRegistry()
-		reg.copyErr = errors.New("denied")
-		d, obs := newArtifactDispatcher(t, artifactSetup{
-			targets: artifactTarget, src: packageSource(), forge: existingForge(), reg: reg, auto: true,
+			reg := packageRegistry()
+			reg.copyErr = tc.err
+			d, obs := newArtifactDispatcher(t, artifactSetup{
+				targets: artifactTarget, src: packageSource(), forge: existingForge(), reg: reg, auto: true,
+			})
+
+			d.Dispatch(t.Context(), event("app"))
+			shutdown(t, d)
+
+			_, syncs := obs.snapshot()
+			if !slices.ContainsFunc(syncs, func(s syncResult) bool {
+				return s.operation == "packages" && s.err != nil && strings.Contains(s.err.Error(), tc.wantMsg)
+			}) {
+				t.Errorf("syncs = %+v, want a failed packages operation with %q", syncs, tc.wantMsg)
+			}
+			if reg.attempts != tc.wantAttempts {
+				t.Errorf("copy attempts = %d, want %d", reg.attempts, tc.wantAttempts)
+			}
 		})
-
-		d.Dispatch(t.Context(), event("app"))
-		shutdown(t, d)
-
-		_, syncs := obs.snapshot()
-		if !slices.ContainsFunc(syncs, func(s syncResult) bool { return s.operation == "packages" && s.err != nil }) {
-			t.Errorf("syncs = %+v, want a failed packages operation", syncs)
-		}
-	})
+	}
 
 	t.Run("no registry client", func(t *testing.T) {
 		t.Parallel()

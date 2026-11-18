@@ -121,6 +121,49 @@ func TestDigestsDenied(t *testing.T) {
 	}
 }
 
+func TestIsDenied(t *testing.T) {
+	t.Parallel()
+
+	srcHost := newRegistry(t)
+	img, err := random.Image(64, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push(t, srcHost+"/acme/app:1", img, nil)
+	src := registry.Repository{Host: srcHost, Path: "acme/app"}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"DENIED","message":"permission_denied"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	denying := registry.Repository{Host: strings.TrimPrefix(srv.URL, "http://"), Path: "mirror/app"}
+
+	tests := []struct {
+		name string
+		src  registry.Repository
+		dst  registry.Repository
+		want bool
+	}{
+		{name: "target denies the write", src: src, dst: denying, want: true},
+		{name: "missing source tag", src: registry.Repository{Host: srcHost, Path: "acme/none"}, dst: src},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			copyErr := registry.New().Copy(t.Context(), tc.src, tc.dst, "1")
+			if copyErr == nil {
+				t.Fatal("Copy() error = nil, want error")
+			}
+			if got := registry.IsDenied(copyErr); got != tc.want {
+				t.Errorf("IsDenied(%v) = %v, want %v", copyErr, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRepositoryString(t *testing.T) {
 	t.Parallel()
 
