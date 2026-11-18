@@ -399,7 +399,9 @@ after the images they refer to. The image goes to
 `<registry>/<group>/<project>/<package name>`, or the project's own image
 when the package is named like the repository. Names are lower-cased.
 Nothing is ever deleted from a target registry, and other package types
-(npm, Helm, generic, …) are skipped with a warning.
+(npm, Helm, generic, …) are skipped with a warning. When the registry denies
+access, the remaining tags of that package are skipped, since they would
+fail the same way; the error names how many.
 
 Packages are only synced for public repositories: on GitHub and Forgejo a
 package's visibility does not follow the repository, so a private

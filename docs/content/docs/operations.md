@@ -123,6 +123,7 @@ or `TimeoutStopSec` (systemd).
 | `200 not mirrored: …`                      | A filter rule excludes the push; the body names the rule        |
 | `target failed` … `Repository not found`   | Target repository does not exist, or the URL template renders a different name |
 | `target failed` … `403` / `Authentication failed` | Token lacks push permission or has expired; GitHub fine-grained tokens need *Contents: read and write* |
+| `package …: writing …` … `DENIED` / `access denied, N remaining tags skipped` | The target token cannot write to the registry: ghcr.io needs a **classic** token with `write:packages` (fine-grained tokens cannot write there), GitLab needs `write_registry`; `username` must be the token's account. See [Token rights](../security/#token-rights) |
 | `target failed` … `protected branch`       | Force pushes are blocked on the target; allow them for the mirror account, because mirroring rewrites history like the source |
 | `mirror failed` on private repositories    | `source.token` is missing or lacks read access                  |
 | `target … does not exist and create is false` | The target repository is missing; create it or set `create: true` on the typed target |
