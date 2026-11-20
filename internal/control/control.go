@@ -64,6 +64,11 @@ func (c *Controller) Refresh(ctx context.Context, fullName string) error {
 	return c.one(ctx, fullName, webhook.EventRefresh)
 }
 
+// RepairLFS reconciles LFS content without applying unrelated changes.
+func (c *Controller) RepairLFS(ctx context.Context, fullName string) error {
+	return c.one(ctx, fullName, webhook.EventRepairLFS)
+}
+
 // Sync plans and applies one repository.
 func (c *Controller) Sync(ctx context.Context, fullName string) error {
 	return c.one(ctx, fullName, webhook.EventSync)
@@ -164,6 +169,9 @@ func (c *Controller) delivery() string {
 }
 
 func actionMessage(kind webhook.EventKind) string {
+	if kind == webhook.EventRepairLFS {
+		return "LFS repair requested from the UI"
+	}
 	if kind == webhook.EventSync {
 		return "sync requested from the UI"
 	}

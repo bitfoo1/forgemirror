@@ -4,6 +4,7 @@
 # they cannot drift apart. `mise tasks` lists everything.
 
 [tools]
+git-lfs = "3.8.1"
 go = "1.27.4"
 node = "26.13.1"
 "npm:@playwright/test" = "1.65.1"

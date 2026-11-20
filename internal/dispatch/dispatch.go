@@ -132,9 +132,10 @@ type repoState struct {
 
 type queuedEvent struct {
 	// ctx carries the event's values (not its cancellation) until its run starts.
-	ctx   context.Context
-	event webhook.Event
-	apply bool
+	ctx    context.Context
+	event  webhook.Event
+	apply  bool
+	repair bool
 }
 
 var _ webhook.Dispatcher = (*Dispatcher)(nil)
@@ -165,7 +166,7 @@ func (d *Dispatcher) applies(e webhook.Event) bool {
 	switch e.Kind {
 	case webhook.EventSync:
 		return true
-	case webhook.EventRefresh:
+	case webhook.EventRefresh, webhook.EventRepairLFS:
 		return false
 	case webhook.EventPush, webhook.EventScheduled, webhook.EventDelete:
 		return d.opts.Auto
@@ -189,13 +190,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	}
 
 	d.known[key] = e.Repository
-	current := &queuedEvent{ctx: ctx, event: e, apply: d.applies(e)}
+	current := &queuedEvent{ctx: ctx, event: e, apply: d.applies(e), repair: e.Kind == webhook.EventRepairLFS}
 
 	if state, busy := d.running[key]; busy {
 		if queued := state.next; queued != nil {
 			// A queued sync must survive a later event that only plans, or a
 			// push in review mode would silently cancel the operator's sync.
 			current.apply = current.apply || queued.apply
+			current.repair = current.repair || queued.repair
 			// The repository is gone once a deletion is queued; letting a later
 			// push replace it would recreate the target repository.
 			if queued.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
@@ -284,7 +286,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) error {
 // runLoop runs first, then any follow-up event queued meanwhile.
 func (d *Dispatcher) runLoop(first *queuedEvent) {
 	for current := first; current != nil; current = d.nextRun(current.event) {
-		d.run(current.ctx, current.event, current.apply)
+		d.run(current.ctx, current.event, current.apply, current.repair)
 	}
 }
 
@@ -312,7 +314,7 @@ func (d *Dispatcher) nextRun(e webhook.Event) *queuedEvent {
 
 // run plans e and, when apply is set, executes the plan: a deletion or a
 // mirror run.
-func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) {
+func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repair bool) {
 	// The run keeps the event's values but is cancelled by the dispatcher's
 	// lifetime, not by the (already finished) HTTP request.
 	ctx, cancel := context.WithCancel(eventCtx)
@@ -321,7 +323,7 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) 
 	defer stop()
 
 	name := e.Repository.FullName
-	d.opts.Observer.RunStarted(ctx, name, apply)
+	d.opts.Observer.RunStarted(ctx, name, apply || repair)
 	defer d.opts.Observer.RunFinished(ctx, name)
 
 	logger := d.eventLogger(e)
@@ -329,10 +331,10 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) 
 
 	runs := d.targetRuns(name)
 	p := d.plan(ctx, logger, runs, e)
-	p.Apply = apply
+	p.Apply = apply || repair
 	d.opts.Observer.PlanFinished(ctx, p)
 	logPlan(ctx, logger, p)
-	if apply && d.opts.BeforeApply != nil {
+	if (apply || repair) && d.opts.BeforeApply != nil {
 		if err := d.opts.BeforeApply(ctx, p); err != nil {
 			logger.ErrorContext(ctx, "sync blocked: persistent checkpoint failed")
 			for _, tr := range runs {
@@ -343,6 +345,8 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) 
 	}
 
 	switch {
+	case repair && !apply && !p.SourceDeleted:
+		d.repairLFS(ctx, logger, runs, e, start)
 	case !apply:
 		if p.SourceDeleted && p.Changes() == 0 {
 			d.forget(name)
@@ -352,7 +356,7 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) 
 			d.forget(name)
 		}
 	default:
-		d.apply(ctx, logger, runs, e, start)
+		d.apply(ctx, logger, runs, e, start, repair)
 	}
 	if apply && d.opts.VerifyAfterApply && ctx.Err() == nil {
 		d.verify(ctx, logger, e)
@@ -367,6 +371,7 @@ func (d *Dispatcher) apply(
 	runs []*targetRun,
 	e webhook.Event,
 	start time.Time,
+	repair bool,
 ) {
 	logger.InfoContext(ctx, "mirror started")
 
@@ -385,7 +390,7 @@ func (d *Dispatcher) apply(
 			}
 		}
 	})
-	d.mirror(ctx, logger, runs, e, start)
+	d.mirror(ctx, logger, runs, e, start, repair, true)
 	parallel(runs, func(tr *targetRun) {
 		if tr.typed() && tr.err == nil {
 			d.syncTarget(ctx, logger, tr)
@@ -408,10 +413,11 @@ func (d *Dispatcher) mirror(
 	runs []*targetRun,
 	e webhook.Event,
 	start time.Time,
+	repair, publish bool,
 ) {
 	var pending []*targetRun
 	for _, tr := range pendingRuns(runs) {
-		if tr.plan.NeedsPush() {
+		if tr.plan.NeedsPush() || repair {
 			pending = append(pending, tr)
 		}
 	}
@@ -435,8 +441,25 @@ func (d *Dispatcher) mirror(
 		}
 	}()
 
+	if err = d.fetchLFS(ctx, ws, e); err != nil {
+		for _, tr := range pending {
+			d.opts.Observer.SyncFinished(ctx, e.Repository.FullName, tr.cfg.Name, "lfs", err)
+			d.fail(ctx, logger, tr, start, err)
+		}
+		return
+	}
+
 	parallel(pending, func(tr *targetRun) {
 		pushStart := time.Now()
+		lfsErr := d.uploadLFS(ctx, ws, tr.cfg, e)
+		d.opts.Observer.SyncFinished(ctx, e.Repository.FullName, tr.cfg.Name, "lfs", lfsErr)
+		if lfsErr != nil {
+			d.fail(ctx, logger, tr, pushStart, lfsErr)
+			return
+		}
+		if !publish || !tr.plan.NeedsPush() {
+			return
+		}
 		var updates []mirror.RefUpdate
 		updates, tr.err = d.push(ctx, ws, tr.cfg, e)
 		d.finishTarget(ctx, logger, tr, pushStart, updates, tr.err)

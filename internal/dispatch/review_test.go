@@ -412,4 +412,6 @@ func (w manyRefsWorkspace) Push(context.Context, mirror.Remote) ([]mirror.RefUpd
 	return updates, nil
 }
 
-func (manyRefsWorkspace) Close() error { return nil }
+func (manyRefsWorkspace) FetchLFS(context.Context, mirror.Remote) error { return nil }
+func (manyRefsWorkspace) PushLFS(context.Context, mirror.Remote) error  { return nil }
+func (manyRefsWorkspace) Close() error                                  { return nil }

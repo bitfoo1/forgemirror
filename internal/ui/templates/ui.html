@@ -162,6 +162,10 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
           <input type="hidden" name="repo" value="{{$r.Name}}">
           <button type="submit" class="btn btn-small{{if eq $r.State "out-of-sync"}} btn-primary{{end}}">Sync</button>
         </form>
+        <form method="post" action="actions/repair-lfs" hx-post="actions/repair-lfs" hx-target="#repos" hx-swap="innerHTML">
+          <input type="hidden" name="repo" value="{{$r.Name}}">
+          <button type="submit" class="btn btn-small" title="Reconcile source-history LFS objects without publishing Git refs; may transfer large files">Repair LFS</button>
+        </form>
       </div>
       {{- end}}
     </div>

@@ -31,6 +31,7 @@ go.work.sum
 # Build output (mise run build, goreleaser)
 /bin/
 /dist/
+/cmd/forgemirror/kodata/
 
 # Local configuration (may contain secrets)
 /forgemirror.yaml

@@ -59,6 +59,14 @@ func (a *fakeActions) Sync(_ context.Context, name string) error {
 	return nil
 }
 
+func (a *fakeActions) RepairLFS(_ context.Context, name string) error {
+	if name != "acme/app" {
+		return control.ErrUnknownRepository
+	}
+	a.record("repair " + name)
+	return nil
+}
+
 func (a *fakeActions) RefreshAll(context.Context) (int, error) {
 	a.record("refresh all")
 
@@ -103,6 +111,18 @@ func TestActions(t *testing.T) {
 		wantCall   string
 		wantNotice string
 	}{
+		{
+			name: "repair LFS", path: "/actions/repair-lfs", repo: "acme/app", headers: htmx,
+			wantCode: http.StatusOK, wantCall: "repair acme/app", wantNotice: "LFS repair started for acme/app.",
+		},
+		{
+			name: "unknown repair", path: "/actions/repair-lfs", repo: "evil/repo", headers: htmx,
+			wantCode: http.StatusNotFound,
+		},
+		{
+			name: "repair without repository", path: "/actions/repair-lfs", headers: htmx,
+			wantCode: http.StatusBadRequest,
+		},
 		{
 			name: "sync one", path: "/actions/sync", repo: "acme/app", headers: htmx,
 			wantCode: http.StatusOK, wantCall: "sync acme/app", wantNotice: "Sync started for acme/app.",
@@ -192,9 +212,11 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 
 			actions := &fakeActions{}
 			f := newFixtureWith(t, nil, actions)
-			rec := f.post(t, "/actions/sync", url.Values{"repo": {"acme/app"}}, headers)
-			if rec.Code != http.StatusForbidden {
-				t.Errorf("status = %d, want 403", rec.Code)
+			for _, path := range []string{"/actions/sync", "/actions/repair-lfs"} {
+				rec := f.post(t, path, url.Values{"repo": {"acme/app"}}, headers)
+				if rec.Code != http.StatusForbidden {
+					t.Errorf("%s status = %d, want 403", path, rec.Code)
+				}
 			}
 			if got := actions.recorded(); len(got) != 0 {
 				t.Errorf("calls = %v, want none", got)

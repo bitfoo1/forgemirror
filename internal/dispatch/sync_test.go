@@ -361,7 +361,7 @@ func TestRunOrderCreatePushSettingsLabels(t *testing.T) {
 		}
 		ops = append(ops, s.operation)
 	}
-	if wantOps := []string{"create", "settings", "labels"}; !slices.Equal(ops, wantOps) {
+	if wantOps := []string{"create", "lfs", "settings", "labels"}; !slices.Equal(ops, wantOps) {
 		t.Errorf("sync operations = %v, want %v", ops, wantOps)
 	}
 }
@@ -467,8 +467,8 @@ func TestRunPushFailureSkipsSettings(t *testing.T) {
 	if got := gh.snapshot(); !slices.Equal(got, []string{"Get", "Labels", "push"}) {
 		t.Errorf("calls = %v, want only the plan reads and the push", got)
 	}
-	if _, syncs := obs.snapshot(); len(syncs) != 0 {
-		t.Errorf("sync results = %+v, want none", syncs)
+	if _, syncs := obs.snapshot(); len(syncs) != 1 || syncs[0].operation != "lfs" || syncs[0].err != nil {
+		t.Errorf("sync results = %+v, want only successful LFS upload", syncs)
 	}
 }
 

@@ -9,6 +9,7 @@ project_name: forgemirror
 before:
   hooks:
     - go mod download
+    - mise run lfs:stage
 
 builds:
   - id: forgemirror
@@ -30,6 +31,7 @@ kos:
     build: forgemirror
     # chainguard/git: non-root (65532), ships git and CA certificates. The
     # service shells out to git, so the default chainguard/static cannot work.
+    # The pinned static git-lfs binaries are staged into ko's kodata by lfs:stage.
     base_image: cgr.dev/chainguard/git:latest
     repositories:
       - git.bitfoo.de/dvonessen/forgemirror

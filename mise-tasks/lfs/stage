@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#MISE description="Stage the pinned Git LFS CLI for both runtime image architectures (daemonless)"
+set -euo pipefail
+
+version="$(mise current git-lfs)"
+module="github.com/git-lfs/git-lfs/v3@v${version}"
+source_dir="$(go mod download -json "${module}" | jq -r .Dir)"
+root="$(pwd)"
+for arch in amd64 arm64; do
+  destination="${root}/cmd/forgemirror/kodata/lfs/${arch}"
+  mkdir -p "${destination}"
+  (
+    cd "${source_dir}"
+    CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -mod=readonly -trimpath \
+      -ldflags="-s -w -X github.com/git-lfs/git-lfs/v3/config.GitVersion=${version}" \
+      -o "${destination}/git-lfs" .
+  )
+done
+cp "${source_dir}/LICENSE.md" "${root}/cmd/forgemirror/kodata/lfs/LICENSE.md"

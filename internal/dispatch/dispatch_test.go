@@ -33,9 +33,11 @@ type fakeMirrorer struct {
 	active  int
 	maxSeen int
 
-	cloneHook func(ctx context.Context, src mirror.Remote) error
-	pushHook  func(ctx context.Context, dst mirror.Remote) error
-	refsHook  func(ctx context.Context, r mirror.Remote) (map[string]string, error)
+	fetchLFSHook func(context.Context, mirror.Remote) error
+	pushLFSHook  func(context.Context, mirror.Remote) error
+	cloneHook    func(ctx context.Context, src mirror.Remote) error
+	pushHook     func(ctx context.Context, dst mirror.Remote) error
+	refsHook     func(ctx context.Context, r mirror.Remote) (map[string]string, error)
 }
 
 func (f *fakeMirrorer) Refs(ctx context.Context, r mirror.Remote) (map[string]string, error) {
@@ -78,6 +80,20 @@ func (f *fakeMirrorer) Clone(ctx context.Context, src mirror.Remote) (mirror.Wor
 }
 
 type fakeWorkspace struct{ f *fakeMirrorer }
+
+func (w *fakeWorkspace) FetchLFS(ctx context.Context, src mirror.Remote) error {
+	if w.f.fetchLFSHook != nil {
+		return w.f.fetchLFSHook(ctx, src)
+	}
+	return nil
+}
+
+func (w *fakeWorkspace) PushLFS(ctx context.Context, dst mirror.Remote) error {
+	if w.f.pushLFSHook != nil {
+		return w.f.pushLFSHook(ctx, dst)
+	}
+	return nil
+}
 
 func (w *fakeWorkspace) Push(ctx context.Context, dst mirror.Remote) ([]mirror.RefUpdate, error) {
 	w.f.enter()

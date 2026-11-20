@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -83,6 +84,7 @@ type gitWorkspace struct {
 	tmp, dir  string
 	closeOnce sync.Once
 	closeErr  error
+	lfsRefs   string
 }
 
 // Push implements [Workspace].
@@ -169,6 +171,17 @@ func (g *Git) run(ctx context.Context, dir string, remote Remote, args ...string
 // output runs git and returns stdout. Stderr is kept apart so that warnings
 // cannot corrupt parsed output; it only appears in errors.
 func (g *Git) output(ctx context.Context, dir string, remote Remote, args ...string) (string, error) {
+	return g.outputInput(ctx, dir, remote, "", nil, args...)
+}
+
+func (g *Git) outputInput(
+	ctx context.Context,
+	dir string,
+	remote Remote,
+	input string,
+	settings [][2]string,
+	args ...string,
+) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, g.opts.Timeout)
 	defer cancel()
 
@@ -178,6 +191,28 @@ func (g *Git) output(ctx context.Context, dir string, remote Remote, args ...str
 	cmd := exec.CommandContext(ctx, g.opts.Binary, args...) //nolint:gosec // see above
 	cmd.Dir = dir
 	cmd.Env = g.env(remote)
+	if len(settings) != 0 {
+		count := 0
+		if remote.Token != "" {
+			count = 1
+		}
+		for i, kv := range cmd.Env {
+			if strings.HasPrefix(kv, "GIT_CONFIG_COUNT=") {
+				cmd.Env = append(cmd.Env[:i], cmd.Env[i+1:]...)
+				break
+			}
+		}
+		for _, setting := range settings {
+			cmd.Env = append(
+				cmd.Env,
+				fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count, setting[0]),
+				fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", count, setting[1]),
+			)
+			count++
+		}
+		cmd.Env = append(cmd.Env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", count))
+	}
+	cmd.Stdin = strings.NewReader(input)
 	// Distinct buffers: exec copies each stream in its own goroutine, so a
 	// shared buffer would race.
 	cmd.Stdout = &stdout
@@ -224,7 +259,21 @@ func (g *Git) env(remote Remote) []string {
 	for _, kv := range inherited {
 		// Inherited GIT_* variables (GIT_DIR, GIT_CONFIG_*, …) could redirect
 		// or override what forgemirror tells git to do.
-		if !strings.HasPrefix(kv, "GIT_") {
+		if !strings.HasPrefix(kv, "GIT_") && !strings.HasPrefix(kv, "LFS_") {
+			if currentPath, pathOK := strings.CutPrefix(kv, "PATH="); pathOK {
+				for _, entry := range inherited {
+					if data, ok := strings.CutPrefix(entry, "KO_DATA_PATH="); ok {
+						kv = "PATH=" + filepath.Join(
+							data,
+							"lfs",
+							runtime.GOARCH,
+						) + string(
+							os.PathListSeparator,
+						) + currentPath
+						break
+					}
+				}
+			}
 			env = append(env, kv)
 		}
 	}

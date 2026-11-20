@@ -15,6 +15,41 @@ weight: 5
 
 See [Listeners](../configuration/#listeners) for why there are three.
 
+## Git LFS
+
+Git LFS mirroring is automatically enabled. Container images include the
+pinned official CLI; binary installations must provide `git-lfs` on PATH
+alongside Git. Startup fails with an actionable message if it is missing.
+
+Each changed Git mirror downloads LFS objects once, including objects in
+historical commits reachable from every published branch and tag, then
+uploads them before pushing each target's refs. Hidden forge refs are not
+published. Branch trigger filters do not restrict published branches.
+Repositories without LFS pointers need no LFS endpoint support.
+
+A failed upload blocks that target's Git push and later artifact/settings
+steps, while other targets continue. Missing source objects block affected
+pushes. Empty repositories created before a failure and already uploaded LFS
+objects are not rolled back. The target's `lfs` operation shows the result.
+
+Transfers use standard HTTP(S) forge LFS endpoints, not repository-supplied
+`.lfsconfig` endpoints or custom transfer agents. Signed storage URLs are
+handled by the CLI without forwarding forge credentials to other origins.
+Raw CLI diagnostics are not exposed or persisted by ForgeMirror.
+
+Initial transfers may require substantial temporary disk space under
+`mirror.work_dir` and a higher `mirror.timeout`. The timeout bounds each
+command. Temporary clones and downloaded objects are cleaned up after runs;
+there is no persistent local LFS cache.
+
+Ref equality does not prove LFS objects are available. Normal Refresh and
+unchanged scheduled checks stay cheap and do not audit LFS. Use **Repair
+LFS** in the UI to reconcile objects reachable from the current source
+branches and tags, without pushing Git refs or changing settings, releases
+or packages. It works in review mode as an explicit write action, requires
+existing target repositories, and does not restore destination-only history.
+**Sync all** is not an all-repository LFS audit.
+
 ## Metrics
 
 ForgeMirror records metrics with OpenTelemetry and exposes them in the
@@ -27,7 +62,7 @@ included as well.
 | `forgemirror_duration_seconds`          | histogram | `target`           | Duration of each push to a target; buckets from 0.5 s to 10 min |
 | `forgemirror_webhook_requests_total`    | counter   | `outcome`          | Webhook requests by [outcome](../forgejo-webhook/#responses) |
 | `forgemirror_active_operations`         | gauge     |                    | Mirror runs in progress                          |
-| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Forge API operations of typed targets; `operation` is `create`, `settings`, `labels`, `releases`, `packages` or `delete`, `status` is `success` or `failure`. Runs without changes for an operation are not counted |
+| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Sync operations; `operation` is `create`, `lfs`, `settings`, `labels`, `releases`, `packages` or `delete`, `status` is `success` or `failure`. Runs without changes for an operation are not counted |
 | `forgemirror_scheduled_runs_total`      | counter   | `status`           | Scheduled sweeps; `failure` means the source repositories could not be listed |
 | `target_info`                           | gauge     | `service_name`, `service_version` | Build information                 |
 

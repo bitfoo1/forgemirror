@@ -44,6 +44,7 @@ shows that plan as the diff.
 |-----------------|---------------------------------------------------------------|
 | **Refresh**     | Recomputes the diff of one repository. Changes nothing.       |
 | **Sync**        | Recomputes the plan of one repository and applies it.         |
+| **Repair LFS** | Reconciles source-history LFS objects on existing targets, even when refs match. Does not publish Git refs or unrelated changes; may transfer large files. |
 | **Refresh all** | Recomputes the diff of every repository the source lists and the [filter](../configuration/#filter) admits. |
 | **Sync all**    | Applies every repository whose diff shows changes, after a confirmation. Repositories never checked are not synced. |
 
@@ -57,8 +58,8 @@ rather than assuming everything is in sync.
 
 ### Review mode
 
-With `sync.auto: false` nothing reaches a target until you press *Sync* or
-*Sync all*. Pushes, scheduled runs and deletion events only refresh the
+With `sync.auto: false` nothing reaches a target until you press *Sync*,
+*Sync all*, or explicitly request *Repair LFS* (objects only). Pushes, scheduled runs and deletion events only refresh the
 diff. At startup every repository is planned once, so after a restart the
 page shows what is pending. Use it to check the first run of a new
 deployment before dozens of repositories are created on a public forge; see

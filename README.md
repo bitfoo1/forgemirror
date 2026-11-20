@@ -49,6 +49,9 @@ pushes to all targets in parallel; targets already in sync are skipped.
   branch, visibility, issues/wiki/pull requests and labels in line, with
   per-target defaults and per-repository overrides. A private repository
   never becomes public.
+- 🗃️ **Git LFS:** automatically copies objects from published branch/tag
+  history before pushing Git refs. A failed LFS upload holds back that target;
+  the UI can repair missing objects even when Git refs already match.
 - 📦 **Releases and container images:** copies releases with their
   attachments, and the container images of public repositories with their
   signatures, to the target forge and its registry.

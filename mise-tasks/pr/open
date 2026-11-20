@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Open a Forgejo pull request for a pushed feature branch"
+set -euo pipefail
+: "${FORGEJO_TOKEN:?FORGEJO_TOKEN is required}"
+head="${1:?head branch}" base="${2:?base branch}" title="${3:?title}" body_file="${4:?body file}"
+api="https://git.bitfoo.de/api/v1/repos/dvonessen/forgemirror"
+# Keep credentials off argv and disk; do not enable shell tracing here.
+forgejo() {
+  printf 'header = "Authorization: token %s"\n' "${FORGEJO_TOKEN}" |
+    curl --config - --silent --show-error --fail \
+      -H 'Content-Type: application/json' "${api}$1" "${@:2}"
+}
+existing="$(forgejo '/pulls?state=open&limit=100' | jq -r --arg head "${head}" '.[] | select(.head.ref == $head) | .html_url')"
+if [[ -n "${existing}" ]]; then printf '%s\n' "${existing}"; exit 0; fi
+payload="$(jq -n --arg head "${head}" --arg base "${base}" --arg title "${title}" --rawfile body "${body_file}" '{head:$head,base:$base,title:$title,body:$body}')"
+forgejo '/pulls' -X POST --data "${payload}" | jq -r .html_url

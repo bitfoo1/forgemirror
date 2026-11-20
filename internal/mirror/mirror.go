@@ -34,6 +34,11 @@ type Mirrorer interface {
 
 // Workspace is a local mirror clone.
 type Workspace interface {
+	// FetchLFS downloads objects reachable from the workspace's published refs.
+	// Call once before concurrent PushLFS calls.
+	FetchLFS(ctx context.Context, src Remote) error
+	// PushLFS uploads the downloaded objects before publishing Git refs.
+	PushLFS(ctx context.Context, dst Remote) error
 	// Push makes dst's branches and tags identical to the clone's: it
 	// creates, force-updates and deletes refs as needed, and returns the refs
 	// it changed. Safe for concurrent use by multiple goroutines.

@@ -63,6 +63,7 @@ var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
 type Actions interface {
+	RepairLFS(ctx context.Context, fullName string) error
 	Refresh(ctx context.Context, fullName string) error
 	Sync(ctx context.Context, fullName string) error
 	RefreshAll(ctx context.Context) (int, error)
@@ -135,6 +136,7 @@ func Handler(opts Options) (http.Handler, error) {
 	if opts.Actions != nil {
 		mux.HandleFunc("POST /actions/refresh", h.action(false))
 		mux.HandleFunc("POST /actions/sync", h.action(true))
+		mux.HandleFunc("POST /actions/repair-lfs", h.action(true))
 	}
 
 	// Safe methods pass unchanged; a POST from another origin is rejected
@@ -179,7 +181,19 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 			return
 		}
 
-		notice, err := h.runAction(r.Context(), sync, r.PostForm.Get("repo"))
+		var notice string
+		var err error
+		if r.URL.Path == "/actions/repair-lfs" {
+			name := r.PostForm.Get("repo")
+			if name == "" {
+				http.Error(w, "repository required", http.StatusBadRequest)
+				return
+			}
+			err = h.opts.Actions.RepairLFS(r.Context(), name)
+			notice = "LFS repair started for " + name + "."
+		} else {
+			notice, err = h.runAction(r.Context(), sync, r.PostForm.Get("repo"))
+		}
 		switch {
 		case errors.Is(err, control.ErrUnknownRepository):
 			http.Error(w, "unknown repository", http.StatusNotFound)

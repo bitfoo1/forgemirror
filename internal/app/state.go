@@ -18,6 +18,10 @@ import (
 	"go.bitfoo.de/forgemirror/internal/ui"
 )
 
+func checkLFS(ctx context.Context, cfg *config.Config) error {
+	return mirror.NewGit(mirror.GitOptions{Binary: cfg.Mirror.GitBinary, Timeout: cfg.Mirror.Timeout}).CheckLFS(ctx)
+}
+
 func newDispatcher(
 	cfg *config.Config,
 	logger *slog.Logger,

@@ -62,6 +62,8 @@ const (
 	EventRefresh
 	// EventSync computes and applies the plan, in every sync mode (UI sync).
 	EventSync
+	// EventRepairLFS reconciles LFS objects without publishing Git refs.
+	EventRepairLFS
 )
 
 // Dispatcher runs the mirror work for an event. Dispatch must not block on
