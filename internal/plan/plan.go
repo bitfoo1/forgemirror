@@ -25,7 +25,10 @@ const (
 // Repo is the plan of one source repository.
 type Repo struct {
 	// Name is the full name, "owner/name".
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	Trigger  string `json:"trigger,omitempty"`
+	Retry    bool   `json:"retry,omitempty"`
+	ParentID uint64 `json:"parent_id,omitempty"`
 	// At is when the plan was computed.
 	At time.Time `json:"at"`
 	// Apply reports whether the run applied the plan or only computed it.
@@ -58,6 +61,7 @@ func (r Repo) Failed() bool {
 // Target is the plan for one target.
 type Target struct {
 	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 	// Create means the target repository is missing and will be created.
 	Create bool `json:"create"`
 	// Privatise means the public target repository is made private before

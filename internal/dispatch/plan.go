@@ -16,7 +16,13 @@ import (
 // calls only. It fills the targetRuns, which the apply steps reuse, and
 // returns the plan for observers and the log.
 func (d *Dispatcher) plan(ctx context.Context, logger *slog.Logger, runs []*targetRun, e webhook.Event) plan.Repo {
-	p := plan.Repo{Name: e.Repository.FullName, At: d.opts.Now()}
+	p := plan.Repo{
+		Name:     e.Repository.FullName,
+		At:       d.opts.Now(),
+		Trigger:  eventTrigger(e),
+		Retry:    e.Retry,
+		ParentID: e.ParentID,
+	}
 
 	src, err := d.loadSource(ctx, e, runs)
 	if e.Kind == webhook.EventDelete || errors.Is(err, forge.ErrNotFound) {
@@ -28,6 +34,9 @@ func (d *Dispatcher) plan(ctx context.Context, logger *slog.Logger, runs []*targ
 
 	for _, tr := range runs {
 		tr.plan.Name = tr.cfg.Name
+		if remote, remoteErr := targetRemote(tr.cfg, e); remoteErr == nil {
+			tr.plan.URL = remote.URL
+		}
 		if tr.err != nil {
 			tr.plan.Error = tr.err.Error()
 		}

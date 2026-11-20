@@ -77,13 +77,15 @@ probes, Prometheus scrape configs and NetworkPolicies, or set
 ```yaml
 state:
   database: data/state.db # default; relative to the process working directory
+  history_limit: 50       # retained attempts per repository; 1–1000
+  history_retention: 720h # age limit; must be positive
 ```
 
 The SQLite database is mandatory and enabled by default. An empty path is
 rejected; there is no in-memory mode. Container and Helm/Kubernetes examples
 use `/var/lib/forgemirror/state.db` on persistent storage instead.
 
-SQLite retains the latest sync attempt, its per-target results and the latest
+SQLite retains bounded sync history, the latest sync attempt, its per-target results and the latest
 read-only comparison per repository, independently of whether the UI is enabled.
 Set `source.base_url` and `source.token` (or `source.token_file`) so startup
 recovery can rediscover repositories under current filters. Webhook-only

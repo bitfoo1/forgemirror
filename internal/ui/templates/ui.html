@@ -169,6 +169,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       {{- with $r.Current}}
       <span class="checked muted">checked <time datetime="{{iso .At}}">{{when .At}}</time></span>
       {{- end}}
+      <a class="btn btn-small" href="history?repo={{urlquery $r.Name}}">History</a>
       {{- if and $.Actions $r.Actionable}}
       <div class="repo-actions" data-live-key="repository-actions" hx-sync="#repos:queue all">
         <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">

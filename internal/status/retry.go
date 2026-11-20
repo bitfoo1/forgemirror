@@ -28,6 +28,11 @@ func (s *Store) RecordRetry(ctx context.Context, repo, target, kind string, auto
 	previous := s.retries
 	index := slices.IndexFunc(previous, func(e retry.Entry) bool { return e.Repo == repo && e.Target == target })
 	entry := retry.Entry{Repo: repo, Target: target, Kind: kind, Automatic: automatic}
+	s.mu.Lock()
+	if r, ok := s.repos[repo]; ok && r.attempt != nil {
+		entry.AttemptID = r.attempt.ID
+	}
+	s.mu.Unlock()
 	if index >= 0 {
 		// Object-only repair must not cancel an outstanding publication retry.
 		if kind == retry.KindRepair && previous[index].Kind != retry.KindRepair {

@@ -34,6 +34,8 @@ ui:
 # startup rediscovery. Mount a persistent local volume; one process per file.
 state:
   database: data/state.db # required; mount persistent storage here in containers
+  history_limit: 50 # per repository, maximum 1000
+  history_retention: 720h # prune older attempts on writes/startup
 
 log:
   level: info # debug, info, warn, error

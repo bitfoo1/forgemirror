@@ -80,9 +80,15 @@ func newController(
 }
 
 func openStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*status.Store, func() error, error) {
-	opts := status.Options{ScheduleInterval: cfg.Sync.Schedule, Redact: stateRedactor(cfg), OnError: func() {
-		logger.ErrorContext(ctx, "persistent state write failed; sync durability is unavailable")
-	}}
+	opts := status.Options{
+		HistoryLimit:     cfg.State.HistoryLimit,
+		HistoryRetention: cfg.State.HistoryRetention,
+		ScheduleInterval: cfg.Sync.Schedule,
+		Redact:           stateRedactor(cfg),
+		OnError: func() {
+			logger.ErrorContext(ctx, "persistent state write failed; sync durability is unavailable")
+		},
+	}
 	db, err := state.Open(ctx, cfg.State.Database, strings.TrimRight(cfg.Source.BaseURL, "/"))
 	if err != nil {
 		return nil, nil, err

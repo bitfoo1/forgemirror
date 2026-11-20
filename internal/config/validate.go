@@ -116,6 +116,13 @@ func (c *Config) validateSync() []error {
 		errs = append(errs, fmt.Errorf("%s: %w", key, err))
 	}
 
+	const maxHistoryLimit = 1000
+	if c.State.HistoryLimit <= 0 || c.State.HistoryLimit > maxHistoryLimit {
+		add("state.history_limit", errors.New("must be between 1 and 1000"))
+	}
+	if c.State.HistoryRetention <= 0 {
+		add("state.history_retention", errMustBePositive)
+	}
 	if strings.TrimSpace(c.State.Database) == "" {
 		add("state.database", errRequired)
 	}

@@ -132,6 +132,7 @@ func Handler(opts Options) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.render("page"))
+	mux.HandleFunc("GET /history", h.history)
 	mux.HandleFunc("GET /fragments/overview", h.render("overview"))
 	mux.HandleFunc("GET /fragments/repos", h.render("repos"))
 	mux.HandleFunc("GET /fragments/logs", h.render("logs"))
@@ -255,24 +256,29 @@ type level struct {
 }
 
 type pageData struct {
-	Version     string
-	Refresh     time.Duration
-	Snapshot    status.Snapshot
-	Types       []targetType
-	TargetNames []string
-	Pauses      []status.Pause
-	Retries     []retry.Entry
-	OnPush      bool
-	Auto        bool
-	Actions     bool
-	Running     int
-	Queued      int
-	Repos       []repoView
-	Counts      counts
-	Notice      string
-	Config      string
-	Logs        []logging.Entry
-	Levels      []level
+	HistoryRepo  string
+	History      []historyView
+	HistoryTotal int
+	HistoryPrev  int
+	HistoryNext  int
+	Version      string
+	Refresh      time.Duration
+	Snapshot     status.Snapshot
+	Types        []targetType
+	TargetNames  []string
+	Pauses       []status.Pause
+	Retries      []retry.Entry
+	OnPush       bool
+	Auto         bool
+	Actions      bool
+	Running      int
+	Queued       int
+	Repos        []repoView
+	Counts       counts
+	Notice       string
+	Config       string
+	Logs         []logging.Entry
+	Levels       []level
 }
 
 // counts summarises the repository states for the section header.

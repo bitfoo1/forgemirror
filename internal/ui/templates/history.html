@@ -1,0 +1,36 @@
+{{define "history" -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sync history · {{.HistoryRepo}} · ForgeMirror</title>
+<link rel="stylesheet" href="static/style.css">
+<script src="static/app.js"></script>
+</head>
+<body>
+<header class="topbar"><h1>Sync history</h1><a class="btn" href="./">Back to repositories</a></header>
+<main>
+<section class="card"><h2>{{.HistoryRepo}}</h2><p class="muted">{{.HistoryTotal}} retained attempts · newest first. Planned changes are intentions; operation results show what completed.</p></section>
+{{range .History}}
+<section class="card" id="attempt-{{.ID}}">
+<h2>#{{.ID}} · {{.Status}}</h2>
+<p>{{with .Plan.Trigger}}{{.}}{{else}}legacy run{{end}}{{if .ParentID}} · retry of #{{.ParentID}}{{end}} · <time datetime="{{iso .Started}}">{{when .Started}}</time> · {{round .Duration}}</p>
+{{with .Error}}<p class="fail">{{.}}</p>{{end}}
+<details><summary>Intended changes and operation outcomes</summary>
+{{range .Targets}}
+{{with .Plan}}{{with .URL}}<p><a href="{{.}}" rel="noreferrer">Destination repository</a></p>{{end}}{{end}}
+{{template "target" .}}
+{{end}}
+</details>
+</section>
+{{else}}<section class="card"><p>No retained attempts yet.</p></section>{{end}}
+<nav class="card toolbar" aria-label="History pages">
+{{if .HistoryPrev}}<a class="btn" href="history?repo={{urlquery .HistoryRepo}}&amp;page={{.HistoryPrev}}">Previous page</a>{{end}}
+{{if .HistoryNext}}<a class="btn" href="history?repo={{urlquery .HistoryRepo}}&amp;page={{.HistoryNext}}">Next page</a>{{end}}
+</nav>
+</main>
+</body>
+</html>
+{{- end}}

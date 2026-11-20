@@ -20,6 +20,8 @@ type Persistence interface {
 // Attempt retains the intended changes and only the outcomes of this application.
 // A published attempt is copied so later refreshes cannot alter its results.
 type Attempt struct {
+	ID       uint64    `json:"id,omitempty"`
+	ParentID uint64    `json:"parent_id,omitempty"`
 	Plan     plan.Repo `json:"plan"`
 	Started  time.Time `json:"started"`
 	Finished time.Time `json:"finished"`
@@ -29,8 +31,10 @@ type Attempt struct {
 }
 
 const (
-	persistTimeout     = 5 * time.Second
-	attemptInterrupted = "interrupted"
+	persistTimeout      = 5 * time.Second
+	attemptInterrupted  = "interrupted"
+	attemptRunning      = "running"
+	statusRecordVersion = 2
 )
 
 type record struct {
@@ -128,7 +132,9 @@ func (s *Store) persist(ctx context.Context, name string) error {
 	for _, t := range r.targets {
 		targets = append(targets, *t)
 	}
-	data, err := json.Marshal(record{Version: 1, Repo: Repo{
+	s.pruneHistory(r)
+	data, err := json.Marshal(record{Version: statusRecordVersion, Repo: Repo{
+		Sequence: r.sequence, History: r.history,
 		Name: name, Plan: r.plan, Current: r.current, LastAttempt: r.attempt, Stale: true,
 		LastStarted: r.lastStarted, LastFinished: r.lastFinished, Targets: targets,
 	}})
@@ -172,21 +178,25 @@ func (s *Store) Restore(ctx context.Context) error {
 		if err = json.Unmarshal(data, &saved); err != nil {
 			return errors.New("invalid persistent status record")
 		}
-		if saved.Version != 1 || saved.Repo.Name != name {
+		if (saved.Version != 1 && saved.Version != statusRecordVersion) || saved.Repo.Name != name {
 			return errors.New("unsupported persistent status record")
 		}
 		r := s.repo(name)
 		r.plan, r.current, r.attempt, r.stale = saved.Repo.Plan, saved.Repo.Current, saved.Repo.LastAttempt, true
 		r.lastStarted, r.lastFinished = saved.Repo.LastStarted, saved.Repo.LastFinished
+		r.sequence, r.history = saved.Repo.Sequence, saved.Repo.History
+		s.restoreHistory(r)
 		for _, t := range saved.Repo.Targets {
 			r.targets[t.Name] = &t
 		}
-		if r.attempt != nil && r.attempt.Status == "running" {
+		if r.attempt != nil && r.attempt.Status == attemptRunning {
 			r.attempt.Status = attemptInterrupted
 			r.attempt.Finished = s.now()
-			if err = s.persist(ctx, name); err != nil {
-				return err
-			}
+			s.retainAttempt(r)
+		}
+		// Persist migration and age pruning even for an otherwise idle repository.
+		if err = s.persist(ctx, name); err != nil {
+			return err
 		}
 	}
 	return nil

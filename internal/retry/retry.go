@@ -20,6 +20,7 @@ const (
 
 // Entry is durable scheduling metadata, never an executable saved plan or URL.
 type Entry struct {
+	AttemptID uint64    `json:"attempt_id,omitempty"`
 	Repo      string    `json:"repo"`
 	Target    string    `json:"target"`
 	Kind      string    `json:"kind"`

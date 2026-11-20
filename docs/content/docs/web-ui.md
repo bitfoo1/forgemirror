@@ -95,6 +95,27 @@ ui:
 
 In auto mode (the default) the buttons work too: *Sync* is "sync now".
 
+## Sync history timeline
+
+Each repository's **History** link opens a read-only timeline of sync and LFS
+repair attempts, newest first, with 20 attempts per page. It shows the trigger,
+stable repository-local attempt number, duration, outcome and retry parent when
+known. Expand an attempt to see intended changes alongside the actual target
+operation results, including partial failures and LFS. Destination links use
+the configured Git URL; no forge-specific commit URL is guessed for custom
+servers.
+
+History is durable, not a work queue. Read-only refreshes are not recorded as
+applications. Interrupted work is labelled **interrupted**, never invented as
+success. A retry parent may be outside the retention window. Existing latest
+attempts are adopted when older state is loaded.
+
+Defaults retain the most recent 50 attempts per repository, with a 30-day age
+limit. Configure `state.history_limit` (1–1000) and positive
+`state.history_retention` (for example `720h`). Retention is applied when state
+is written or loaded; the page also hides expired entries. Idle on-disk records
+are not continuously erased. Logs remain separate and in memory.
+
 ## Enable it
 
 ```yaml
@@ -117,9 +138,8 @@ Use a persistent local volume. Source API credentials enable automatic
 rediscovery; webhook-only setups wait for newly admitted webhooks instead.
 On startup, saved diffs are marked stale and rechecked without applying writes;
 uncompleted attempts become **interrupted**. Restored repositories only regain
-action buttons after current source discovery and filters admit them. One latest
-attempt and one comparison are retained per repository, including deletion
-history, not unlimited history. Logs remain in memory; metrics stay in
+action buttons after current source discovery and filters admit them. The latest attempt, current comparison and bounded timeline are retained per
+repository, including deletion history. Logs remain in memory; metrics stay in
 [Prometheus](../operations/#metrics).
 
 ## Secure it

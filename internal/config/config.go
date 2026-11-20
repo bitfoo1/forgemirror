@@ -71,7 +71,9 @@ type Config struct {
 // State configures optional restart-safe status storage.
 type State struct {
 	// Database is a required local SQLite path; defaults to data/state.db.
-	Database string `koanf:"database"`
+	Database         string        `koanf:"database"`
+	HistoryLimit     int           `koanf:"history_limit"`
+	HistoryRetention time.Duration `koanf:"history_retention"`
 }
 
 // Server configures the webhook and ops HTTP listeners.
@@ -264,6 +266,11 @@ func FindFile(candidates []string) (string, error) {
 	return "", nil
 }
 
+const (
+	defaultHistoryLimit     = 50
+	defaultHistoryRetention = 720 * time.Hour
+)
+
 func defaults() map[string]any {
 	return map[string]any{
 		"server.listen_address":      ":8081",
@@ -271,6 +278,8 @@ func defaults() map[string]any {
 		"server.read_header_timeout": defaultReadHeaderTimeout,
 		"server.shutdown_timeout":    defaultShutdownTimeout,
 		"state.database":             "data/state.db",
+		"state.history_limit":        defaultHistoryLimit,
+		"state.history_retention":    defaultHistoryRetention,
 		"ui.enabled":                 false,
 		"ui.listen_address":          ":8080",
 		"ui.log_entries":             defaultUILogEntries,

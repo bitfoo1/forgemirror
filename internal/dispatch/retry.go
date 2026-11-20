@@ -76,6 +76,7 @@ func (d *Dispatcher) RetryDue(ctx context.Context) {
 				Kind:       kind,
 				Target:     entry.Target,
 				Retry:      true,
+				ParentID:   entry.AttemptID,
 				Operator:   !entry.Automatic,
 				Delivery:   "retry",
 			},

@@ -28,6 +28,8 @@ const maxPlanRefs = 100
 
 // Options configures a [Store].
 type Options struct {
+	HistoryLimit       int
+	HistoryRetention   time.Duration
 	Persistence        Persistence
 	ControlPersistence Persistence
 	OnError            func()
@@ -43,23 +45,27 @@ type Options struct {
 // implements dispatch.Observer and schedule.Observer and is safe for
 // concurrent use.
 type Store struct {
-	controls    Persistence
-	controlMu   sync.RWMutex
-	pauses      []Pause
-	retries     []retry.Entry
-	persistence Persistence
-	redact      func([]byte) ([]byte, error)
-	persistErr  string
-	onError     func()
-	now         func() time.Time
-	started     time.Time
-	mu          sync.Mutex
-	repos       map[string]*repoState
-	schedule    Schedule
+	historyLimit     int
+	historyRetention time.Duration
+	controls         Persistence
+	controlMu        sync.RWMutex
+	pauses           []Pause
+	retries          []retry.Entry
+	persistence      Persistence
+	redact           func([]byte) ([]byte, error)
+	persistErr       string
+	onError          func()
+	now              func() time.Time
+	started          time.Time
+	mu               sync.Mutex
+	repos            map[string]*repoState
+	schedule         Schedule
 }
 
 type repoState struct {
-	running int
+	sequence uint64
+	history  []Attempt
+	running  int
 	// applying is set while the running run applies its plan.
 	applying     bool
 	attempt      *Attempt
@@ -88,8 +94,10 @@ type Snapshot struct {
 // Repo is the state of one source repository.
 type Repo struct {
 	// Name is the full name, "owner/name".
-	Name    string `json:"name"`
-	Running bool   `json:"-"`
+	Name     string    `json:"name"`
+	Sequence uint64    `json:"sequence,omitempty"`
+	History  []Attempt `json:"history,omitempty"`
+	Running  bool      `json:"-"`
 	// Applying is set while the running run applies its plan; a running run
 	// without it only plans.
 	Applying     bool      `json:"-"`
@@ -143,15 +151,25 @@ func New(opts Options) *Store {
 		now = time.Now
 	}
 
+	const defaultHistoryLimit = 50
+	const defaultHistoryRetention = 720 * time.Hour
+	if opts.HistoryLimit <= 0 {
+		opts.HistoryLimit = defaultHistoryLimit
+	}
+	if opts.HistoryRetention <= 0 {
+		opts.HistoryRetention = defaultHistoryRetention
+	}
 	return &Store{
-		now:         now,
-		persistence: opts.Persistence,
-		controls:    opts.ControlPersistence,
-		onError:     opts.OnError,
-		redact:      opts.Redact,
-		started:     now(),
-		repos:       make(map[string]*repoState),
-		schedule:    Schedule{Interval: opts.ScheduleInterval},
+		historyLimit:     opts.HistoryLimit,
+		historyRetention: opts.HistoryRetention,
+		now:              now,
+		persistence:      opts.Persistence,
+		controls:         opts.ControlPersistence,
+		onError:          opts.OnError,
+		redact:           opts.Redact,
+		started:          now(),
+		repos:            make(map[string]*repoState),
+		schedule:         Schedule{Interval: opts.ScheduleInterval},
 	}
 }
 
@@ -200,7 +218,14 @@ func (s *Store) PlanFinished(ctx context.Context, p plan.Repo) {
 	r := s.repo(p.Name)
 	r.plan = &kept
 	if p.Apply {
-		r.attempt = &Attempt{Plan: kept, Started: r.lastStarted, Status: "running"}
+		r.sequence++
+		r.attempt = &Attempt{
+			ID:       r.sequence,
+			ParentID: kept.ParentID,
+			Plan:     kept,
+			Started:  r.lastStarted,
+			Status:   attemptRunning,
+		}
 		r.stale = true
 	} else {
 		r.current = &kept
@@ -229,10 +254,14 @@ func (s *Store) RunFinished(ctx context.Context, repo string) {
 			r.stale = true
 		}
 	}
+	if r.applying && r.attempt != nil {
+		s.retainAttempt(r)
+	}
 	if err := s.persist(ctx, repo); err != nil && r.applying && r.attempt != nil {
 		r.attempt.Status = attemptInterrupted
 		r.attempt.Error = "Sync completion could not be saved; verification is required."
 		r.stale = true
+		s.retainAttempt(r)
 	}
 	r.applying = false
 

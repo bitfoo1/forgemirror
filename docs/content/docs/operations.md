@@ -208,8 +208,8 @@ directory, including any remaining SQLite sidecars, before starting it again.
 For an online backup use a SQLite-aware backup facility; do **not** copy only
 `state.db` while WAL writes are active. Restore while ForgeMirror is stopped,
 restore ownership for its runtime user, and keep file permissions restrictive.
-Restored diffs are verified before being treated as current. This is bounded
-review history, not a complete audit trail; ship logs externally for that.
+Restored diffs are verified before being treated as current. This is a bounded sync timeline, not a complete audit trail; retention limits
+remove old attempts. Ship logs externally for long-term auditing.
 
 ## Troubleshooting
 

@@ -41,7 +41,8 @@ type Event struct {
 	// Target limits an operator-requested run; empty means all destinations.
 	Target string
 	// Retry preserves the existing retry budget instead of starting a new one.
-	Retry bool
+	Retry    bool
+	ParentID uint64
 	// Operator retains explicit write intent when events coalesce.
 	Operator bool
 	// Ref is the pushed ref, e.g. "refs/heads/main".
