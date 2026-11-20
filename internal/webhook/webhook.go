@@ -38,6 +38,8 @@ const (
 // Event is an authenticated push that passed the filter.
 type Event struct {
 	Repository repo.Repository
+	// Target limits an operator-requested run; empty means all destinations.
+	Target string
 	// Ref is the pushed ref, e.g. "refs/heads/main".
 	Ref string
 	// Delivery is Forgejo's delivery ID, for correlating logs.

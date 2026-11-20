@@ -49,6 +49,12 @@ func newDispatcher(
 		Observer:         observer,
 		BeforeApply:      checkpoint,
 		VerifyAfterApply: store != nil,
+		Mutation: func(repo, target string) (func(), error) {
+			if store == nil {
+				return func() {}, nil
+			}
+			return store.BeginMutation(repo, target)
+		},
 	})
 }
 
@@ -67,6 +73,8 @@ func newController(
 		Source: clients.source, Filter: flt, Dispatcher: dispatcher,
 		Pending: func() []string { return ui.Pending(store.Snapshot()) }, Logger: logger,
 		CheckCloneURL: cfg.Source.CheckCloneURL,
+		Store:         store,
+		Targets:       cfg.Targets,
 	})
 }
 
@@ -85,6 +93,7 @@ func openStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*
 			return nil, nil, err
 		}
 		opts.Persistence = db
+		opts.ControlPersistence = db.Namespace("controls")
 	}
 	store := status.New(opts)
 	if err := store.Restore(ctx); err != nil {

@@ -180,22 +180,14 @@ func (d *Dispatcher) privatise(ctx context.Context, logger *slog.Logger, tr *tar
 
 // syncTarget brings settings and labels of a pushed target in line.
 func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *targetRun) {
-	release, slotErr := d.acquireAPI(ctx)
-	if slotErr != nil {
-		tr.syncErr = fmt.Errorf("target %q: %w", tr.cfg.Name, slotErr)
-
-		return
-	}
-	defer release()
-
 	var errs []error
 
-	if err := d.syncSettings(ctx, logger, tr); err != nil {
+	if err := d.mutateAPI(ctx, tr, func() error { return d.syncSettings(ctx, logger, tr) }); err != nil {
 		errs = append(errs, fmt.Errorf("target %q: updating settings: %w", tr.cfg.Name, err))
 	}
 
 	if tr.syncLabels {
-		if err := d.syncLabels(ctx, logger, tr); err != nil {
+		if err := d.mutateAPI(ctx, tr, func() error { return d.syncLabels(ctx, logger, tr) }); err != nil {
 			errs = append(errs, fmt.Errorf("target %q: syncing labels: %w", tr.cfg.Name, err))
 		}
 	}
@@ -206,13 +198,13 @@ func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *ta
 	defer cancel()
 
 	if len(tr.plan.Releases) > 0 {
-		if err := d.syncReleases(transferCtx, logger, tr); err != nil {
+		if err := d.mutateAPI(ctx, tr, func() error { return d.syncReleases(transferCtx, logger, tr) }); err != nil {
 			errs = append(errs, fmt.Errorf("target %q: syncing releases: %w", tr.cfg.Name, err))
 		}
 	}
 
 	if len(tr.plan.Packages) > 0 {
-		if err := d.syncPackages(transferCtx, logger, tr); err != nil {
+		if err := d.mutateAPI(ctx, tr, func() error { return d.syncPackages(transferCtx, logger, tr) }); err != nil {
 			errs = append(errs, fmt.Errorf("target %q: syncing packages: %w", tr.cfg.Name, err))
 		}
 	}
@@ -330,7 +322,7 @@ func (d *Dispatcher) deleteRepos(ctx context.Context, logger *slog.Logger, runs 
 }
 
 func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
-	err := d.deleteAt(ctx, tr.api, tr.addr)
+	err := d.mutate(tr, func() error { return d.deleteAt(ctx, tr.api, tr.addr) })
 	// A repository that is already gone is exactly the desired outcome.
 	if errors.Is(err, forge.ErrNotFound) {
 		err = nil

@@ -63,6 +63,8 @@ var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
 type Actions interface {
+	Pause(ctx context.Context, repo, target, reason string, until time.Time) error
+	Resume(ctx context.Context, repo, target string) error
 	RepairLFS(ctx context.Context, fullName string) error
 	Refresh(ctx context.Context, fullName string) error
 	Sync(ctx context.Context, fullName string) error
@@ -137,6 +139,7 @@ func Handler(opts Options) (http.Handler, error) {
 		mux.HandleFunc("POST /actions/refresh", h.action(false))
 		mux.HandleFunc("POST /actions/sync", h.action(true))
 		mux.HandleFunc("POST /actions/repair-lfs", h.action(true))
+		mux.HandleFunc("POST /actions/pause", h.action(true))
 	}
 
 	// Safe methods pass unchanged; a POST from another origin is rejected
@@ -183,7 +186,10 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 
 		var notice string
 		var err error
-		if r.URL.Path == "/actions/repair-lfs" {
+		switch r.URL.Path {
+		case "/actions/pause":
+			notice, err = h.pauseAction(r)
+		case "/actions/repair-lfs":
 			name := r.PostForm.Get("repo")
 			if name == "" {
 				http.Error(w, "repository required", http.StatusBadRequest)
@@ -191,11 +197,11 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 			}
 			err = h.opts.Actions.RepairLFS(r.Context(), name)
 			notice = "LFS repair started for " + name + "."
-		} else {
+		default:
 			notice, err = h.runAction(r.Context(), sync, r.PostForm.Get("repo"))
 		}
 		switch {
-		case errors.Is(err, control.ErrUnknownRepository):
+		case errors.Is(err, control.ErrUnknownRepository), errors.Is(err, control.ErrUnknownTarget):
 			http.Error(w, "unknown repository", http.StatusNotFound)
 
 			return
@@ -248,21 +254,23 @@ type level struct {
 }
 
 type pageData struct {
-	Version  string
-	Refresh  time.Duration
-	Snapshot status.Snapshot
-	Types    []targetType
-	OnPush   bool
-	Auto     bool
-	Actions  bool
-	Running  int
-	Queued   int
-	Repos    []repoView
-	Counts   counts
-	Notice   string
-	Config   string
-	Logs     []logging.Entry
-	Levels   []level
+	Version     string
+	Refresh     time.Duration
+	Snapshot    status.Snapshot
+	Types       []targetType
+	TargetNames []string
+	Pauses      []status.Pause
+	OnPush      bool
+	Auto        bool
+	Actions     bool
+	Running     int
+	Queued      int
+	Repos       []repoView
+	Counts      counts
+	Notice      string
+	Config      string
+	Logs        []logging.Entry
+	Levels      []level
 }
 
 // counts summarises the repository states for the section header.
@@ -306,11 +314,15 @@ func (h *handler) data(r *http.Request) pageData {
 		Version:  h.opts.Version,
 		Refresh:  refresh,
 		Snapshot: h.opts.Store.Snapshot(),
+		Pauses:   h.opts.Store.Pauses(),
 		Types:    h.types,
 		OnPush:   h.opts.Config.Sync.OnPush,
 		Auto:     h.opts.Config.Sync.Auto,
 		Actions:  h.opts.Actions != nil,
 		Config:   h.config,
+	}
+	for _, target := range h.opts.Config.Targets {
+		d.TargetNames = append(d.TargetNames, target.Name)
 	}
 	for _, q := range queued {
 		d.Running++
@@ -321,6 +333,11 @@ func (h *handler) data(r *http.Request) pageData {
 	d.Repos, d.Counts = repoViews(d.Snapshot.Repos, queued)
 	for i := range d.Repos {
 		d.Repos[i].Actionable = h.opts.Known == nil || h.opts.Known(d.Repos[i].Name)
+		for j := range d.Repos[i].Targets {
+			if pause, ok := h.opts.Store.Paused(d.Repos[i].Name, d.Repos[i].Targets[j].Name); ok {
+				d.Repos[i].Targets[j].Pause = &pause
+			}
+		}
 	}
 
 	minLevel := parseLevel(r.URL.Query().Get("level"))

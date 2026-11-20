@@ -27,8 +27,9 @@ const maxPlanRefs = 100
 
 // Options configures a [Store].
 type Options struct {
-	Persistence Persistence
-	OnError     func()
+	Persistence        Persistence
+	ControlPersistence Persistence
+	OnError            func()
 	// Redact removes configured secrets from serialized state before it reaches disk.
 	Redact func([]byte) ([]byte, error)
 	// ScheduleInterval is sync.schedule; 0 means no schedule.
@@ -41,6 +42,9 @@ type Options struct {
 // implements dispatch.Observer and schedule.Observer and is safe for
 // concurrent use.
 type Store struct {
+	controls    Persistence
+	controlMu   sync.RWMutex
+	pauses      []Pause
 	persistence Persistence
 	redact      func([]byte) ([]byte, error)
 	persistErr  string
@@ -140,6 +144,7 @@ func New(opts Options) *Store {
 	return &Store{
 		now:         now,
 		persistence: opts.Persistence,
+		controls:    opts.ControlPersistence,
 		onError:     opts.OnError,
 		redact:      opts.Redact,
 		started:     now(),

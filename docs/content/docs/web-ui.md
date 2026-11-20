@@ -56,6 +56,28 @@ The applied plan stays available separately. While verification is pending,
 saved diffs are marked stale; a failed comparison says **Could not verify**
 rather than assuming everything is in sync.
 
+### Pause and resume targets
+
+Use **Pause or resume a target** to hold an entire destination or one known
+`owner/name` on that destination. Supply an optional reason and duration such
+as `30m` or `2h`; empty duration holds indefinitely. Active pauses and their
+reasons appear beside the controls and on affected targets.
+
+Planning continues while paused. A pause acknowledges only after active
+remote operations finish; subsequent Git, LFS, settings, release, package,
+creation and deletion steps cannot start. It does not roll back completed
+steps. Manual Sync and Repair LFS obey the same hold.
+
+Resume removes only the selected scope and requests a fresh comparison and
+sync for that destination, including in review mode. Resuming a repository
+does not bypass a whole-target hold. An expiry removes the hold automatically
+for subsequent runs; it does not create an independent scheduled run. Enable
+scheduled sync if publication should catch up without another push.
+
+Controls survive restarts when `state.database` is configured. Without it,
+pauses are in memory only. A failed durable write leaves the previous control
+state intact and reports an error.
+
 ### Review mode
 
 With `sync.auto: false` nothing reaches a target until you press *Sync*,

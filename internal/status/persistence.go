@@ -155,6 +155,9 @@ func (s *Store) persist(ctx context.Context, name string) error {
 // Restore loads history, never running work. Last comparisons must be verified
 // against the current configuration before they can be considered authoritative.
 func (s *Store) Restore(ctx context.Context) error {
+	if err := s.restoreControls(ctx); err != nil {
+		return err
+	}
 	if s.persistence == nil {
 		return nil
 	}

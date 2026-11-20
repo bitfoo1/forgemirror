@@ -10,8 +10,10 @@ import (
 	"slices"
 	"time"
 
+	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/repo"
+	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
@@ -29,6 +31,8 @@ type Dispatcher interface {
 
 // Options configures a [Controller].
 type Options struct {
+	Store   *status.Store
+	Targets []config.Target
 	// Source lists the source repositories; nil limits "all" to the known
 	// repositories (push-only setups without source API credentials).
 	Source        forge.Source

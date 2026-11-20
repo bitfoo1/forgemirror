@@ -59,6 +59,16 @@ func (a *fakeActions) Sync(_ context.Context, name string) error {
 	return nil
 }
 
+func (a *fakeActions) Pause(_ context.Context, _, target, _ string, _ time.Time) error {
+	a.record("pause " + target)
+	return nil
+}
+
+func (a *fakeActions) Resume(_ context.Context, _, target string) error {
+	a.record("resume " + target)
+	return nil
+}
+
 func (a *fakeActions) RepairLFS(_ context.Context, name string) error {
 	if name != "acme/app" {
 		return control.ErrUnknownRepository
@@ -212,7 +222,7 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 
 			actions := &fakeActions{}
 			f := newFixtureWith(t, nil, actions)
-			for _, path := range []string{"/actions/sync", "/actions/repair-lfs"} {
+			for _, path := range []string{"/actions/sync", "/actions/repair-lfs", "/actions/pause"} {
 				rec := f.post(t, path, url.Values{"repo": {"acme/app"}}, headers)
 				if rec.Code != http.StatusForbidden {
 					t.Errorf("%s status = %d, want 403", path, rec.Code)
@@ -221,6 +231,24 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 			if got := actions.recorded(); len(got) != 0 {
 				t.Errorf("calls = %v, want none", got)
 			}
+		})
+	}
+}
+
+func TestPauseActions(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"pause", "resume"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			actions := &fakeActions{}
+			f := newFixtureWith(t, nil, actions)
+			rec := f.post(
+				t,
+				"/actions/pause",
+				url.Values{"target": {"github"}, "mode": {mode}},
+				map[string]string{"HX-Request": "true"},
+			)
+			assertAction(t, rec, actions, http.StatusOK, mode+" github", "")
 		})
 	}
 }

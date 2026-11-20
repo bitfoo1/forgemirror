@@ -49,6 +49,8 @@ type Observer interface {
 // Options configures a [Dispatcher].
 type Options struct {
 	Mirrorer mirror.Mirrorer
+	// Mutation grants a permit held through one remote operation.
+	Mutation func(repo, target string) (func(), error)
 	// Source holds the credentials for cloning from Forgejo.
 	Source  config.Source
 	Targets []config.Target
@@ -198,6 +200,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 			// push in review mode would silently cancel the operator's sync.
 			current.apply = current.apply || queued.apply
 			current.repair = current.repair || queued.repair
+			current.event.Target = mergedTarget(current.event.Target, queued.event.Target)
 			// The repository is gone once a deletion is queued; letting a later
 			// push replace it would recreate the target repository.
 			if queued.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
@@ -215,6 +218,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 
 	d.running[key] = &repoState{}
 	d.wg.Go(func() { d.runLoop(current) })
+}
+
+func mergedTarget(a, b string) string {
+	if a == b {
+		return a
+	}
+	return ""
 }
 
 // Known returns the newest repository data seen for fullName ("owner/name").
@@ -330,6 +340,9 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repai
 	start := time.Now()
 
 	runs := d.targetRuns(name)
+	if e.Target != "" {
+		runs = slices.DeleteFunc(runs, func(tr *targetRun) bool { return tr.cfg.Name != e.Target })
+	}
 	p := d.plan(ctx, logger, runs, e)
 	p.Apply = apply || repair
 	d.opts.Observer.PlanFinished(ctx, p)
@@ -385,7 +398,7 @@ func (d *Dispatcher) apply(
 
 	parallel(pendingRuns(runs), func(tr *targetRun) {
 		if tr.typed() {
-			if err := d.prepareTarget(ctx, logger, tr); err != nil {
+			if err := d.mutate(tr, func() error { return d.prepareTarget(ctx, logger, tr) }); err != nil {
 				d.fail(ctx, logger, tr, start, err)
 			}
 		}
@@ -509,6 +522,11 @@ func (d *Dispatcher) push(
 	t *config.Target,
 	e webhook.Event,
 ) ([]mirror.RefUpdate, error) {
+	permit, permitErr := d.beginMutation(e.Repository.FullName, t.Name)
+	if permitErr != nil {
+		return nil, permitErr
+	}
+	defer permit()
 	remote, err := targetRemote(t, e)
 	if err != nil {
 		return nil, err
