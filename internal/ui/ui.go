@@ -59,7 +59,7 @@ func securityHeaders() map[string]string {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js static/style.css static/app.js static/live.js
+//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js
 var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
@@ -228,7 +228,12 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 
 			return
 		}
-		h.renderWith(w, r, "repos", func(d *pageData) { d.Notice = notice })
+		if notifyErr := triggerNotice(w, notice, err != nil); notifyErr != nil {
+			h.opts.Logger.ErrorContext(r.Context(), "UI notification failed", slog.Any("error", notifyErr))
+			http.Error(w, "Could not encode action acknowledgement", http.StatusInternalServerError)
+			return
+		}
+		h.renderWith(w, r, "repos", nil)
 	}
 }
 
@@ -240,11 +245,18 @@ func (h *handler) runAction(ctx context.Context, sync bool, name string) (string
 	case name != "":
 		return "Refresh started for " + name + ".", actions.Refresh(ctx, name)
 	case sync:
-		return fmt.Sprintf("Sync started for %s.", repositories(actions.SyncAll(ctx))), nil
+		n := actions.SyncAll(ctx)
+		if n == 0 {
+			return "No repositories need syncing.", nil
+		}
+		return fmt.Sprintf("Sync started for all pending repositories (%d queued).", n), nil
 	default:
 		n, err := actions.RefreshAll(ctx)
 
-		return fmt.Sprintf("Refresh started for %s.", repositories(n)), err
+		if n == 0 && err == nil {
+			return "No repositories available to refresh.", nil
+		}
+		return fmt.Sprintf("Refresh started for all repositories (%d queued).", n), err
 	}
 }
 
@@ -283,7 +295,6 @@ type pageData struct {
 	Queued       int
 	Repos        []repoView
 	Counts       counts
-	Notice       string
 	Config       string
 	Logs         []logging.Entry
 	Levels       []level

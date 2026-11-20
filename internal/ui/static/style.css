@@ -248,6 +248,36 @@ form.run-action.htmx-request > .btn > .request-spinner { display: inline-flex; }
   border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
 }
 
+/* Ephemeral action acknowledgements stay outside the polled repository DOM. */
+.toast-region {
+  position: fixed;
+  z-index: 100;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(35rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .8rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg-strong);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+.toast[data-kind="error"] { border-color: var(--fail); }
+.toast-message { flex: 1; min-width: 0; margin: .2rem 0; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 40vh; overflow-y: auto; }
+.toast-close { flex: none; padding: 0 .4rem; font-size: 1.3rem; line-height: 1.5; }
+@keyframes toast-drop {
+  from { opacity: 0; transform: translateY(-1rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Repositories */
 .repos { list-style: none; margin: 0; padding: 0; }
 .repo { border-top: 1px solid var(--border); padding: .6rem 0; }
@@ -340,5 +370,6 @@ th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-
 
 @media (prefers-reduced-motion: no-preference) {
   .spinner { animation: activity-spin .8s linear infinite; }
+  .toast { animation: toast-drop .2s ease-out; }
   .btn, .diff summary { transition: border-color .15s, color .15s, filter .15s; }
 }

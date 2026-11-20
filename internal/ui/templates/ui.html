@@ -13,9 +13,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 {{- /* Not deferred: it applies the stored theme before the first paint. */}}
 <script src="static/app.js"></script>
 <script src="static/live.js" defer></script>
+<script src="static/toast.js" defer></script>
 <script src="static/htmx.min.js" defer></script>
 </head>
 <body>
+<div id="notifications" class="toast-region" role="status" aria-live="polite" aria-atomic="true" aria-label="Notifications"></div>
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true"></span>
@@ -133,9 +135,6 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   </div>
   {{- end}}
 </div>
-{{- with .Notice}}
-<p class="notice" role="status" data-live-key="action-notice">{{.}}</p>
-{{- end}}
 {{- with .Snapshot.Error}}<p class="notice fail" role="alert">{{.}}</p>{{end}}
 {{if .Actions}}
 <details data-live-key="target-controls"><summary>Pause or resume a target</summary>

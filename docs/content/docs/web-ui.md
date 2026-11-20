@@ -56,6 +56,27 @@ The applied plan stays available separately. While verification is pending,
 saved diffs are marked stale; a failed comparison says **Could not verify**
 rather than assuming everything is in sync.
 
+### Action notifications
+
+Refresh/Sync acknowledgements appear as a small drop-down notification at the
+top center, not as a persistent message in the repository list. Individual
+actions name the repository; **Refresh all** and **Sync all** describe the bulk
+scope and queued count. If no work was queued, the notification says so rather
+than claiming a sync started.
+
+Successful acknowledgements disappear after about five seconds. Hovering over
+or focusing the notification pauses its timer; **Dismiss notification** closes
+it immediately. A newer acknowledgement replaces the previous one and resets
+the timer. Errors remain until dismissed. Reduced-motion preferences disable
+the entrance movement, and notifications never steal keyboard focus.
+
+An acknowledgement confirms request acceptance, not background completion.
+Spinners continue independently. Notifications are delivered outside the polled
+repository fragment, so they still appear while text selection defers a live
+update and are not replayed by polling. They are local UI feedback, separate
+from configured outbound webhook notifications. Toasts require JavaScript;
+native non-JavaScript form redirects keep their existing behavior.
+
 ### Refresh and sync progress
 
 Refresh/Sync buttons, including **Refresh all** and **Sync all**, show a small

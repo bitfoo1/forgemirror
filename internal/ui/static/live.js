@@ -104,13 +104,6 @@
     if (seq < (accepted.get(target) || 0)) { return; }
     accepted.set(target, seq);
     var item = {html:ev.detail.serverResponse};
-    var previous = pending.get(target);
-    // Do not discard an action's acknowledgement when polls are deferred.
-    if (previous) {
-      var old = document.createElement("template"); old.innerHTML = previous.html;
-      var notice = old.content.querySelector(".notice[role=status]");
-      if (notice && item.html.indexOf('role="status"') < 0) { item.html += notice.outerHTML; }
-    }
     if (apply(target, item)) { pending.delete(target); } else { pending.set(target, item); }
   });
   document.addEventListener("selectionchange", flush);

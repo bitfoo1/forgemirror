@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,9 +24,11 @@ import (
 func reviewMode() []string { return []string{"FORGEMIRROR_SYNC__AUTO=false"} }
 
 type fakeActions struct {
-	mu         sync.Mutex
-	calls      []string
-	refreshErr error
+	mu           sync.Mutex
+	calls        []string
+	refreshErr   error
+	refreshCount *int
+	syncCount    *int
 }
 
 func (a *fakeActions) record(call string) {
@@ -85,12 +88,18 @@ func (a *fakeActions) RepairLFS(_ context.Context, name string) error {
 func (a *fakeActions) RefreshAll(context.Context) (int, error) {
 	a.record("refresh all")
 
+	if a.refreshCount != nil {
+		return *a.refreshCount, a.refreshErr
+	}
 	return 3, a.refreshErr
 }
 
 func (a *fakeActions) SyncAll(context.Context) int {
 	a.record("sync all")
 
+	if a.syncCount != nil {
+		return *a.syncCount
+	}
 	return 1
 }
 
@@ -147,12 +156,20 @@ func TestActions(t *testing.T) {
 			wantCode: http.StatusOK, wantCall: "refresh acme/app", wantNotice: "Refresh started for acme/app.",
 		},
 		{
-			name: "sync all", path: "/actions/sync", headers: htmx,
-			wantCode: http.StatusOK, wantCall: "sync all", wantNotice: "Sync started for 1 repository.",
+			name:       "sync all",
+			path:       "/actions/sync",
+			headers:    htmx,
+			wantCode:   http.StatusOK,
+			wantCall:   "sync all",
+			wantNotice: "Sync started for all pending repositories (1 queued).",
 		},
 		{
-			name: "refresh all", path: "/actions/refresh", headers: htmx,
-			wantCode: http.StatusOK, wantCall: "refresh all", wantNotice: "Refresh started for 3 repositories.",
+			name:       "refresh all",
+			path:       "/actions/refresh",
+			headers:    htmx,
+			wantCode:   http.StatusOK,
+			wantCall:   "refresh all",
+			wantNotice: "Refresh started for all repositories (3 queued).",
 		},
 		{
 			name: "plain form is redirected back", path: "/actions/sync", repo: "acme/app",
@@ -199,9 +216,62 @@ func assertAction(t *testing.T, rec *httptest.ResponseRecorder, actions *fakeAct
 	if code == http.StatusSeeOther && rec.Header().Get("Location") != "../" {
 		t.Errorf("Location = %q, want ../", rec.Header().Get("Location"))
 	}
-	if notice != "" &&
-		!strings.Contains(rec.Body.String(), `<p class="notice" role="status" data-live-key="action-notice">`+notice) {
-		t.Errorf("body lacks notice %q:\n%s", notice, rec.Body.String())
+	if notice != "" {
+		got := actionNotification(t, rec)
+		if got.Message != notice || got.Kind != "success" {
+			t.Errorf("notification=%+v want success %q", got, notice)
+		}
+		if strings.Contains(rec.Body.String(), notice) || strings.Contains(rec.Body.String(), "action-notice") {
+			t.Error("action acknowledgement still rendered inline")
+		}
+	}
+}
+
+type actionToast struct {
+	Message string `json:"message"`
+	Kind    string `json:"kind"`
+}
+
+func actionNotification(t *testing.T, rec *httptest.ResponseRecorder) actionToast {
+	t.Helper()
+	var events map[string]actionToast
+	if err := json.Unmarshal([]byte(rec.Header().Get("Hx-Trigger")), &events); err != nil {
+		t.Fatalf("invalid or missing notification event: %v", err)
+	}
+	notice, ok := events["forgemirror:notice"]
+	if !ok {
+		t.Fatal("action notification event missing")
+	}
+	return notice
+}
+
+func TestNoWorkIsNotAnnouncedAsStarted(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ path, message string }{
+		{"/actions/refresh", "No repositories available to refresh."},
+		{"/actions/sync", "No repositories need syncing."},
+	} {
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			f := newFixtureWith(t, nil, &fakeActions{refreshCount: new(0), syncCount: new(0)})
+			rec := f.post(t, tt.path, url.Values{}, map[string]string{"Hx-Request": "true"})
+			if got := actionNotification(t, rec); got.Message != tt.message || got.Kind != "success" {
+				t.Fatalf("notification=%+v", got)
+			}
+		})
+	}
+}
+
+func TestActionMessageIsDataNotMarkup(t *testing.T) {
+	t.Parallel()
+	message := `<img src=x onerror="window.noticeInjection=true">`
+	f := newFixtureWith(t, nil, &fakeActions{refreshErr: errors.New(message)})
+	rec := f.post(t, "/actions/refresh", url.Values{}, map[string]string{"Hx-Request": "true"})
+	if got := actionNotification(t, rec); got.Message != message || got.Kind != "error" {
+		t.Fatalf("notification=%+v", got)
+	}
+	if strings.Contains(rec.Body.String(), message) {
+		t.Fatal("message embedded as markup")
 	}
 }
 
@@ -210,8 +280,9 @@ func TestActionErrorIsShown(t *testing.T) {
 
 	f := newFixtureWith(t, nil, &fakeActions{refreshErr: errors.New("listing source repositories: forgejo down")})
 	rec := f.post(t, "/actions/refresh", url.Values{}, map[string]string{"HX-Request": "true"})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "forgejo down") {
-		t.Errorf("status = %d, body lacks the error:\n%s", rec.Code, rec.Body.String())
+	notice := actionNotification(t, rec)
+	if rec.Code != http.StatusOK || !strings.Contains(notice.Message, "forgejo down") || notice.Kind != "error" {
+		t.Errorf("status=%d notification=%+v", rec.Code, notice)
 	}
 }
 
