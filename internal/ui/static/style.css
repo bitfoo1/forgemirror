@@ -200,7 +200,24 @@ main {
 .btn-small { padding: .15rem .6rem; font-size: 13px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .toolbar form, .repo-actions form { margin: 0; }
-.htmx-request .btn, .btn.htmx-request { opacity: .6; cursor: progress; }
+form.htmx-request > .btn, .btn.htmx-request { opacity: .6; cursor: progress; }
+
+/* Request feedback is scoped to the submitting form, not polling ancestors. */
+.request-spinner { display: none; margin-right: .35rem; vertical-align: -.1em; }
+form.run-action.htmx-request > .btn > .request-spinner { display: inline-flex; }
+.activity { display: inline-flex; align-items: center; gap: .35rem; }
+.card-head p.activity { margin: .3rem 0 0; }
+.spinner {
+  display: inline-block;
+  width: .9em;
+  height: .9em;
+  flex: none;
+  vertical-align: -.1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+}
+@keyframes activity-spin { to { transform: rotate(360deg); } }
 
 /* Pills */
 .pill {
@@ -322,5 +339,6 @@ th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .spinner { animation: activity-spin .8s linear infinite; }
   .btn, .diff summary { transition: border-color .15s, color .15s, filter .15s; }
 }

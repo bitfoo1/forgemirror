@@ -56,6 +56,26 @@ The applied plan stays available separately. While verification is pending,
 saved diffs are marked stale; a failed comparison says **Could not verify**
 rather than assuming everything is in sync.
 
+### Refresh and sync progress
+
+Refresh/Sync buttons, including **Refresh all** and **Sync all**, show a small
+wheel while their HTTP request is being submitted. An acknowledgement only
+means work was accepted, not that mirroring finished.
+
+Each active repository then shows a spinning **Refreshing**, **Syncing** or
+**Starting** badge. Starting covers accepted work before its running status is
+available. A global indicator summarizes all active repositories, including
+work initiated elsewhere; mixed work says **N repositories active**. The count
+falls as individual jobs finish, and clears after the last job completes or
+fails. Waiting for retry, pause or approval is not presented as active work.
+
+Indicators reflect the latest live snapshot, normally refreshed every five
+seconds. They may retain the last observed state while text selection defers
+updates. Without JavaScript, form submissions still work, but reload the page
+to observe later background completion. Reduced-motion preferences keep the
+status text and a static indicator without rotation. Background polling never
+activates the action-button wheels.
+
 ### Pause and resume targets
 
 Use **Pause or resume a target** to hold an entire destination or one known

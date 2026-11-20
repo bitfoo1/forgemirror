@@ -1,5 +1,11 @@
 const { test, expect } = require('@playwright/test');
 
+// Release fixture jobs even after an assertion failure, so later tests are isolated.
+test.afterEach(async ({ request }) => {
+  await request.post('/test/complete');
+  await request.post('/test/hold?enabled=false');
+});
+
 // Exercise the real CSP, HTMX and browser selection/focus APIs, not a DOM mock.
 test('polling preserves selected text and expanded diffs', async ({ page }) => {
   await page.goto('/');
@@ -89,4 +95,100 @@ test('wide layouts use available width and targets occupy full rows', async ({ p
   expect(dimensions.top1).toBeGreaterThan(dimensions.top0);
   await page.setViewportSize({width:375,height:812});
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+});
+
+test('refresh feedback survives reconciliation and continues after acknowledgement', async ({ page, request }) => {
+  await request.post('/test/hold');
+  await request.post('/test/seed?repo=acme/other');
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/actions/refresh', async route => { await gate; await route.continue(); });
+  await page.goto('/');
+  await page.evaluate(() => document.addEventListener('htmx:beforeRequest', event => {
+    if (event.detail.elt.matches('form.run-action')) { window.actionSequence = event.detail.xhr.forgemirrorSequence; }
+  }));
+  const repository = page.locator('[data-repo="acme/app"]');
+  const form = repository.locator('form[data-live-key="refresh"]');
+  const acknowledgement = page.waitForResponse(response => response.url().endsWith('/actions/refresh'));
+  try {
+    await form.getByRole('button', {name:'Refresh', exact:true}).click();
+    await expect(form.locator('.request-spinner')).toBeVisible();
+    await expect(form).toHaveAttribute('aria-busy', 'true');
+    const html = await (await request.get('/fragments/repos')).text();
+    await page.evaluate(html => document.dispatchEvent(new CustomEvent('htmx:beforeSwap', {
+      detail: {target:document.getElementById('repos'),shouldSwap:true,serverResponse:html,
+        xhr:{forgemirrorSequence:window.actionSequence}}
+    })), html);
+    await expect(form.locator('.request-spinner')).toBeVisible();
+    await expect(form).toHaveAttribute('aria-busy', 'true');
+  } finally { release(); await acknowledgement; }
+  await expect(repository.locator('[data-repository-activity]')).toHaveText('Refreshing');
+  await expect(page.locator('[data-repo="acme/other"] [data-repository-activity]')).toHaveCount(0);
+  await expect(page.locator('[data-global-activity]')).toHaveText('Refreshing 1 repository');
+  await expect(form.locator('.request-spinner')).toBeHidden();
+  await expect(form).toHaveAttribute('aria-busy', 'false');
+  await request.post('/test/complete?repo=acme/app');
+  await expect(repository.locator('[data-repository-activity]')).toHaveCount(0, {timeout:12000});
+  await expect(page.locator('[data-global-activity]')).toHaveCount(0);
+});
+
+test('background sync remains visible without rotation for reduced motion', async ({ page, request }) => {
+  await request.post('/test/hold');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto('/');
+  const repository = page.locator('[data-repo="acme/app"]');
+  await repository.locator('form[data-live-key="sync"] button').click();
+  const activity = repository.locator('[data-repository-activity]');
+  await expect(activity).toHaveText('Syncing');
+  await expect(page.locator('[data-global-activity]')).toHaveText('Syncing 1 repository');
+  await expect(activity.locator('.spinner')).toBeVisible();
+  expect(await activity.locator('.spinner').evaluate(node => getComputedStyle(node).animationName)).toBe('none');
+  await request.post('/test/complete?repo=acme/app');
+  await expect(activity).toHaveCount(0, {timeout:12000});
+});
+
+test('background polling does not activate action indicators', async ({ page }) => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/fragments/repos', async route => { await gate; await route.continue(); });
+  await page.goto('/');
+  try {
+    await expect(page.locator('#repos')).toHaveClass(/htmx-request/, {timeout:10000});
+    await expect(page.locator('form.run-action .request-spinner:visible')).toHaveCount(0);
+  } finally { release(); }
+});
+
+test('failed action requests clear the immediate indicator', async ({ page }) => {
+  await page.route('**/actions/refresh', route => route.fulfill({status:500,body:'request failed'}));
+  await page.goto('/');
+  const form = page.locator('[data-repo="acme/app"] form[data-live-key="refresh"]');
+  const response = page.waitForResponse(response => response.url().endsWith('/actions/refresh'));
+  await form.getByRole('button', {name:'Refresh', exact:true}).click();
+  await response;
+  await expect(form.locator('.request-spinner')).toBeHidden();
+  await expect(form).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('[data-repository-activity]')).toHaveCount(0);
+});
+
+test('bulk refresh and sync keep aggregate activity until the last job finishes', async ({ page, request }) => {
+  test.setTimeout(60000);
+  await request.post('/test/hold');
+  await request.post('/test/seed?repo=acme/other');
+  await page.goto('/');
+  await page.locator('form[data-live-key="refresh-all"] button').click();
+  await expect(page.locator('[data-repository-activity]')).toHaveCount(2);
+  await expect(page.locator('[data-global-activity]')).toHaveText('Refreshing 2 repositories');
+  await request.post('/test/complete?repo=acme/app');
+  await expect(page.locator('[data-global-activity]')).toHaveText('Refreshing 1 repository', {timeout:12000});
+  await expect(page.locator('[data-repo="acme/app"] [data-repository-activity]')).toHaveCount(0);
+  await request.post('/test/complete?repo=acme/other');
+  await expect(page.locator('[data-global-activity]')).toHaveCount(0, {timeout:12000});
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('form[data-live-key="sync-all"] button').click();
+  await expect(page.locator('[data-repository-activity]')).toHaveCount(2);
+  await expect(page.locator('[data-global-activity]')).toHaveText('Syncing 2 repositories');
+  await request.post('/test/complete?repo=acme/app');
+  await expect(page.locator('[data-global-activity]')).toHaveText('Syncing 1 repository', {timeout:12000});
+  await request.post('/test/complete?repo=acme/other');
+  await expect(page.locator('[data-global-activity]')).toHaveCount(0, {timeout:12000});
 });

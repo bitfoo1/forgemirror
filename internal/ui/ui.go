@@ -279,6 +279,7 @@ type pageData struct {
 	Auto         bool
 	Actions      bool
 	Running      int
+	Activity     string
 	Queued       int
 	Repos        []repoView
 	Counts       counts
@@ -341,13 +342,8 @@ func (h *handler) data(r *http.Request) pageData {
 	for _, target := range h.opts.Config.Targets {
 		d.TargetNames = append(d.TargetNames, target.Name)
 	}
-	for _, q := range queued {
-		d.Running++
-		if q {
-			d.Queued++
-		}
-	}
 	d.Repos, d.Counts = repoViews(d.Snapshot.Repos, queued)
+	populateActivity(&d, queued)
 	for i := range d.Repos {
 		d.Repos[i].Actionable = h.opts.Known == nil || h.opts.Known(d.Repos[i].Name)
 	}

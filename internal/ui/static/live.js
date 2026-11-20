@@ -38,6 +38,8 @@
       if (node.nodeValue !== next.nodeValue) { node.nodeValue = next.nodeValue; }
       return;
     }
+    // A deferred poll can reconcile a form while its action request is pending.
+    var requesting = node.classList.contains('htmx-request');
     Array.from(node.attributes).forEach(function (attr) {
       if (attr.name === "open" && node.tagName === "DETAILS") { return; }
       if (!next.hasAttribute(attr.name)) { node.removeAttribute(attr.name); }
@@ -46,6 +48,10 @@
       if (attr.name === "open" && node.tagName === "DETAILS") { return; }
       if (node.getAttribute(attr.name) !== attr.value) { node.setAttribute(attr.name, attr.value); }
     });
+    if (requesting) {
+      node.classList.add('htmx-request');
+      if (node.matches('form.run-action')) { node.setAttribute('aria-busy', 'true'); }
+    }
     reconcile(node, next);
   }
   function interacting(target) {
@@ -83,6 +89,12 @@
 
   document.addEventListener("htmx:beforeRequest", function (ev) {
     ev.detail.xhr.forgemirrorSequence = ++sequence;
+    var source = ev.detail.elt;
+    if (source && source.matches('form.run-action')) { source.setAttribute('aria-busy', 'true'); }
+  });
+  document.addEventListener('htmx:afterRequest', function (ev) {
+    var source = ev.detail.elt;
+    if (source && source.matches('form.run-action')) { source.setAttribute('aria-busy', 'false'); }
   });
   document.addEventListener("htmx:beforeSwap", function (ev) {
     var target = ev.detail.target;

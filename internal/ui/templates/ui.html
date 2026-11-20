@@ -104,7 +104,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 </div>
 <div class="tile">
   <span class="tile-label">Running</span>
-  <span class="tile-value">{{.Running}}</span>
+  <span class="tile-value">{{if .Running}}{{template "spinner" .}} {{end}}{{.Running}}</span>
   <span class="tile-note">{{plural .Running "repository" "repositories"}}{{if .Queued}}, {{.Queued}} queued{{end}}</span>
 </div>
 {{- end}}
@@ -119,15 +119,16 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       {{- if .Counts.Failed}} · <span class="fail">{{.Counts.Failed}} failed</span>{{end}}
       {{- if .Counts.HeldTargets}} · <span class="warn">{{.Counts.HeldTargets}} destinations held</span>{{end}}
     </p>
+    {{with .Activity}}<p class="activity" data-global-activity role="status" data-live-key="global-activity">{{template "spinner" .}} {{.}}</p>{{end}}
   </div>
   {{- if .Actions}}
-  <div class="toolbar" hx-sync="#repos:queue all">
-    <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
-      <button type="submit" class="btn">Refresh all</button>
+  <div class="toolbar" data-live-key="global-actions" hx-sync="#repos:queue all">
+    <form class="run-action" data-live-key="refresh-all" aria-busy="false" method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
+      <button type="submit" class="btn"><span class="request-spinner">{{template "spinner" .}}</span>Refresh all</button>
     </form>
-    <form method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML"
+    <form class="run-action" data-live-key="sync-all" aria-busy="false" method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML"
       hx-confirm="Sync all {{.Counts.Pending}} out-of-sync repositories to the targets?">
-      <button type="submit" class="btn btn-primary"{{if not .Counts.Pending}} disabled{{end}}>Sync all{{if .Counts.Pending}} ({{.Counts.Pending}}){{end}}</button>
+      <button type="submit" class="btn btn-primary"{{if not .Counts.Pending}} disabled{{end}}><span class="request-spinner">{{template "spinner" .}}</span>Sync all{{if .Counts.Pending}} ({{.Counts.Pending}}){{end}}</button>
     </form>
   </div>
   {{- end}}
@@ -158,29 +159,27 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 {{- else}}
 <ul class="repos" data-live-key="repository-list">
   {{- range $r := .Repos}}
-  <li class="repo state-{{$r.State}}" data-live-key="repo:{{$r.Name}}">
+  <li class="repo state-{{$r.State}}" data-repo="{{$r.Name}}" data-live-key="repo:{{$r.Name}}">
     <div class="repo-head" data-live-key="repository-heading">
       <span class="dot" aria-hidden="true"></span>
       <code class="repo-name">{{$r.Name}}</code>
       <span class="muted">comparison:</span> {{template "state" $r}}
       {{if $r.HeldTargets}}<span class="pill pill-warn">{{$r.HeldTargets}} destinations held</span>{{end}}
-      {{- if $r.Running}}
-      <span class="pill pill-info">{{if $r.Applying}}syncing{{else}}planning{{end}}</span>
-      {{- if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
-      {{- end}}
+      {{with $r.Activity}}<span class="pill pill-info activity" data-repository-activity data-activity="{{.Kind}}" data-live-key="repository-activity" role="status">{{template "spinner" .}} {{.Label}}</span>{{end}}
+      {{if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
       {{- with $r.Current}}
       <span class="checked muted">checked <time datetime="{{iso .At}}">{{when .At}}</time></span>
       {{- end}}
       <a class="btn btn-small" href="history?repo={{urlquery $r.Name}}">History</a>
       {{- if and $.Actions $r.Actionable}}
-      <div class="repo-actions" data-live-key="repository-actions" hx-sync="#repos:queue all">
-        <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
+      <div class="repo-actions" data-live-key="repository-actions" aria-busy="{{if $r.Activity}}true{{else}}false{{end}}" hx-sync="#repos:queue all">
+        <form class="run-action" data-live-key="refresh" aria-busy="false" method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
           <input type="hidden" name="repo" value="{{$r.Name}}">
-          <button type="submit" class="btn btn-small">Refresh</button>
+          <button type="submit" class="btn btn-small"><span class="request-spinner">{{template "spinner" .}}</span>Refresh</button>
         </form>
-        <form method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML">
+        <form class="run-action" data-live-key="sync" aria-busy="false" method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML">
           <input type="hidden" name="repo" value="{{$r.Name}}">
-          <button type="submit" class="btn btn-small{{if eq $r.State "out-of-sync"}} btn-primary{{end}}">Sync</button>
+          <button type="submit" class="btn btn-small{{if eq $r.State "out-of-sync"}} btn-primary{{end}}"><span class="request-spinner">{{template "spinner" .}}</span>Sync</button>
         </form>
         <form method="post" action="actions/repair-lfs" hx-post="actions/repair-lfs" hx-target="#repos" hx-swap="innerHTML">
           <input type="hidden" name="repo" value="{{$r.Name}}">
@@ -208,6 +207,8 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 </ul>
 {{- end}}
 {{- end}}
+
+{{define "spinner" -}}<span class="spinner" aria-hidden="true"></span>{{- end}}
 
 {{define "state" -}}
 {{- if eq .State "failed"}}<span class="pill pill-fail">failed</span>

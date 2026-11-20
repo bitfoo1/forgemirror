@@ -30,7 +30,8 @@ func stateRank(s string) int {
 type repoView struct {
 	status.Repo
 
-	State string
+	State    string
+	Activity *activity
 	// Changes is the number of changes in the newest plan.
 	Changes        int
 	Queued         bool

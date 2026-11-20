@@ -68,6 +68,11 @@ func newFixture(t *testing.T) *fixture {
 // sync.auto) and enables the actions when actions is not nil.
 func newFixtureWith(t *testing.T, env []string, actions ui.Actions) *fixture {
 	t.Helper()
+	return newFixtureWithQueued(t, env, actions, func() map[string]bool { return map[string]bool{"acme/busy": true} })
+}
+
+func newFixtureWithQueued(t *testing.T, env []string, actions ui.Actions, queued func() map[string]bool) *fixture {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "forgemirror.yaml")
 	if err := os.WriteFile(path, []byte(testConfig), 0o600); err != nil {
@@ -86,7 +91,7 @@ func newFixtureWith(t *testing.T, env []string, actions ui.Actions) *fixture {
 		Config:  cfg,
 		Store:   store,
 		Logs:    ring,
-		Queued:  func() map[string]bool { return map[string]bool{"acme/busy": true} },
+		Queued:  queued,
 		Actions: actions,
 		Version: "v9.9.9",
 		Logger:  logger,
