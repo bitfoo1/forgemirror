@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-11-20
+
+### Features
+
+- **mirror:** Mirror Git LFS objects before publishing refs (1264af5)
+- **control:** Pause and resume publication per target (e5d4589)
+- **state:** [**breaking**] Require durable state by default (add55e3)
+- **dispatch:** Persist bounded retries for transient outages (ff851ab)
+- **ui:** Retain a durable paginated sync history (474fecc)
+- **forge:** Publish explicit mirror contribution identity (890e10e)
+- **notify:** Deliver durable blocked-sync notifications (8003184)
+- **control:** Require configurable first-publication approval (1f5b5de)
+- **ui:** Explain publication holds and align feature documentation (26a963d)
+- **ui:** Show refresh and sync activity indicators (a47b217)
+- **ui:** Replace inline acknowledgements with transient toasts (80845f9)
+
 ## [0.7.0] - 2026-11-20
 
 ### Features
