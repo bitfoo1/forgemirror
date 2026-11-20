@@ -26,8 +26,10 @@ var errMultiLineNote = errors.New("must render to a single line")
 // Marker is the resolved mirror marker of one repository on one target. An
 // empty field is disabled.
 type Marker struct {
-	Note  string
-	Topic string
+	Note             string
+	Topic            string
+	URL              string
+	DescriptionLimit int
 }
 
 // ResolveMarker applies the layers in order (last wins) on top of the
@@ -41,6 +43,12 @@ func ResolveMarker(layers ...Settings) Marker {
 		if l.MirrorTopic != nil {
 			m.Topic = *l.MirrorTopic
 		}
+		if l.MirrorURL != nil {
+			m.URL = *l.MirrorURL
+		}
+		if l.MirrorDescriptionLimit != nil {
+			m.DescriptionLimit = *l.MirrorDescriptionLimit
+		}
 	}
 
 	return m
@@ -50,12 +58,26 @@ func ResolveMarker(layers ...Settings) Marker {
 // it is appended to the description rather than replacing it, so the
 // mirror keeps saying what the project is.
 func (m Marker) Apply(r Repo, src repo.Repository) (Repo, error) {
-	if m.Note != "" {
-		note, err := renderMirrorNote(m.Note, src)
-		if err != nil {
-			return r, err
+	note, err := renderMirrorNote(m.Note, src)
+	if err != nil {
+		return r, err
+	}
+	if m.URL != "" {
+		publicURL, urlErr := renderMirrorURL(m.URL, src)
+		if urlErr != nil {
+			return r, urlErr
 		}
-		r.Description = appendNote(r.Description, note)
+		r.Website = publicURL
+		if publicURL != "" {
+			note = appendNote(note, "Contribute: "+publicURL)
+		}
+	}
+	limit := m.DescriptionLimit
+	if limit == 0 {
+		limit = defaultMirrorDescriptionLimit
+	}
+	if r.Description, err = fitMirrorDescription(r.Description, note, limit); err != nil {
+		return r, err
 	}
 
 	if m.Topic != "" {

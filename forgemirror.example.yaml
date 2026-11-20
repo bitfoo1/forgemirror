@@ -145,6 +145,8 @@ targets:
     #   # "" disables either.
     #   mirror_note: "Mirror, synced by ForgeMirror. Do not push here."
     #   mirror_topic: forgemirror
+    #   mirror_url: "https://public.example/projects/{{ .Name }}/contribute"
+    #   mirror_description_limit: 350
     # Matched against "owner/name" (whole value); applied in order on top of
     # `settings`, later entries win.
     # overrides:

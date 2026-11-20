@@ -63,8 +63,10 @@ type Settings struct {
 	Packages        *bool     `koanf:"packages"`
 	// MirrorNote and MirrorTopic mark the target as a mirror (see [Marker]);
 	// nil keeps the default, "" disables.
-	MirrorNote  *string `koanf:"mirror_note"`
-	MirrorTopic *string `koanf:"mirror_topic"`
+	MirrorNote             *string `koanf:"mirror_note"`
+	MirrorTopic            *string `koanf:"mirror_topic"`
+	MirrorURL              *string `koanf:"mirror_url"`
+	MirrorDescriptionLimit *int    `koanf:"mirror_description_limit"`
 }
 
 // Validate rejects settings that could expose a private source repository
@@ -74,10 +76,10 @@ func (s Settings) Validate() error {
 		return errors.New("private: only true is allowed")
 	}
 	if s.MirrorNote != nil {
-		return validateMirrorNote(*s.MirrorNote)
+		return errors.Join(validateMirrorNote(*s.MirrorNote), validateMirrorIdentity(s))
 	}
 
-	return nil
+	return validateMirrorIdentity(s)
 }
 
 // IsZero reports whether no field is set.

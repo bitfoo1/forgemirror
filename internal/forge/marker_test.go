@@ -4,10 +4,70 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/repo"
 )
+
+func TestPublicMirrorIdentity(t *testing.T) {
+	t.Parallel()
+	marker := forge.ResolveMarker(
+		forge.Settings{MirrorURL: new("https://public.example/{{ .FullName }}"), MirrorDescriptionLimit: new(100)},
+	)
+	source := forge.Repo{Description: strings.Repeat("é", 100)}
+	got, err := marker.Apply(source, repo.Repository{FullName: "acme/app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Website != "https://public.example/acme/app" || len(got.Description) > 100 ||
+		!strings.Contains(got.Description, "Contribute: https://public.example/acme/app") ||
+		!utf8.ValidString(got.Description) {
+		t.Fatalf("identity=%+v", got)
+	}
+	if diff := forge.Diff(
+		source,
+		got,
+		forge.Capabilities{Website: false},
+	); diff.Website != nil ||
+		diff.Description == nil {
+		t.Fatal("unsupported website lost contribution description or was sent anyway")
+	}
+	again, err := marker.Apply(got, repo.Repository{FullName: "acme/app"})
+	if err != nil || again.Description != got.Description {
+		t.Fatalf("identity changed on repeat: %+v %v", again, err)
+	}
+}
+
+func TestMirrorIdentityOverrides(t *testing.T) {
+	t.Parallel()
+	marker := forge.ResolveMarker(
+		forge.Settings{MirrorURL: new("https://public.example/")},
+		forge.Settings{MirrorURL: new(""), MirrorNote: new("")},
+	)
+	result, err := marker.Apply(
+		forge.Repo{Website: "https://project.example/", Description: "project"},
+		repo.Repository{},
+	)
+	if err != nil || result.Website != "https://project.example/" || result.Description != "project" {
+		t.Fatalf("override=%+v %v", result, err)
+	}
+	if _, err = (forge.Marker{Note: "A marker that cannot fit", DescriptionLimit: 5}).Apply(
+		forge.Repo{},
+		repo.Repository{},
+	); err == nil {
+		t.Fatal("oversized marker accepted")
+	}
+}
+
+func TestMirrorURLValidation(t *testing.T) {
+	t.Parallel()
+	for _, url := range []string{"javascript:alert(1)", "https://user:secret@example.com/", "{{.Unknown}}", "https://example.com/\nnext"} {
+		if err := (forge.Settings{MirrorURL: &url}).Validate(); err == nil {
+			t.Errorf("invalid mirror URL accepted: %q", url)
+		}
+	}
+}
 
 func TestResolveMarker(t *testing.T) {
 	t.Parallel()

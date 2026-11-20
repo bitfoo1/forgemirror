@@ -410,6 +410,16 @@
           "description": "Copy the container packages linked to the repository in Forgejo, with every tag, to the target's container registry. Only for public target repositories; tags are never deleted on the target; false disables package sync for this scope. Defaults to true.",
           "type": "boolean"
         },
+        "mirror_url": {
+          "description": "Explicit public HTTP(S) contribution URL template, using repository fields. Appended to the mirror note and used as website when supported. Never inferred from the source; empty disables it.",
+          "type": "string"
+        },
+        "mirror_description_limit": {
+          "description": "Description byte limit, default 350. Truncates only source text at a UTF-8 boundary, preserving the mirror marker and contribution URL.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
         "mirror_note": {
           "description": "Note appended to the description (\"<description> · <note>\") to mark the repository as a mirror. A Go text/template with {{ .Owner }}, {{ .Name }} and {{ .FullName }}; must render to a single line. An empty string disables the note. Defaults to \"Mirror, synced by ForgeMirror. Do not push here.\".",
           "type": "string",

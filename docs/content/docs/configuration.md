@@ -324,6 +324,8 @@ previous layer.
 | `packages`          | `false` disables container package sync for this scope; default `true` |
 | `mirror_note`       | Note appended to the description, see [Mirror marker](#mirror-marker); `""` disables it |
 | `mirror_topic`      | Topic added to the topics, see [Mirror marker](#mirror-marker); `""` disables it; default `forgemirror` |
+| `mirror_url` | Explicit public contribution URL template; also sets website where supported; `""` disables it |
+| `mirror_description_limit` | UTF-8 byte limit for the resulting description, default 350; range 1–4096 |
 
 **Precedence, last wins:** the value from the Forgejo repository, then the
 target's `settings`, then every entry of `overrides` whose `repos` pattern
@@ -369,24 +371,42 @@ as a mirror:
 - `mirror_topic` is added to the topics, also when `topics` is set. Default:
   `forgemirror`.
 
-Both are added after all layers are applied, and `""` turns either off for
-that scope:
+- `mirror_url` is an explicit public HTTP(S) contribution URL template with
+  the same repository fields. It is appended as `Contribute: <url>` and sets
+  the website where the forge supports one. GitLab receives the link in the
+  description even though its API lacks a website field. Empty disables it.
+  ForgeMirror never infers this URL from your private source address.
+- `mirror_description_limit` defaults to 350 UTF-8 bytes, conservatively
+  fitting supported forges. It preserves the marker and public link, truncating
+  only source/overridden description text at a UTF-8 boundary. Configure
+  1–4096 bytes for a destination's limits. An oversized marker produces a
+  planning error instead of a repeatedly rejected settings update.
+
+Markers are added after all settings layers are applied. A nonempty
+`mirror_url` takes precedence over `website`; override/disable `mirror_url`
+explicitly when changing that identity per repository. Empty strings turn
+individual text markers off for that scope:
 
 ```yaml
 settings:
-  mirror_note: "Mirror of {{ .FullName }}. Issues and pull requests are not read here."
+  mirror_note: "Read-only mirror of {{ .FullName }}."
+  mirror_url: "https://public.example/projects/{{ .Name }}/contribute"
+  mirror_description_limit: 350
 overrides:
   - repos: "acme/website"
     settings:
       mirror_note: ""
       mirror_topic: ""
+      mirror_url: ""
 ```
 
 Because the marker is on by default, upgrading from a version without it
 changes the description and topics of every mirror on its next run; in
 [review mode](#sync) the change shows up in the diff first. A topic the forge
 rejects is skipped with a warning, like any other topic. Untyped targets have
-no API access and are never marked.
+no API access and are never marked. Identity changes appear in the normal
+review diff and history; no README or Git commit is modified. On upgrade,
+descriptions exceeding the default byte limit may be shortened.
 
 ### Releases and packages
 
