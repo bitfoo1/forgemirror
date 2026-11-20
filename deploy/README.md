@@ -93,13 +93,12 @@ webhook. The log shows `mirror started`, one `target mirrored` per target and
 
 ## Persistent review history
 
-To retain the last sync attempt and current diff through pod replacement, use
-`kubectl apply -k examples/deploy-persistent/` instead of the base. This overlay enables
-`state.database` through an environment override and mounts a separate 1 GiB
-ReadWriteOnce PVC at `/var/lib/forgemirror`. It inherits the source API credentials
-from the base configuration and UID/GID/fsGroup 65532 from the Deployment.
+The base deployment enables the mandatory SQLite database at
+`/var/lib/forgemirror/state.db` and mounts a separate 1 GiB ReadWriteOnce PVC.
+It uses UID/GID/fsGroup 65532 from the Deployment. The former
+`examples/deploy-persistent/` overlay remains a compatibility alias for the base.
 
-Select a local/block-backed StorageClass in `examples/deploy-persistent/pvc.yaml` if your default
+Select a local/block-backed StorageClass in `deploy/pvc.yaml` if your default
 is network-backed: SQLite on NFS/SMB is unsupported. Keep one replica with
 `Recreate`, ensure the volume is writable by UID 65532, and back it up separately
 from disposable `/work` clones. See the

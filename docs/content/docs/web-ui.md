@@ -74,9 +74,8 @@ does not bypass a whole-target hold. An expiry removes the hold automatically
 for subsequent runs; it does not create an independent scheduled run. Enable
 scheduled sync if publication should catch up without another push.
 
-Controls survive restarts when `state.database` is configured. Without it,
-pauses are in memory only. A failed durable write leaves the previous control
-state intact and reports an error.
+Controls survive restarts in the mandatory SQLite database. A failed durable
+write leaves the previous control state intact and reports an error.
 
 ### Review mode
 
@@ -105,15 +104,17 @@ ui:
   log_entries: 1000       # log records kept in memory
 ```
 
-By default, state and logs live in memory. To retain both review sections
-across restarts, configure [persistent state](../configuration/#persistent-state):
+Both review sections are retained across restarts in the mandatory database.
+The default is `data/state.db`; deployments can override the path on their
+[persistent volume](../configuration/#persistent-state):
 
 ```yaml
 state:
   database: /var/lib/forgemirror/state.db
 ```
 
-This also requires source API credentials and a persistent local volume.
+Use a persistent local volume. Source API credentials enable automatic
+rediscovery; webhook-only setups wait for newly admitted webhooks instead.
 On startup, saved diffs are marked stale and rechecked without applying writes;
 uncompleted attempts become **interrupted**. Restored repositories only regain
 action buttons after current source discovery and filters admit them. One latest

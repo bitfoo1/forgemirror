@@ -399,7 +399,7 @@ func startReviewRefresh(
 	actions *control.Controller,
 ) <-chan struct{} {
 	done := make(chan struct{})
-	if (cfg.State.Database == "" && (cfg.Sync.Auto || cfg.Sync.Schedule > 0)) || actions == nil {
+	if actions == nil || !cfg.UsesSourceAPI() {
 		close(done)
 
 		return done

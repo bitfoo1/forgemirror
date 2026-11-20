@@ -70,7 +70,7 @@ type Config struct {
 
 // State configures optional restart-safe status storage.
 type State struct {
-	// Database is a local SQLite path; empty retains in-memory operation.
+	// Database is a required local SQLite path; defaults to data/state.db.
 	Database string `koanf:"database"`
 }
 
@@ -159,7 +159,7 @@ func (c *Config) PrivatePolicy() filter.PrivatePolicy {
 // typed targets read settings and labels, the schedule and review mode list
 // repositories.
 func (c *Config) UsesSourceAPI() bool {
-	return c.Typed() || c.Sync.Schedule > 0 || !c.Sync.Auto || c.State.Database != ""
+	return c.Typed() || c.Sync.Schedule > 0 || !c.Sync.Auto || (c.Source.BaseURL != "" && c.Source.Token != "")
 }
 
 // Typed reports whether any target talks to a forge API.
@@ -270,6 +270,7 @@ func defaults() map[string]any {
 		"server.ops_listen_address":  ":9090",
 		"server.read_header_timeout": defaultReadHeaderTimeout,
 		"server.shutdown_timeout":    defaultShutdownTimeout,
+		"state.database":             "data/state.db",
 		"ui.enabled":                 false,
 		"ui.listen_address":          ":8080",
 		"ui.log_entries":             defaultUILogEntries,

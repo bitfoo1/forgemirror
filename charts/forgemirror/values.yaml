@@ -27,8 +27,8 @@ config:
     max_concurrent: 4
     work_dir: /work
   state:
-    # -- Set /var/lib/forgemirror/state.db and enable persistence.state below for restart-safe UI history. Requires source API credentials.
-    database: ""
+    # -- Mandatory SQLite database on the persistent state volume; empty is rejected.
+    database: /var/lib/forgemirror/state.db
   filter: {}
   ui:
     # -- Serve the web UI (status, diffs, refresh and sync) on port 8080 (service port "web").
@@ -188,8 +188,8 @@ persistence:
       - path: /run/secrets/forgemirror
         readOnly: true
   state:
-    # -- Opt-in local PVC for SQLite; keep one replica with Recreate.
-    enabled: false
+    # -- Persistent SQLite storage is enabled by default; keep one replica with Recreate.
+    enabled: true
     type: persistentVolumeClaim
     accessMode: ReadWriteOnce
     size: 1Gi

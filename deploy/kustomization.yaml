@@ -12,6 +12,7 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - deployment.yaml
+  - pvc.yaml
   - service.yaml
 images:
   - name: git.bitfoo.de/dvonessen/forgemirror

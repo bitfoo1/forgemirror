@@ -11,9 +11,16 @@ The user authorized implementation without additional approval questions.
 - [x] Write dispatch regression tests proving a pause prevents Git/LFS and all forge mutation paths while planning continues; implement mutation permits.
 - [x] Add controller/UI actions and tests for scope validation, CSRF, POST, reason/expiry. Render pause state and global controls.
 - [x] Update documentation, run full gate and self-review.
-- [ ] Commit and open PR 2.
+- [x] Commit and open PR 2 (#48).
+- [x] User correction: make SQLite mandatory by default, including deployment
+  volumes, schema validation and startup without a memory-only fallback.
+  Source API credentials remain optional for webhook-only operation.
 
 ## Ledger
+- Database correction: default `data/state.db`; Helm/Kubernetes use
+  `/var/lib/forgemirror/state.db` with persistent storage enabled by default.
+  Config RED reproduced the previous empty default; full gate passed after
+  implementation with 90.9% internal coverage and all 5 browser tests.
 - `mise run check` passed: 90.9% internal coverage, 5 browser tests, all other gates.
 - Ruling: expiry removes admission holds on subsequent runs; it does not introduce a new scheduling engine. Document scheduled sync for automatic catch-up.
 - Review found a possible permit/API-slot lock inversion; all mutation paths now acquire permits before process/API slots. Self-review only (no reviewer tool available).

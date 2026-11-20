@@ -41,6 +41,9 @@ func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "forgemirror.yaml")
+	if !strings.Contains(content, "\nstate:") {
+		content += "\nstate:\n  database: " + filepath.Join(t.TempDir(), "state.db") + "\n"
+	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

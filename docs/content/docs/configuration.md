@@ -76,13 +76,19 @@ probes, Prometheus scrape configs and NetworkPolicies, or set
 
 ```yaml
 state:
-  database: /var/lib/forgemirror/state.db # default: "" (memory only)
+  database: data/state.db # default; relative to the process working directory
 ```
+
+The SQLite database is mandatory and enabled by default. An empty path is
+rejected; there is no in-memory mode. Container and Helm/Kubernetes examples
+use `/var/lib/forgemirror/state.db` on persistent storage instead.
 
 SQLite retains the latest sync attempt, its per-target results and the latest
 read-only comparison per repository, independently of whether the UI is enabled.
 Set `source.base_url` and `source.token` (or `source.token_file`) so startup
-recovery can rediscover repositories under current filters. Persistence alone
+recovery can rediscover repositories under current filters. Webhook-only
+operation without API credentials remains supported: saved history stays
+stale/non-actionable until an admitted webhook arrives. Persistence alone
 does not change your private-repository publication policy.
 
 Use a writable **local persistent filesystem**, separate from `mirror.work_dir`.
@@ -95,7 +101,7 @@ silently dropping back to memory. Storage failures block new applications until
 their pre-sync checkpoint succeeds.
 
 See [operations](../operations/#persistent-state-and-backups) for recovery and
-backups, and the deployment READMEs for opt-in persistent-volume examples.
+backups, and the deployment READMEs for default persistent-volume configuration.
 
 ## Secrets
 

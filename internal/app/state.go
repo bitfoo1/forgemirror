@@ -79,36 +79,21 @@ func newController(
 }
 
 func openStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*status.Store, func() error, error) {
-	if !cfg.UI.Enabled && cfg.State.Database == "" {
-		return nil, func() error { return nil }, nil
-	}
 	opts := status.Options{ScheduleInterval: cfg.Sync.Schedule, Redact: stateRedactor(cfg), OnError: func() {
 		logger.ErrorContext(ctx, "persistent state write failed; sync durability is unavailable")
 	}}
-	var db *state.DB
-	if cfg.State.Database != "" {
-		var err error
-		db, err = state.Open(ctx, cfg.State.Database, strings.TrimRight(cfg.Source.BaseURL, "/"))
-		if err != nil {
-			return nil, nil, err
-		}
-		opts.Persistence = db
-		opts.ControlPersistence = db.Namespace("controls")
-	}
-	store := status.New(opts)
-	if err := store.Restore(ctx); err != nil {
-		if db != nil {
-			err = errors.Join(err, db.Close())
-		}
+	db, err := state.Open(ctx, cfg.State.Database, strings.TrimRight(cfg.Source.BaseURL, "/"))
+	if err != nil {
 		return nil, nil, err
 	}
-	closeStore := func() error {
-		if db != nil {
-			return db.Close()
-		}
-		return nil
+	opts.Persistence = db
+	opts.ControlPersistence = db.Namespace("controls")
+	store := status.New(opts)
+	if err = store.Restore(ctx); err != nil {
+		err = errors.Join(err, db.Close())
+		return nil, nil, err
 	}
-	return store, closeStore, nil
+	return store, db.Close, nil
 }
 
 // State contains only plans/results, never config or credentials. Scrub known

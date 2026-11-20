@@ -150,10 +150,13 @@ or `TimeoutStopSec` (systemd).
 
 ## Persistent state and backups
 
-With `state.database` configured, the latest sync attempt and current diff
-survive restart. A saved comparison is initially stale, and unfinished attempts
+The database is mandatory: `state.database` defaults to `data/state.db` and
+cannot be empty. The latest sync attempt, controls and current diff survive
+restart, even with the UI disabled. A saved comparison is initially stale, and unfinished attempts
 are marked **interrupted**, never automatically resumed. Startup discovery
-rechecks admitted repositories even in auto mode without a schedule. An
+rechecks admitted repositories even in auto mode without a schedule when
+source API credentials are available. Webhook-only deployments wait for an
+admitted webhook before restored repositories become actionable. An
 unreachable source leaves history readable but stale; use **Refresh all** when
 it returns. Normal configured schedules and future webhooks retain their usual
 behaviour.

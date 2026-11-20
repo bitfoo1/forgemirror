@@ -20,7 +20,7 @@ kubeconform -strict -summary \
   "${rendered}"
 mise run deploy:validate-config "${rendered}"
 
-# Exercise the opt-in PVC and durable-state configuration as well.
+# Exercise explicit persistent-storage overrides as well as chart defaults.
 helm template forgemirror "${chart}" -f "${values}" -f "${chart}/ci/persistent-values.yaml" >"${rendered}"
 kubeconform -strict -summary \
   -schema-location default \

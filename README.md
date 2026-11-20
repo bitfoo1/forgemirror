@@ -92,8 +92,12 @@ targets:
 **2. Run it:**
 
 ```sh
+mkdir -p state
+sudo chown 65532:65532 state # container runtime UID/GID
 docker run --rm -p 8081:8081 \
   -v "$PWD/forgemirror.yaml:/etc/forgemirror/forgemirror.yaml:ro" \
+  -v "$PWD/state:/var/lib/forgemirror" \
+  -e FORGEMIRROR_STATE__DATABASE=/var/lib/forgemirror/state.db \
   git.bitfoo.de/dvonessen/forgemirror:latest \
   --config /etc/forgemirror/forgemirror.yaml
 ```
@@ -101,6 +105,11 @@ docker run --rm -p 8081:8081 \
 **3. Point Forgejo at it:** add a webhook of type *Forgejo* with target URL
 `http://<forgemirror-host>:8081/webhook`, content type `application/json`, the
 secret from step 1, and push events. Then push.
+
+SQLite state is mandatory and defaults to `data/state.db` for binary runs.
+Containers need a persistent writable volume, as shown above; Helm and
+Kubernetes manifests configure one by default. Empty paths and database
+startup errors are rejected, with no in-memory fallback.
 
 Target repositories must already exist, unless the target has a `type` and
 `create: true`. For every option, see

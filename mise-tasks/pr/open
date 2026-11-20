@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Open a Forgejo pull request for a pushed feature branch"
+#MISE description="Open or update a Forgejo pull request for a pushed feature branch"
 set -euo pipefail
 : "${FORGEJO_TOKEN:?FORGEJO_TOKEN is required}"
 head="${1:?head branch}" base="${2:?base branch}" title="${3:?title}" body_file="${4:?body file}"
@@ -10,7 +10,17 @@ forgejo() {
     curl --config - --silent --show-error --fail \
       -H 'Content-Type: application/json' "${api}$1" "${@:2}"
 }
-existing="$(forgejo '/pulls?state=open&limit=100' | jq -r --arg head "${head}" '.[] | select(.head.ref == $head) | .html_url')"
-if [[ -n "${existing}" ]]; then printf '%s\n' "${existing}"; exit 0; fi
+existing="$(forgejo '/pulls?state=open&limit=100' | jq -r --arg head "${head}" '.[] | select(.head.ref == $head) | .number')"
+if [[ -n "${existing}" ]]; then
+  payload="$(jq -n --arg title "${title}" --rawfile body "${body_file}" '{title:$title,body:$body}')"
+  forgejo "/pulls/${existing}" -X PATCH --data "${payload}" | jq -r .html_url
+  exit 0
+fi
+# A preceding PR may have merged while this increment was being checked.
+if ! git ls-remote --exit-code --heads origin "refs/heads/${base}" >/dev/null; then
+  git fetch --quiet origin main
+  git merge-base --is-ancestor "${base}" origin/main
+  base=main
+fi
 payload="$(jq -n --arg head "${head}" --arg base "${base}" --arg title "${title}" --rawfile body "${body_file}" '{head:$head,base:$base,title:$title,body:$body}')"
 forgejo '/pulls' -X POST --data "${payload}" | jq -r .html_url

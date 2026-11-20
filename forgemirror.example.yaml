@@ -33,7 +33,7 @@ ui:
 # the UI is disabled. Requires source.base_url and a source token for safe
 # startup rediscovery. Mount a persistent local volume; one process per file.
 state:
-  database: "" # e.g. /var/lib/forgemirror/state.db; empty = memory only
+  database: data/state.db # required; mount persistent storage here in containers
 
 log:
   level: info # debug, info, warn, error
@@ -55,7 +55,7 @@ source:
   username: oauth2
   # token_file: /run/secrets/forgemirror/source-token
 
-# What starts a mirror run. Scheduled runs, typed targets and persistent state
+# What starts a mirror run. Scheduled runs and typed targets
 # read from the Forgejo API, so they need source.base_url and a source token.
 sync:
   # Apply runs automatically. false enables review mode: pushes, the schedule

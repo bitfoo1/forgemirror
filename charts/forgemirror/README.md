@@ -60,7 +60,8 @@ so a pod is never deployed in a state where it would just crash-loop.
 
 ## Persistent review history
 
-Persistence is opt-in. Combine these values with your normal targets/credentials:
+Persistence is mandatory and enabled by default. The chart provisions the
+state volume and configures the SQLite path; customize storage if needed:
 
 ```yaml
 config:
@@ -79,7 +80,8 @@ This provisions a 1 GiB ReadWriteOnce PVC mounted separately from temporary
 clones. Use local/block-backed storage, not NFS/SMB, and keep one replica with
 `Recreate`. Existing pod `fsGroup: 65532` permits the non-root process to write;
 your storage driver must honour it. For an existing claim, set
-`persistence.state.existingClaim`. Configure the source-token Secret key too.
+`persistence.state.existingClaim`. Source API credentials enable automatic
+startup rediscovery but are not required solely for database use.
 The latest attempt and comparison survive pod replacement; logs do not.
 See the [operations guide](https://forgemirror.bitfoo.de/docs/operations/#persistent-state-and-backups)
 for backup and recovery.
@@ -94,8 +96,8 @@ for backup and recovery.
 | `credentials.data`                    | `{}`            | Key/value pairs for a chart-managed Secret, used when `existingSecret` is empty                   |
 | `controllers.forgemirror.containers.app.image.tag` | appVersion | Image tag                                                                             |
 | `controllers.forgemirror.containers.app.resources` | 50m / 64Mi, 512Mi limit | Raise the limit for large repositories or a higher `config.mirror.max_concurrent` |
-| `config.state.database`               | `""`            | SQLite file path; requires source API credentials and persistent storage                          |
-| `persistence.state.enabled`           | `false`         | Provision/mount the optional local SQLite PVC (default 1 GiB)                                      |
+| `config.state.database`               | `/var/lib/forgemirror/state.db` | Required SQLite file path on persistent local storage                              |
+| `persistence.state.enabled`           | `true`          | Provision/mount the SQLite PVC (default 1 GiB); provide equivalent persistent storage if replacing it |
 | `persistence.work.sizeLimit`          | `5Gi`           | emptyDir for temporary clones                                                                     |
 | `config.ui.enabled`                   | `false`         | Serve the web UI (status, diffs, refresh and sync) on service port `web` (8080)                   |
 | `config.sync.auto`                    | `true`          | `false` = review mode: changes wait for *Sync* in the web UI; requires `config.ui.enabled` and source API credentials |

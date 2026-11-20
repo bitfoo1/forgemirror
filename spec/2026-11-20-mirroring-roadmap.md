@@ -48,6 +48,10 @@ merely by this roadmap.
 
 ## Shared constraints
 
+- User correction: SQLite is mandatory and configured by default, not opt-in.
+  Binary default: `data/state.db`; deployments configure a persistent volume.
+  Empty paths and database startup failures are errors; no memory-only fallback.
+
 - Successful destinations must not be reported as failed because another
   destination failed; partial outcomes remain explicit.
 - Planning and publication evidence are distinct. Ref equality alone does

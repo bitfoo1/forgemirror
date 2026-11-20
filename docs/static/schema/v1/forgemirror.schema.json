@@ -39,14 +39,16 @@
       }
     },
     "state": {
-      "description": "Optional durable sync status, independent of the UI listener.",
+      "description": "Mandatory durable sync state, independent of the UI listener.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "database": {
-          "description": "Local SQLite file; empty keeps state in memory. Requires source.base_url and source.token to safely rediscover repositories after restart. Use a persistent local volume with one writer.",
+          "description": "Required SQLite file. Defaults to data/state.db relative to the working directory. Empty paths are rejected; there is no in-memory fallback. Use a persistent local volume with one writer.",
           "type": "string",
-          "default": "",
+          "minLength": 1,
+          "pattern": "\\S",
+          "default": "data/state.db",
           "examples": ["/var/lib/forgemirror/state.db"]
         }
       }

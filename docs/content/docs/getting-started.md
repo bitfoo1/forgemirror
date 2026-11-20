@@ -96,8 +96,12 @@ All options, including filters and secrets read from files, are covered in
 {{< tabs >}}
   {{< tab name="Container" >}}
   ```sh
+  mkdir -p state
+  sudo chown 65532:65532 state # container runtime UID/GID
   docker run --rm -p 8081:8081 -p 9090:9090 \
     -v "$PWD/forgemirror.yaml:/etc/forgemirror/forgemirror.yaml:ro" \
+    -v "$PWD/state:/var/lib/forgemirror" \
+    -e FORGEMIRROR_STATE__DATABASE=/var/lib/forgemirror/state.db \
     {{< param "project.image" >}}:<version> \
     --config /etc/forgemirror/forgemirror.yaml
   ```

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strings"
 
 	"go.bitfoo.de/forgemirror/internal/forge"
 )
@@ -115,8 +116,11 @@ func (c *Config) validateSync() []error {
 		errs = append(errs, fmt.Errorf("%s: %w", key, err))
 	}
 
+	if strings.TrimSpace(c.State.Database) == "" {
+		add("state.database", errRequired)
+	}
 	if c.UsesSourceAPI() {
-		const need = "required when a target has a type, sync.schedule is set or sync.auto is false, or when state.database is set"
+		const need = "required when a target has a type, sync.schedule is set or sync.auto is false"
 		if c.Source.BaseURL == "" {
 			add("source.base_url", errors.New(need))
 		}

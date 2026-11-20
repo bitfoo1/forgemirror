@@ -19,6 +19,8 @@ data:
     source:
       base_url: https://git.example.org/
       token_file: /run/secrets/forgemirror/source-token
+    state:
+      database: /var/lib/forgemirror/state.db
     mirror:
       timeout: 10m
       max_concurrent: 4

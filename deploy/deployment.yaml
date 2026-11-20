@@ -74,6 +74,8 @@ spec:
               mountPath: /work
             - name: tmp
               mountPath: /tmp
+            - name: state
+              mountPath: /var/lib/forgemirror
       volumes:
         - name: config
           configMap:
@@ -82,6 +84,9 @@ spec:
           secret:
             secretName: forgemirror
             defaultMode: 0440
+        - name: state
+          persistentVolumeClaim:
+            claimName: forgemirror-state
         - name: work
           emptyDir:
             sizeLimit: 5Gi
