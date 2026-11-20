@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 // ErrPaused distinguishes an operator hold from a failed transfer.
@@ -20,9 +22,12 @@ type Pause struct {
 	Until  time.Time `json:"until"`
 }
 
+const controlVersion = 2
+
 type controlRecord struct {
-	Version int     `json:"version"`
-	Pauses  []Pause `json:"pauses"`
+	Version int           `json:"version"`
+	Pauses  []Pause       `json:"pauses"`
+	Retries []retry.Entry `json:"retries,omitempty"`
 }
 
 // BeginMutation keeps pause acknowledgement behind operations already started.
@@ -88,7 +93,7 @@ func (s *Store) Resume(ctx context.Context, repo, target string) error {
 }
 
 func (s *Store) saveControls(ctx context.Context, pauses []Pause) error {
-	data, err := json.Marshal(controlRecord{Version: 1, Pauses: pauses})
+	data, err := json.Marshal(controlRecord{Version: controlVersion, Pauses: pauses, Retries: s.retries})
 	if err != nil {
 		return fmt.Errorf("encoding controls: %w", err)
 	}
@@ -108,6 +113,7 @@ func (s *Store) saveControls(ctx context.Context, pauses []Pause) error {
 		}
 	}
 	s.pauses = record.Pauses
+	s.retries = record.Retries
 	return nil
 }
 
@@ -121,8 +127,15 @@ func (s *Store) restoreControls(ctx context.Context) error {
 	}
 	if data, ok := records["controls"]; ok {
 		var record controlRecord
-		if err = json.Unmarshal(data, &record); err != nil || record.Version != 1 {
+		if err = json.Unmarshal(
+			data,
+			&record,
+		); err != nil ||
+			(record.Version != 1 && record.Version != controlVersion) {
 			return errors.New("invalid publication controls")
+		}
+		if !validRetries(record.Retries) {
+			return errors.New("invalid persisted retries")
 		}
 		for _, p := range record.Pauses {
 			if p.Target == "" {
@@ -131,6 +144,7 @@ func (s *Store) restoreControls(ctx context.Context) error {
 		}
 		s.controlMu.Lock()
 		s.pauses = record.Pauses
+		s.retries = record.Retries
 		s.controlMu.Unlock()
 	}
 	return nil

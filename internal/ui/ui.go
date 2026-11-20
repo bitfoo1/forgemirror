@@ -28,6 +28,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/control"
 	"go.bitfoo.de/forgemirror/internal/logging"
+	"go.bitfoo.de/forgemirror/internal/retry"
 	"go.bitfoo.de/forgemirror/internal/status"
 )
 
@@ -260,6 +261,7 @@ type pageData struct {
 	Types       []targetType
 	TargetNames []string
 	Pauses      []status.Pause
+	Retries     []retry.Entry
 	OnPush      bool
 	Auto        bool
 	Actions     bool
@@ -315,6 +317,7 @@ func (h *handler) data(r *http.Request) pageData {
 		Refresh:  refresh,
 		Snapshot: h.opts.Store.Snapshot(),
 		Pauses:   h.opts.Store.Pauses(),
+		Retries:  h.opts.Store.Retries(),
 		Types:    h.types,
 		OnPush:   h.opts.Config.Sync.OnPush,
 		Auto:     h.opts.Config.Sync.Auto,

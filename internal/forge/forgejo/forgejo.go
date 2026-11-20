@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	sdk "codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v4"
 
@@ -16,6 +17,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 	"go.bitfoo.de/forgemirror/internal/repo"
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 // pageSize is Forgejo's default MAX_RESPONSE_ITEMS. An instance may cap pages
@@ -113,6 +115,9 @@ func wrap(op string, resp *sdk.Response, err error) error {
 		return fmt.Errorf("forgejo %s: %w: %s", op, forge.ErrNotFound, err.Error())
 	}
 
+	if resp != nil {
+		err = retry.HTTP(err, resp.Response, time.Now())
+	}
 	return fmt.Errorf("forgejo %s: %w", op, err)
 }
 

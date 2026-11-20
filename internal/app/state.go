@@ -48,6 +48,7 @@ func newDispatcher(
 		Logger:           logger,
 		Observer:         observer,
 		BeforeApply:      checkpoint,
+		Retries:          store,
 		VerifyAfterApply: store != nil,
 		Mutation: func(repo, target string) (func(), error) {
 			if store == nil {

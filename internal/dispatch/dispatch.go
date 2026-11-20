@@ -51,6 +51,7 @@ type Options struct {
 	Mirrorer mirror.Mirrorer
 	// Mutation grants a permit held through one remote operation.
 	Mutation func(repo, target string) (func(), error)
+	Retries  RetryState
 	// Source holds the credentials for cloning from Forgejo.
 	Source  config.Source
 	Targets []config.Target
@@ -121,7 +122,9 @@ type Dispatcher struct {
 	known  map[string]repo.Repository
 	closed bool
 
-	wg sync.WaitGroup
+	retryStop    context.CancelFunc
+	retryBlocked bool
+	wg           sync.WaitGroup
 }
 
 // repoState tracks the single active run of a repository.
@@ -165,6 +168,9 @@ func New(opts Options) *Dispatcher {
 
 // applies reports whether a run for e changes the targets.
 func (d *Dispatcher) applies(e webhook.Event) bool {
+	if e.Operator && e.Kind != webhook.EventRefresh {
+		return true
+	}
 	switch e.Kind {
 	case webhook.EventSync:
 		return true
@@ -179,6 +185,9 @@ func (d *Dispatcher) applies(e webhook.Event) bool {
 
 // Dispatch implements [webhook.Dispatcher]. It never blocks on git.
 func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
+	if e.Kind == webhook.EventSync || e.Kind == webhook.EventRepairLFS {
+		e.Operator = true
+	}
 	key := e.Repository.FullName
 	logger := d.eventLogger(e)
 
@@ -198,13 +207,18 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 		if queued := state.next; queued != nil {
 			// A queued sync must survive a later event that only plans, or a
 			// push in review mode would silently cancel the operator's sync.
+			current.event.Target = mergedScope(current, queued)
 			current.apply = current.apply || queued.apply
 			current.repair = current.repair || queued.repair
-			current.event.Target = mergedTarget(current.event.Target, queued.event.Target)
+			current.event.Operator = current.event.Operator || queued.event.Operator
+			current.event.Retry = current.event.Retry && queued.event.Retry
 			// The repository is gone once a deletion is queued; letting a later
 			// push replace it would recreate the target repository.
 			if queued.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
 				queued.apply = current.apply
+				queued.event.Operator = current.event.Operator
+				queued.event.Target = current.event.Target
+				queued.event.Retry = current.event.Retry
 				logger.InfoContext(ctx, "deletion already queued; event merged into it")
 
 				return
@@ -218,6 +232,17 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 
 	d.running[key] = &repoState{}
 	d.wg.Go(func() { d.runLoop(current) })
+}
+
+func mergedScope(current, queued *queuedEvent) string {
+	currentWrites, queuedWrites := current.apply || current.repair, queued.apply || queued.repair
+	if currentWrites && !queuedWrites {
+		return current.event.Target
+	}
+	if queuedWrites && !currentWrites {
+		return queued.event.Target
+	}
+	return mergedTarget(current.event.Target, queued.event.Target)
 }
 
 func mergedTarget(a, b string) string {
@@ -272,6 +297,9 @@ func (d *Dispatcher) Queued() map[string]bool {
 func (d *Dispatcher) Shutdown(ctx context.Context) error {
 	d.mu.Lock()
 	d.closed = true
+	if d.retryStop != nil {
+		d.retryStop()
+	}
 	d.mu.Unlock()
 
 	done := make(chan struct{})
@@ -345,16 +373,20 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repai
 	}
 	p := d.plan(ctx, logger, runs, e)
 	p.Apply = apply || repair
+	if p.Apply && !e.Retry {
+		d.clearRetryBudget(ctx, runs, e, repair && !apply)
+	}
 	d.opts.Observer.PlanFinished(ctx, p)
 	logPlan(ctx, logger, p)
-	if (apply || repair) && d.opts.BeforeApply != nil {
-		if err := d.opts.BeforeApply(ctx, p); err != nil {
-			logger.ErrorContext(ctx, "sync blocked: persistent checkpoint failed")
-			for _, tr := range runs {
-				d.finishTarget(ctx, logger, tr, start, nil, err)
-			}
-			return
+	if err := d.checkpoint(ctx, p); err != nil {
+		d.mu.Lock()
+		d.retryBlocked = true
+		d.mu.Unlock()
+		logger.ErrorContext(ctx, "sync blocked: persistent checkpoint failed")
+		for _, tr := range runs {
+			d.finishTarget(ctx, logger, tr, start, nil, err)
 		}
+		return
 	}
 
 	switch {
@@ -371,9 +403,19 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repai
 	default:
 		d.apply(ctx, logger, runs, e, start, repair)
 	}
+	if apply || repair {
+		d.recordRetryOutcomes(ctx, runs, e, apply, repair, p.SourceDeleted)
+	}
 	if apply && d.opts.VerifyAfterApply && ctx.Err() == nil {
 		d.verify(ctx, logger, e)
 	}
+}
+
+func (d *Dispatcher) checkpoint(ctx context.Context, p plan.Repo) error {
+	if !p.Apply || d.opts.BeforeApply == nil {
+		return nil
+	}
+	return d.opts.BeforeApply(ctx, p)
 }
 
 // apply executes the plan of a mirror run: create and privatise target

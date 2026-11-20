@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	gh "github.com/google/go-github/v93/github"
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 const (
@@ -88,6 +90,9 @@ func wrap(op string, resp *gh.Response, err error) error {
 		return fmt.Errorf("github %s: %w: %s", op, forge.ErrNotFound, err.Error())
 	}
 
+	if resp != nil {
+		err = retry.HTTP(err, resp.Response, time.Now())
+	}
 	return fmt.Errorf("github %s: %w", op, err)
 }
 

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 // pushRefspecs mirror branches and tags only. `git push --mirror` would also
@@ -231,7 +233,7 @@ func (g *Git) outputInput(
 		return "", fmt.Errorf("%w: %w: %s", ctxErr, err, output)
 	}
 
-	return "", fmt.Errorf("%w: %s", err, output)
+	return "", retry.Command(fmt.Errorf("%w: %s", err, output), output)
 }
 
 // env builds git's environment. Credentials travel as an HTTP header scoped

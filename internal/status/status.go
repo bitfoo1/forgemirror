@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.bitfoo.de/forgemirror/internal/plan"
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 // operationDelete is the forge operation that removes a target repository;
@@ -45,6 +46,7 @@ type Store struct {
 	controls    Persistence
 	controlMu   sync.RWMutex
 	pauses      []Pause
+	retries     []retry.Entry
 	persistence Persistence
 	redact      func([]byte) ([]byte, error)
 	persistErr  string

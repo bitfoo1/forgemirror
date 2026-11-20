@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 // CheckLFS fails before accepting work if the runtime dependency is missing.
@@ -74,10 +76,10 @@ func (w *gitWorkspace) transferLFS(ctx context.Context, remote Remote, operation
 		if errors.Is(err, context.DeadlineExceeded) {
 			return fmt.Errorf("LFS %s timed out: %w", operation, context.DeadlineExceeded)
 		}
-		return fmt.Errorf(
+		return retry.WithMessage(err, fmt.Sprintf(
 			"LFS %s failed; check endpoint support, credentials, quota and source object availability",
 			operation,
-		)
+		))
 	}
 	return nil
 }

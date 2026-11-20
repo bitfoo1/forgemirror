@@ -50,6 +50,41 @@ or packages. It works in review mode as an explicit write action, requires
 existing target repositories, and does not restore destination-only history.
 **Sync all** is not an all-repository LFS audit.
 
+## Retries and outages
+
+Transient target failures receive up to five automatic retries: exponential
+backoff starts at 30 seconds, with additive jitter and a 15-minute cap. HTTP
+`Retry-After` and rate-limit reset times can defer a retry beyond that cap.
+Known network timeouts/connection failures and HTTP 429/5xx are retryable;
+authentication, validation, unsupported endpoints and unknown CLI failures
+require intervention rather than guessing from arbitrary server text.
+
+The mandatory database stores timing, failure count, target and operation
+intent, not an executable saved plan or credential-bearing URL. Retries wait
+without occupying Git/API slots, re-plan current state, and skip completed
+work. Successful destinations are not retried just because another failed.
+New admitted source events and explicit Sync reset the affected retry budget.
+Object-only repair does not cancel an outstanding normal publication retry.
+
+The UI's **Retry status** lists waiting, paused, exhausted and intervention
+states, failure counts and next eligible times. A pause consumes no attempts;
+it may defer a retry past its displayed eligibility time. Explicit Sync or
+resume rechecks current state. Automatic-origin jobs cannot bypass review
+mode after a configuration change; explicit Sync/Repair jobs retain their
+operator-requested intent.
+
+On restart, due jobs wait for the repository to be admitted again through
+current source discovery or a valid webhook. Removed targets and unknown
+repositories never execute from saved retry data. In particular, deletion
+retries for an absent source may require a new admitted deletion event.
+State/checkpoint failures suspend automatic retries until a later admitted
+run successfully records state. Shutdown stops the scheduler before draining
+active operations; cancellation preserves already pending retry intent.
+
+This is not a forge-wide circuit breaker, an independent source-discovery
+scheduler, or exactly-once execution. Ambiguous failures are reconciled by
+fresh remote reads before repeating the existing operations.
+
 ## Metrics
 
 ForgeMirror records metrics with OpenTelemetry and exposes them in the

@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	gl "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
+	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 const (
@@ -91,6 +93,9 @@ func wrap(op string, resp *gl.Response, err error) error {
 		return fmt.Errorf("gitlab %s: %w: %s", op, forge.ErrNotFound, err.Error())
 	}
 
+	if resp != nil {
+		err = retry.HTTP(err, resp.Response, time.Now())
+	}
 	return fmt.Errorf("gitlab %s: %w", op, err)
 }
 

@@ -232,6 +232,7 @@ func serveAndDrain(
 	shutdownCtx, cancelShutdown := shutdownContext(runCtx, cfg.Server.ShutdownTimeout)
 	defer cancelShutdown()
 
+	dispatcher.StartRetries(runCtx)
 	schedulerDone := startScheduler(runCtx, cfg, logger, flt, scheduleObs, clients.source, dispatcher)
 	refreshDone := startReviewRefresh(runCtx, cfg, logger, actions)
 

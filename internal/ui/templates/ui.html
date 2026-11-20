@@ -149,6 +149,9 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   {{range .Pauses}}<p class="warn"><code>{{.Target}}</code> · {{if .Repo}}{{.Repo}}{{else}}all repositories{{end}} · paused{{with .Reason}}: {{.}}{{end}}{{if not .Until.IsZero}} until <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}</p>{{end}}
 </details>
 {{end}}
+{{with .Retries}}<details data-live-key="retry-status"><summary>Retry status · {{len .}}</summary>
+{{range .}}<p><code>{{.Repo}}</code> → <code>{{.Target}}</code>: {{.State}} · {{.Attempts}} failures{{if or (eq .State "waiting") (eq .State "paused")}} · next eligible <time datetime="{{iso .Next}}">{{when .Next}}</time>{{end}}</p>{{end}}
+</details>{{end}}
 {{- if not .Repos}}
 <p class="empty muted">No repositories yet. They appear after the first push, scheduled sweep or refresh.</p>
 {{- else}}
