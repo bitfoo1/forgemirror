@@ -58,6 +58,32 @@ listed in the [security docs](https://forgemirror.bitfoo.de/docs/security/#token
 Rendering fails if `config.targets` is empty or if no credentials are given,
 so a pod is never deployed in a state where it would just crash-loop.
 
+## Persistent review history
+
+Persistence is opt-in. Combine these values with your normal targets/credentials:
+
+```yaml
+config:
+  source:
+    base_url: https://git.example.org/
+    token_file: /run/secrets/forgemirror/source-token
+  state:
+    database: /var/lib/forgemirror/state.db
+persistence:
+  state:
+    enabled: true
+    # storageClass: your-local-or-block-storage-class
+```
+
+This provisions a 1 GiB ReadWriteOnce PVC mounted separately from temporary
+clones. Use local/block-backed storage, not NFS/SMB, and keep one replica with
+`Recreate`. Existing pod `fsGroup: 65532` permits the non-root process to write;
+your storage driver must honour it. For an existing claim, set
+`persistence.state.existingClaim`. Configure the source-token Secret key too.
+The latest attempt and comparison survive pod replacement; logs do not.
+See the [operations guide](https://forgemirror.bitfoo.de/docs/operations/#persistent-state-and-backups)
+for backup and recovery.
+
 ## Values
 
 | Key                                   | Default         | Description                                                                                       |
@@ -68,6 +94,8 @@ so a pod is never deployed in a state where it would just crash-loop.
 | `credentials.data`                    | `{}`            | Key/value pairs for a chart-managed Secret, used when `existingSecret` is empty                   |
 | `controllers.forgemirror.containers.app.image.tag` | appVersion | Image tag                                                                             |
 | `controllers.forgemirror.containers.app.resources` | 50m / 64Mi, 512Mi limit | Raise the limit for large repositories or a higher `config.mirror.max_concurrent` |
+| `config.state.database`               | `""`            | SQLite file path; requires source API credentials and persistent storage                          |
+| `persistence.state.enabled`           | `false`         | Provision/mount the optional local SQLite PVC (default 1 GiB)                                      |
 | `persistence.work.sizeLimit`          | `5Gi`           | emptyDir for temporary clones                                                                     |
 | `config.ui.enabled`                   | `false`         | Serve the web UI (status, diffs, refresh and sync) on service port `web` (8080)                   |
 | `config.sync.auto`                    | `true`          | `false` = review mode: changes wait for *Sync* in the web UI; requires `config.ui.enabled` and source API credentials |

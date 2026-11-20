@@ -58,7 +58,7 @@ func securityHeaders() map[string]string {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js static/style.css static/app.js
+//go:embed static/htmx.min.js static/style.css static/app.js static/live.js
 var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
@@ -78,6 +78,8 @@ type Options struct {
 	// Queued returns the repositories with a run in progress, each mapped to
 	// whether a follow-up run is queued; nil means none.
 	Queued func() map[string]bool
+	// Known gates actions for restored history until source admission succeeds.
+	Known func(string) bool
 	// Actions may be nil: the UI then shows no action buttons and answers
 	// action requests with 404.
 	Actions Actions
@@ -309,6 +311,9 @@ func (h *handler) data(r *http.Request) pageData {
 		}
 	}
 	d.Repos, d.Counts = repoViews(d.Snapshot.Repos, queued)
+	for i := range d.Repos {
+		d.Repos[i].Actionable = h.opts.Known == nil || h.opts.Known(d.Repos[i].Name)
+	}
 
 	minLevel := parseLevel(r.URL.Query().Get("level"))
 	for _, l := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {

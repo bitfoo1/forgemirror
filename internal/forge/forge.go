@@ -23,11 +23,11 @@ var ErrNotFound = errors.New("not found")
 
 // Label is a repository label.
 type Label struct {
-	Name string
+	Name string `json:"name"`
 	// Color is canonical: lower-case hex without "#". Forges disagree on the
 	// "#" and on case, so comparing raw values would cause endless updates.
-	Color       string
-	Description string
+	Color       string `json:"color"`
+	Description string `json:"description"`
 }
 
 // NormalizeColor returns the canonical form of a label color.

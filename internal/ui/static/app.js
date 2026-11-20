@@ -74,15 +74,17 @@
 
   document.addEventListener("toggle", function (ev) {
     var d = ev.target;
-    if (d && d.matches && d.matches("details[data-key]")) {
+    if (d && d.isConnected && d.matches && d.matches("details[data-key]")) {
       openState[d.getAttribute("data-key")] = d.open;
     }
   }, true);
 
-  document.addEventListener("htmx:afterSwap", function (ev) {
+  function updated(ev) {
     restoreDetails(ev.target);
     paintSwatches(ev.target);
-  });
+  }
+  document.addEventListener("htmx:afterSwap", updated);
+  document.addEventListener("forgemirror:updated", updated);
 
   document.addEventListener("DOMContentLoaded", function () {
     var button = document.getElementById("theme-toggle");

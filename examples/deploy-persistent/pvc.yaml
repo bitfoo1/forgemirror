@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgemirror-state
+spec:
+  accessModes: [ReadWriteOnce]
+  # Select a StorageClass backed by a local/block filesystem, not NFS/SMB.
+  resources:
+    requests:
+      storage: 1Gi

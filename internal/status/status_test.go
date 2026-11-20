@@ -187,7 +187,7 @@ func TestSourceDeletedPlans(t *testing.T) {
 	}{
 		{name: "reviewed deletion stays visible", plan: pending, wantKept: true},
 		{name: "nothing left to delete", plan: plan.Repo{SourceDeleted: true}},
-		{name: "applied deletion", apply: true, plan: pending},
+		{name: "applied deletion retains history", apply: true, plan: pending, wantKept: true},
 		{name: "failed deletion", apply: true, plan: pending, deleteErr: errors.New("forbidden"), wantKept: true},
 	}
 	for _, tc := range tests {

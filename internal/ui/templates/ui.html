@@ -12,6 +12,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <link rel="stylesheet" href="static/style.css">
 {{- /* Not deferred: it applies the stored theme before the first paint. */}}
 <script src="static/app.js"></script>
+<script src="static/live.js" defer></script>
 <script src="static/htmx.min.js" defer></script>
 </head>
 <body>
@@ -31,10 +32,10 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   </div>
 </header>
 <main>
-  <section id="overview" class="tiles" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
+  <section id="overview" class="tiles" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">
     {{template "overview" .}}
   </section>
-  <section id="repos" class="card" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML">
+  <section id="repos" class="card" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">
     {{template "repos" .}}
   </section>
   <section class="card">
@@ -50,7 +51,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
         <noscript><button type="submit" class="btn">Filter</button></noscript>
       </form>
     </div>
-    <div id="logs" class="scroll logs-box" hx-get="fragments/logs" hx-trigger="every {{.Refresh}}" hx-include="#log-level" hx-swap="innerHTML">
+    <div id="logs" class="scroll logs-box" hx-get="fragments/logs" hx-trigger="every {{.Refresh}}" hx-include="#log-level" hx-swap="innerHTML" hx-sync="this:drop">
       {{template "logs" .}}
     </div>
   </section>
@@ -60,7 +61,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     <pre>{{.Config}}</pre>
   </details>
 </main>
-<footer class="foot muted">Refreshes every {{.Refresh}}</footer>
+<footer class="foot muted">Live data checked every {{.Refresh}} · updates pause while selecting text</footer>
 </body>
 </html>
 {{- end}}
@@ -120,7 +121,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     </p>
   </div>
   {{- if .Actions}}
-  <div class="toolbar">
+  <div class="toolbar" hx-sync="#repos:queue all">
     <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
       <button type="submit" class="btn">Refresh all</button>
     </form>
@@ -132,15 +133,16 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   {{- end}}
 </div>
 {{- with .Notice}}
-<p class="notice" role="status">{{.}}</p>
+<p class="notice" role="status" data-live-key="action-notice">{{.}}</p>
 {{- end}}
+{{- with .Snapshot.Error}}<p class="notice fail" role="alert">{{.}}</p>{{end}}
 {{- if not .Repos}}
 <p class="empty muted">No repositories yet. They appear after the first push, scheduled sweep or refresh.</p>
 {{- else}}
-<ul class="repos">
+<ul class="repos" data-live-key="repository-list">
   {{- range $r := .Repos}}
-  <li class="repo state-{{$r.State}}">
-    <div class="repo-head">
+  <li class="repo state-{{$r.State}}" data-live-key="repo:{{$r.Name}}">
+    <div class="repo-head" data-live-key="repository-heading">
       <span class="dot" aria-hidden="true"></span>
       <code class="repo-name">{{$r.Name}}</code>
       {{template "state" $r}}
@@ -148,11 +150,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       <span class="pill pill-info">{{if $r.Applying}}syncing{{else}}planning{{end}}</span>
       {{- if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
       {{- end}}
-      {{- with $r.Plan}}
-      <span class="checked muted">{{if .Apply}}synced{{else}}checked{{end}} <time datetime="{{iso .At}}">{{when .At}}</time></span>
+      {{- with $r.Current}}
+      <span class="checked muted">checked <time datetime="{{iso .At}}">{{when .At}}</time></span>
       {{- end}}
-      {{- if $.Actions}}
-      <div class="repo-actions">
+      {{- if and $.Actions $r.Actionable}}
+      <div class="repo-actions" data-live-key="repository-actions" hx-sync="#repos:queue all">
         <form method="post" action="actions/refresh" hx-post="actions/refresh" hx-target="#repos" hx-swap="innerHTML">
           <input type="hidden" name="repo" value="{{$r.Name}}">
           <button type="submit" class="btn btn-small">Refresh</button>
@@ -164,12 +166,17 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       </div>
       {{- end}}
     </div>
-    {{- if $r.Targets}}
-    <details class="diff" data-key="{{$r.Name}}"{{if and (eq $r.State "out-of-sync") (not $.Auto)}} data-open-default{{end}}>
-      <summary>{{if and $r.Plan $r.Plan.Apply}}Applied changes{{else}}Diff{{end}}{{if $r.Changes}} · {{$r.Changes}} {{plural $r.Changes "change" "changes"}}{{end}} · last results</summary>
-      <div class="targets">
-        {{- range $r.Targets}}{{template "target" .}}{{end}}
-      </div>
+    <details class="diff" data-live-key="current:{{$r.Name}}" data-key="current:{{$r.Name}}"{{if and (eq $r.State "out-of-sync") (not $.Auto)}} data-open-default{{end}}>
+      <summary>Current diff{{if $r.Changes}} · {{$r.Changes}} {{plural $r.Changes "change" "changes"}}{{end}}{{if $r.Stale}} · awaiting verification{{end}}</summary>
+      {{- if $r.Stale}}<p class="muted">{{if $r.Running}}Verification pending; the previous diff may be outdated.{{else}}Saved results may be outdated. Awaiting a fresh comparison.{{end}}</p>{{end}}
+      {{- with $r.Current}}{{if .Failed}}<p class="fail">Could not verify{{with .Error}}: {{.}}{{end}}</p>{{end}}{{end}}
+      <div class="targets" data-live-key="current-targets">{{range $r.Targets}}{{template "target" .}}{{end}}</div>
+    </details>
+    {{- with $r.LastAttempt}}
+    <details class="diff applied" data-live-key="applied:{{$r.Name}}" data-key="applied:{{$r.Name}}">
+      <summary>{{if eq .Status "succeeded"}}Last applied plan{{else}}Last sync attempt{{end}} · {{.Status}} · <time datetime="{{iso .Started}}">{{when .Started}}</time></summary>
+      {{- with .Error}}<p class="fail">{{.}}</p>{{end}}
+      <div class="targets" data-live-key="applied-targets">{{range $r.AppliedTargets}}{{template "target" .}}{{end}}</div>
     </details>
     {{- end}}
   </li>
@@ -181,14 +188,14 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 {{define "state" -}}
 {{- if eq .State "failed"}}<span class="pill pill-fail">failed</span>
 {{- else if eq .State "out-of-sync"}}<span class="pill pill-warn">out of sync · {{.Changes}} {{plural .Changes "change" "changes"}}</span>
-{{- else if eq .State "unchecked"}}<span class="pill pill-muted">not checked yet</span>
+{{- else if eq .State "unchecked"}}<span class="pill pill-muted">{{if .Stale}}awaiting verification{{else}}not checked yet{{end}}</span>
 {{- else if eq .State "synced"}}<span class="pill pill-ok">synced · {{.Changes}} {{plural .Changes "change" "changes"}}</span>
 {{- else}}<span class="pill pill-ok">in sync</span>
 {{- end}}
 {{- end}}
 
 {{define "target" -}}
-<div class="target">
+<div class="target" data-live-key="target:{{.Name}}">
   <h3><code>{{.Name}}</code>
     {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
   </h3>

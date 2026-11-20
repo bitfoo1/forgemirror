@@ -1,0 +1,12 @@
+# Combine with test-values.yaml; also serves as a persistence setup example.
+config:
+  source:
+    token_file: /run/secrets/forgemirror/source-token
+  state:
+    database: /var/lib/forgemirror/state.db
+credentials:
+  data:
+    source-token: placeholder-source-token
+persistence:
+  state:
+    enabled: true

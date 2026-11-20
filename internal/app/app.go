@@ -23,8 +23,6 @@ import (
 	"go.bitfoo.de/forgemirror/internal/forge/gitlab"
 	"go.bitfoo.de/forgemirror/internal/forge/httpclient"
 	"go.bitfoo.de/forgemirror/internal/logging"
-	"go.bitfoo.de/forgemirror/internal/mirror"
-	"go.bitfoo.de/forgemirror/internal/registry"
 	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/schedule"
 	"go.bitfoo.de/forgemirror/internal/server"
@@ -174,36 +172,20 @@ func serveAndDrain(
 	flt *filter.Filter,
 	metrics *telemetry.Metrics,
 	clients forgeClients,
-) error {
-	// The status store only exists for the UI; without it, events go to the
-	// metrics alone.
-	var store *status.Store
+) (resultErr error) {
+	store, closeStore, err := openStatus(ctx, cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, closeStore()) }()
 	dispatchObs := dispatch.Observers{metrics}
 	scheduleObs := schedule.Observers{metrics}
-	if cfg.UI.Enabled {
-		store = status.New(status.Options{ScheduleInterval: cfg.Sync.Schedule})
+	if store != nil {
 		dispatchObs = append(dispatchObs, store)
 		scheduleObs = append(scheduleObs, store)
 	}
 
-	dispatcher := dispatch.New(dispatch.Options{
-		Mirrorer: mirror.NewGit(mirror.GitOptions{
-			Binary:  cfg.Mirror.GitBinary,
-			WorkDir: cfg.Mirror.WorkDir,
-			Timeout: cfg.Mirror.Timeout,
-		}),
-		Source:      cfg.Source,
-		Targets:     cfg.Targets,
-		ForgeSource: clients.source,
-		Forges:      clients.targets,
-		Registry:    registry.New(),
-		// Attachments and images can take as long as a git push.
-		TransferTimeout: cfg.Mirror.Timeout,
-		MaxConcurrent:   cfg.Mirror.MaxConcurrent,
-		Auto:            cfg.Sync.Auto,
-		Logger:          logger,
-		Observer:        dispatchObs,
-	})
+	dispatcher := newDispatcher(cfg, logger, clients, store, dispatchObs)
 
 	// Without a secret the endpoint must not exist: an HMAC over an empty key
 	// is forgeable by anyone. Config validation allows this only when nothing
@@ -227,13 +209,12 @@ func serveAndDrain(
 		{name: "webhook", address: cfg.Server.ListenAddress, handler: server.WebhookHandler(webhookHandler)},
 		{name: "ops", address: cfg.Server.OpsListenAddress, handler: server.OpsHandler(health, metrics.Handler())},
 	}
-	var actions *control.Controller
+	actions := newController(cfg, logger, store, flt, clients, dispatcher)
 	if cfg.UI.Enabled {
-		web, controller, err := newWeb(cfg, logger, logs, store, flt, clients, dispatcher)
-		if err != nil {
-			return err
+		web, _, webErr := newWeb(cfg, logger, logs, store, flt, clients, dispatcher)
+		if webErr != nil {
+			return webErr
 		}
-		actions = controller
 		listeners = append(listeners, web)
 	}
 	bound, err := listen(ctx, listeners)
@@ -387,18 +368,13 @@ func newWeb(
 	clients forgeClients,
 	dispatcher *dispatch.Dispatcher,
 ) (listener, *control.Controller, error) {
-	actions := control.New(control.Options{
-		Source:     clients.source,
-		Filter:     flt,
-		Dispatcher: dispatcher,
-		Pending:    func() []string { return ui.Pending(store.Snapshot()) },
-		Logger:     logger,
-	})
+	actions := newController(cfg, logger, store, flt, clients, dispatcher)
 	web, err := ui.Handler(ui.Options{
 		Config:  cfg,
 		Store:   store,
 		Logs:    logs,
 		Queued:  dispatcher.Queued,
+		Known:   func(name string) bool { _, ok := dispatcher.Known(name); return ok },
 		Actions: actions,
 		Version: version.Get().String(),
 		Logger:  logger,
@@ -420,7 +396,7 @@ func startReviewRefresh(
 	actions *control.Controller,
 ) <-chan struct{} {
 	done := make(chan struct{})
-	if cfg.Sync.Auto || cfg.Sync.Schedule > 0 || actions == nil {
+	if (cfg.State.Database == "" && (cfg.Sync.Auto || cfg.Sync.Schedule > 0)) || actions == nil {
 		close(done)
 
 		return done

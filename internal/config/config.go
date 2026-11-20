@@ -57,6 +57,7 @@ const (
 // Config is the complete runtime configuration.
 type Config struct {
 	Server  Server       `koanf:"server"`
+	State   State        `koanf:"state"`
 	UI      UI           `koanf:"ui"`
 	Log     Log          `koanf:"log"`
 	Webhook Webhook      `koanf:"webhook"`
@@ -65,6 +66,12 @@ type Config struct {
 	Mirror  Mirror       `koanf:"mirror"`
 	Filter  filter.Rules `koanf:"filter"`
 	Targets []Target     `koanf:"targets"`
+}
+
+// State configures optional restart-safe status storage.
+type State struct {
+	// Database is a local SQLite path; empty retains in-memory operation.
+	Database string `koanf:"database"`
 }
 
 // Server configures the webhook and ops HTTP listeners.
@@ -141,7 +148,7 @@ type Sync struct {
 // filter.allow_private; push-only setups with untyped targets keep relying on
 // filter.exclude_private, so existing deployments do not change silently.
 func (c *Config) PrivatePolicy() filter.PrivatePolicy {
-	if c.UsesSourceAPI() {
+	if c.Typed() || c.Sync.Schedule > 0 || !c.Sync.Auto {
 		return filter.PrivateOptIn
 	}
 
@@ -152,7 +159,7 @@ func (c *Config) PrivatePolicy() filter.PrivatePolicy {
 // typed targets read settings and labels, the schedule and review mode list
 // repositories.
 func (c *Config) UsesSourceAPI() bool {
-	return c.Typed() || c.Sync.Schedule > 0 || !c.Sync.Auto
+	return c.Typed() || c.Sync.Schedule > 0 || !c.Sync.Auto || c.State.Database != ""
 }
 
 // Typed reports whether any target talks to a forge API.

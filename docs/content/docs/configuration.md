@@ -72,6 +72,31 @@ probes, Prometheus scrape configs and NetworkPolicies, or set
 `server.listen_address: ":8080"` to keep the old webhook port.
 {{< /callout >}}
 
+## Persistent state
+
+```yaml
+state:
+  database: /var/lib/forgemirror/state.db # default: "" (memory only)
+```
+
+SQLite retains the latest sync attempt, its per-target results and the latest
+read-only comparison per repository, independently of whether the UI is enabled.
+Set `source.base_url` and `source.token` (or `source.token_file`) so startup
+recovery can rediscover repositories under current filters. Persistence alone
+does not change your private-repository publication policy.
+
+Use a writable **local persistent filesystem**, separate from `mirror.work_dir`.
+The parent directory is created with private permissions; the container runs as
+UID/GID 65532, so mount ownership must allow that user to write. SQLite also
+creates `-wal`, `-shm` and `.lock` siblings. Run one ForgeMirror process per
+database, not multiple replicas or writers; network filesystems such as NFS/SMB
+are unsupported. Open, schema or ownership errors fail startup rather than
+silently dropping back to memory. Storage failures block new applications until
+their pre-sync checkpoint succeeds.
+
+See [operations](../operations/#persistent-state-and-backups) for recovery and
+backups, and the deployment READMEs for opt-in persistent-volume examples.
+
 ## Secrets
 
 Every secret has two forms: an inline value, or a `*_file` path to read it

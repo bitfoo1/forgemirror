@@ -137,6 +137,17 @@ Store tokens as files (`*_file`) from a secret manager rather than inline.
   GitHub and Forgejo does not follow the repository, and nothing is ever
   deleted from a target registry.
 
+## Persistent review state
+
+Optional SQLite state contains repository names, plan contents and results,
+including metadata from private repositories. Protect its directory and backups
+like other operational data. Configured credentials are redacted before state
+is written; release asset/download and upload URLs are excluded from persisted
+plans. Tokens are still supplied separately at runtime, never restored from
+state. Historical records never authorize a sync: startup discovery must admit
+the repository under current source URL and filter rules before its actions
+become available. The UI itself still needs your proxy/SSO protection.
+
 ## Runtime hardening
 
 The container image and both Kubernetes deployments run with:

@@ -31,9 +31,10 @@ type Dispatcher interface {
 type Options struct {
 	// Source lists the source repositories; nil limits "all" to the known
 	// repositories (push-only setups without source API credentials).
-	Source     forge.Source
-	Filter     interface{ Matches(r repo.Repository) bool }
-	Dispatcher Dispatcher
+	Source        forge.Source
+	Filter        interface{ Matches(r repo.Repository) bool }
+	Dispatcher    Dispatcher
+	CheckCloneURL func(string) error
 	// Pending returns the repositories whose newest plan has changes.
 	Pending func() []string
 	Logger  *slog.Logger
@@ -76,9 +77,7 @@ func (c *Controller) one(ctx context.Context, fullName string, kind webhook.Even
 	delivery := c.delivery()
 	c.opts.Logger.InfoContext(ctx, actionMessage(kind),
 		slog.String("repository", fullName), slog.String("delivery", delivery))
-	c.dispatch(ctx, r, kind, delivery)
-
-	return nil
+	return c.dispatch(ctx, r, kind, delivery)
 }
 
 // RefreshAll plans every repository: those the source lists and the filter
@@ -133,20 +132,29 @@ func (c *Controller) all(ctx context.Context, kind webhook.EventKind, repos map[
 		names = append(names, name)
 	}
 	slices.Sort(names)
+	dispatched := 0
 	for _, name := range names {
-		c.dispatch(ctx, repos[name], kind, delivery)
+		if err := c.dispatch(ctx, repos[name], kind, delivery); err == nil {
+			dispatched++
+		}
 	}
-
-	return len(names)
+	return dispatched
 }
 
-func (c *Controller) dispatch(ctx context.Context, r repo.Repository, kind webhook.EventKind, delivery string) {
+func (c *Controller) dispatch(ctx context.Context, r repo.Repository, kind webhook.EventKind, delivery string) error {
+	if c.opts.CheckCloneURL != nil {
+		if err := c.opts.CheckCloneURL(r.CloneURL); err != nil {
+			c.opts.Logger.ErrorContext(ctx, "repository clone URL rejected", slog.String("repository", r.FullName))
+			return errors.New("repository clone URL rejected")
+		}
+	}
 	// The run outlives the HTTP request that asked for it, as for webhooks.
 	c.opts.Dispatcher.Dispatch(context.WithoutCancel(ctx), webhook.Event{
 		Repository: r,
 		Kind:       kind,
 		Delivery:   delivery,
 	})
+	return nil
 }
 
 // delivery names the runs of one action in the logs, like the schedule's

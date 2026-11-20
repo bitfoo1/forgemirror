@@ -35,6 +35,14 @@ go.work.sum
 # Local configuration (may contain secrets)
 /forgemirror.yaml
 
+# Persistent runtime state and local agent/browser test artifacts
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.db.lock
+/.superpowers/
+
 # Editor/IDE
 # .idea/
 # .vscode/

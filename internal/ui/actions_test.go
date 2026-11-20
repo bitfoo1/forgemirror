@@ -164,7 +164,8 @@ func assertAction(t *testing.T, rec *httptest.ResponseRecorder, actions *fakeAct
 	if code == http.StatusSeeOther && rec.Header().Get("Location") != "../" {
 		t.Errorf("Location = %q, want ../", rec.Header().Get("Location"))
 	}
-	if notice != "" && !strings.Contains(rec.Body.String(), `<p class="notice" role="status">`+notice) {
+	if notice != "" &&
+		!strings.Contains(rec.Body.String(), `<p class="notice" role="status" data-live-key="action-notice">`+notice) {
 		t.Errorf("body lacks notice %q:\n%s", notice, rec.Body.String())
 	}
 }
@@ -335,8 +336,8 @@ func TestAppliedPlanStates(t *testing.T) {
 		fail    func(s *status.Store, ctx context.Context)
 		want    string
 	}{
-		{name: "applied changes", changes: true, want: "synced · 1 change"},
-		{name: "applied nothing", want: "in sync"},
+		{name: "applied changes await verification", changes: true, want: "Current diff · awaiting verification"},
+		{name: "applied nothing awaits verification", want: "Current diff · awaiting verification"},
 		{
 			name: "push failed while applying", changes: true,
 			fail: func(s *status.Store, ctx context.Context) {

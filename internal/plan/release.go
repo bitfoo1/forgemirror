@@ -12,15 +12,16 @@ import (
 // ReleaseChange creates (Old nil), updates or deletes (New nil) the release
 // of a tag. Old is the release on the target, New the source release.
 type ReleaseChange struct {
-	Tag      string
-	Old, New *forge.Release
+	Tag string         `json:"tag"`
+	Old *forge.Release `json:"old"`
+	New *forge.Release `json:"new"`
 	// Fields lists the changed release fields of an update.
-	Fields []FieldChange
+	Fields []FieldChange `json:"fields"`
 	// Assets by file name. An update with only asset changes has no Fields;
 	// a creation lists every source asset as added.
-	AssetsAdded    []string
-	AssetsReplaced []string
-	AssetsRemoved  []string
+	AssetsAdded    []string `json:"assets_added"`
+	AssetsReplaced []string `json:"assets_replaced"`
+	AssetsRemoved  []string `json:"assets_removed"`
 }
 
 // Kind is KindCreate, KindUpdate or KindDelete.
@@ -38,12 +39,12 @@ func (c ReleaseChange) Kind() string {
 // PackageChange is a container package whose tags are copied to Image.
 type PackageChange struct {
 	// Package is the source package name.
-	Package string
+	Package string `json:"package"`
 	// Image is the target repository (host/path), without credentials.
-	Image string
-	Tags  []TagChange
+	Image string      `json:"image"`
+	Tags  []TagChange `json:"tags"`
 	// TagsOmitted counts tag changes left out of Tags to bound memory.
-	TagsOmitted int
+	TagsOmitted int `json:"tags_omitted"`
 }
 
 // Count is the number of tag changes, omitted ones included.
@@ -51,7 +52,9 @@ func (c PackageChange) Count() int { return len(c.Tags) + c.TagsOmitted }
 
 // TagChange creates (Old empty) or moves a tag; values are digests.
 type TagChange struct {
-	Tag, Old, New string
+	Tag string `json:"tag"`
+	Old string `json:"old"`
+	New string `json:"new"`
 }
 
 // Kind is KindCreate or KindUpdate.

@@ -31,9 +31,11 @@ type repoView struct {
 
 	State string
 	// Changes is the number of changes in the newest plan.
-	Changes int
-	Queued  bool
-	Targets []targetView
+	Changes        int
+	Queued         bool
+	Targets        []targetView
+	AppliedTargets []targetView
+	Actionable     bool
 }
 
 // targetView merges a target's part of the newest plan with its last
@@ -53,10 +55,17 @@ func repoViews(repos []status.Repo, queued map[string]bool) ([]repoView, counts)
 	views := make([]repoView, 0, len(repos))
 	for _, r := range repos {
 		v := repoView{Repo: r, Queued: queued[r.Name], State: repoState(r)}
-		if r.Plan != nil {
-			v.Changes = r.Plan.Changes()
+		current := r.Current
+		if current == nil && r.LastAttempt == nil {
+			current = r.Plan
 		}
-		v.Targets = targetViews(r)
+		if current != nil {
+			v.Changes = current.Changes()
+		}
+		v.Targets = targetViews(status.Repo{Plan: current, Targets: r.Targets})
+		if r.LastAttempt != nil {
+			v.AppliedTargets = targetViews(status.Repo{Plan: &r.LastAttempt.Plan, Targets: r.LastAttempt.Targets})
+		}
 
 		switch v.State {
 		case stateFailed:
@@ -91,13 +100,25 @@ func Pending(s status.Snapshot) []string {
 }
 
 func pending(r status.Repo) bool {
-	return r.Plan != nil && !r.Plan.Apply && r.Plan.Changes() > 0
+	return !r.Stale && r.Plan != nil && !r.Plan.Apply && r.Plan.Changes() > 0
 }
 
 // repoState derives the state from the newest plan. An applied plan is in
 // sync unless a result recorded since it failed.
 func repoState(r status.Repo) string {
 	p := r.Plan
+	if r.Stale {
+		if p != nil && p.Failed() {
+			return stateFailed
+		}
+		if r.LastAttempt != nil {
+			switch r.LastAttempt.Status {
+			case "failed", "partially failed", "interrupted":
+				return stateFailed
+			}
+		}
+		return stateUnchecked
+	}
 	switch {
 	case p == nil:
 		return stateUnchecked

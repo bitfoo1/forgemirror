@@ -68,8 +68,12 @@ type Options struct {
 	MaxConcurrent int
 	// Auto applies push, scheduled and delete events (sync.auto); otherwise
 	// they only plan and only [webhook.EventSync] applies.
-	Auto   bool
-	Logger *slog.Logger
+	Auto bool
+	// BeforeApply must durably record the plan before any remote mutation.
+	BeforeApply func(context.Context, plan.Repo) error
+	// VerifyAfterApply publishes one fresh read-only comparison after each sync.
+	VerifyAfterApply bool
+	Logger           *slog.Logger
 	// Observer is optional.
 	Observer Observer
 	// Now returns the current time; nil means [time.Now].
@@ -328,6 +332,15 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) 
 	p.Apply = apply
 	d.opts.Observer.PlanFinished(ctx, p)
 	logPlan(ctx, logger, p)
+	if apply && d.opts.BeforeApply != nil {
+		if err := d.opts.BeforeApply(ctx, p); err != nil {
+			logger.ErrorContext(ctx, "sync blocked: persistent checkpoint failed")
+			for _, tr := range runs {
+				d.finishTarget(ctx, logger, tr, start, nil, err)
+			}
+			return
+		}
+	}
 
 	switch {
 	case !apply:
@@ -340,6 +353,9 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply bool) 
 		}
 	default:
 		d.apply(ctx, logger, runs, e, start)
+	}
+	if apply && d.opts.VerifyAfterApply && ctx.Err() == nil {
+		d.verify(ctx, logger, e)
 	}
 }
 

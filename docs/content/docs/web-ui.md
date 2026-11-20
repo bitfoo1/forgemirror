@@ -12,13 +12,12 @@ It shows:
   schedule with its last sweep, and how many repositories are being
   mirrored right now. The header says whether ForgeMirror syncs
   automatically (*Auto sync*) or waits for you (*Review mode*).
-- **Repositories:** every repository planned or mirrored since the start,
-  with its state (*out of sync*, *failed*, *synced*, *in sync*, *not checked
-  yet*) and the diff of its newest plan per target: repository creation or
-  deletion, branches and tags (`+` new, `~` updated, `−` deleted), settings
-  (old → new), labels, releases (with their attachment changes) and the
-  container tags to copy per package. Below each diff: the last push and the last result
-  of each forge operation. Repositories that need attention come first.
+- **Repositories:** a full-width **Current diff** per target and a separate
+  **Last applied plan** with that sync's results. Failed, partial or interrupted
+  applications are labelled **Last sync attempt**, not presented as completed
+  changes. Diffs include repository creation/deletion, branches and tags
+  (`+` new, `~` updated, `−` deleted), settings, labels, releases and container
+  tags. Repositories that need attention come first.
 - **Logs:** the most recent log records, filterable by level.
 - **Configuration:** the effective configuration after defaults, file,
   environment and flags, with secrets redacted.
@@ -28,10 +27,12 @@ header switches between system, light and dark and is remembered per
 browser. The colours are [Tokyo Night](https://github.com/folke/tokyonight.nvim)
 Day and Night.
 
-The page refreshes its sections every 5 seconds with
-[htmx](https://htmx.org), which is embedded in the binary; nothing is loaded
-from the internet. Without JavaScript the page still works: it does not
-refresh by itself, and the buttons reload the page.
+The page checks live data asynchronously every 5 seconds with embedded
+[htmx](https://htmx.org); it does not reload the page. Incremental updates
+preserve unchanged elements, expanded diffs, focus and scroll positions.
+Updates to a section pause while you select text in it and catch up when the
+selection clears. Nothing is loaded from the internet. Without JavaScript,
+plain forms still work, but the page does not update automatically.
 
 ## Review and sync
 
@@ -48,7 +49,11 @@ shows that plan as the diff.
 
 Sync applies the state at the time you press it: if someone pushed after
 the diff was computed, that push is synced too. The diff shows when it was
-computed.
+computed. After every sync, ForgeMirror performs a read-only comparison and
+updates **Current diff** automatically, even if some operations failed.
+The applied plan stays available separately. While verification is pending,
+saved diffs are marked stale; a failed comparison says **Could not verify**
+rather than assuming everything is in sync.
 
 ### Review mode
 
@@ -77,9 +82,21 @@ ui:
   log_entries: 1000       # log records kept in memory
 ```
 
-State and logs live in memory only: after a restart the page starts empty
-and fills with the next runs. The repository's metrics stay in
-[Prometheus](../operations/#metrics) for history.
+By default, state and logs live in memory. To retain both review sections
+across restarts, configure [persistent state](../configuration/#persistent-state):
+
+```yaml
+state:
+  database: /var/lib/forgemirror/state.db
+```
+
+This also requires source API credentials and a persistent local volume.
+On startup, saved diffs are marked stale and rechecked without applying writes;
+uncompleted attempts become **interrupted**. Restored repositories only regain
+action buttons after current source discovery and filters admit them. One latest
+attempt and one comparison are retained per repository, including deletion
+history, not unlimited history. Logs remain in memory; metrics stay in
+[Prometheus](../operations/#metrics).
 
 ## Secure it
 

@@ -92,6 +92,24 @@ func newController(d *fakeDispatcher, src forge.Source, pending []string, logs *
 	})
 }
 
+func TestRejectsUntrustedCloneURL(t *testing.T) {
+	t.Parallel()
+	d := &fakeDispatcher{known: map[string]repo.Repository{"acme/app": repository("app")}}
+	c := control.New(
+		control.Options{
+			Dispatcher:    d,
+			Logger:        slog.New(slog.DiscardHandler),
+			CheckCloneURL: func(string) error { return errors.New("outside source base") },
+		},
+	)
+	if err := c.Sync(t.Context(), "acme/app"); err == nil {
+		t.Fatal("rejected sync reported success")
+	}
+	if got := d.dispatched(); len(got) != 0 {
+		t.Fatalf("dispatched unsafe repository: %v", got)
+	}
+}
+
 func TestOneRepository(t *testing.T) {
 	t.Parallel()
 

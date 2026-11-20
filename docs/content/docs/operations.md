@@ -113,6 +113,31 @@ The phases share one budget. Keep the orchestrator's kill timeout above it:
 `terminationGracePeriodSeconds` (Kubernetes), `stop_grace_period` (Compose),
 or `TimeoutStopSec` (systemd).
 
+## Persistent state and backups
+
+With `state.database` configured, the latest sync attempt and current diff
+survive restart. A saved comparison is initially stale, and unfinished attempts
+are marked **interrupted**, never automatically resumed. Startup discovery
+rechecks admitted repositories even in auto mode without a schedule. An
+unreachable source leaves history readable but stale; use **Refresh all** when
+it returns. Normal configured schedules and future webhooks retain their usual
+behaviour.
+
+The SQLite database uses WAL and durable commits. Keep it on a persistent local
+volume; `emptyDir` and a container's writable layer do not survive replacement.
+Only one ForgeMirror process may own it. Unknown newer schemas and corrupt state
+fail startup; restore a compatible backup rather than deleting the file blindly.
+Repository names and plan contents are operationally sensitive, even though
+configured credentials and authenticated asset URLs are not stored.
+
+For a simple consistent backup, stop ForgeMirror gracefully and copy the state
+directory, including any remaining SQLite sidecars, before starting it again.
+For an online backup use a SQLite-aware backup facility; do **not** copy only
+`state.db` while WAL writes are active. Restore while ForgeMirror is stopped,
+restore ownership for its runtime user, and keep file permissions restrictive.
+Restored diffs are verified before being treated as current. This is bounded
+review history, not a complete audit trail; ship logs externally for that.
+
 ## Troubleshooting
 
 | Symptom                                    | Cause and fix                                                  |

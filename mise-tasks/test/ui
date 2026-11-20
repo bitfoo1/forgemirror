@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Browser regression tests for live UI updates and responsive diffs"
+set -euo pipefail
+
+# Resolve the mise-owned package rather than maintaining a second npm toolchain.
+export NODE_PATH="$(mise where npm:@playwright/test)/node_modules${NODE_PATH:+:$NODE_PATH}"
+if [[ "${CI:-}" == "true" && "$(uname -s)" == "Linux" ]]; then
+  playwright install --with-deps chromium
+else
+  playwright install chromium
+fi
+tmp="$(mktemp -d)"
+# A failed parallel gate can terminate Playwright before its server cleanup.
+# Only this task owns a process whose executable is this unique temp path.
+trap 'pkill -f "^${tmp}/ui-server$" 2>/dev/null || true; rm -rf "${tmp}"' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+go build -o "${tmp}/ui-server" ./internal/ui/testdata/server
+export FORGEMIRROR_UI_TEST_SERVER="${tmp}/ui-server"
+export FORGEMIRROR_UI_TEST_PORT
+FORGEMIRROR_UI_TEST_PORT="$(node -e 'const s=require("node:net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+playwright test --config tests/ui/playwright.config.cjs "$@"

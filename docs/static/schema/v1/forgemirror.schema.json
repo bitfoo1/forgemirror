@@ -38,6 +38,19 @@
         }
       }
     },
+    "state": {
+      "description": "Optional durable sync status, independent of the UI listener.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "database": {
+          "description": "Local SQLite file; empty keeps state in memory. Requires source.base_url and source.token to safely rediscover repositories after restart. Use a persistent local volume with one writer.",
+          "type": "string",
+          "default": "",
+          "examples": ["/var/lib/forgemirror/state.db"]
+        }
+      }
+    },
     "ui": {
       "description": "Read-only web UI (configuration, status, logs). It has no authentication: put a reverse proxy or SSO in front of it.",
       "type": "object",

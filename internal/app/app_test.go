@@ -389,6 +389,7 @@ func newForgeFake(t *testing.T) *forgeFake {
 		f.mu.Unlock()
 
 		body, ok := routes[key]
+		body = strings.ReplaceAll(body, "https://git.example/", "http://"+r.Host+"/")
 		f.mu.Lock()
 		switch key {
 		case "POST /api/v3/orgs/acme/repos":

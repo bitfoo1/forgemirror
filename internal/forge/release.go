@@ -10,28 +10,28 @@ import (
 type Release struct {
 	// ID is the forge's own identifier on the forge the release was read
 	// from; it never crosses forges.
-	ID         int64
-	Tag        string
-	Name       string
-	Body       string
-	Prerelease bool
-	Draft      bool
-	CreatedAt  time.Time
-	Assets     []Asset
+	ID         int64     `json:"id"`
+	Tag        string    `json:"tag"`
+	Name       string    `json:"name"`
+	Body       string    `json:"body"`
+	Prerelease bool      `json:"prerelease"`
+	Draft      bool      `json:"draft"`
+	CreatedAt  time.Time `json:"created_at"`
+	Assets     []Asset   `json:"assets"`
 	// UploadURL is where a target forge accepts new assets, when it uses a
 	// separate upload endpoint (GitHub); empty otherwise.
-	UploadURL string
+	UploadURL string `json:"-"`
 }
 
 // Asset is a file attached to a release.
 type Asset struct {
 	// ID is the forge's own identifier, like [Release.ID].
-	ID   int64
-	Name string
-	Size int64
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
 	// URL is the download URL on the source forge; it carries no
 	// credentials.
-	URL string
+	URL string `json:"-"`
 }
 
 // ReleaseCapabilities describe what a target forge stores about a release.

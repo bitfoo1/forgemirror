@@ -14,3 +14,6 @@ kustomize build deploy >"${rendered}"
 kubeconform -strict -summary "${rendered}"
 kubeconform -strict -summary deploy/secret.example.yaml
 mise run deploy:validate-config "${rendered}"
+kustomize build examples/deploy-persistent >"${rendered}"
+kubeconform -strict -summary "${rendered}"
+mise run deploy:validate-config "${rendered}"

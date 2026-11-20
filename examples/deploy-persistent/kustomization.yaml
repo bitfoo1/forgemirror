@@ -1,0 +1,9 @@
+# Optional restart-safe status; deploy this overlay instead of deploy/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: forgemirror
+resources:
+  - ../../deploy
+  - pvc.yaml
+patches:
+  - path: deployment.yaml

@@ -20,6 +20,14 @@ kubeconform -strict -summary \
   "${rendered}"
 mise run deploy:validate-config "${rendered}"
 
+# Exercise the opt-in PVC and durable-state configuration as well.
+helm template forgemirror "${chart}" -f "${values}" -f "${chart}/ci/persistent-values.yaml" >"${rendered}"
+kubeconform -strict -summary \
+  -schema-location default \
+  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+  "${rendered}"
+mise run deploy:validate-config "${rendered}"
+
 # The chart must refuse to render without targets or credentials instead of
 # producing a pod that crash-loops.
 if helm template forgemirror "${chart}" >/dev/null 2>&1; then

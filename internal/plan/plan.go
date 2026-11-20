@@ -25,19 +25,19 @@ const (
 // Repo is the plan of one source repository.
 type Repo struct {
 	// Name is the full name, "owner/name".
-	Name string
+	Name string `json:"name"`
 	// At is when the plan was computed.
-	At time.Time
+	At time.Time `json:"at"`
 	// Apply reports whether the run applied the plan or only computed it.
-	Apply bool
+	Apply bool `json:"apply"`
 	// SourceDeleted is set when the repository no longer exists on the
 	// source; the plan then only holds deletions.
-	SourceDeleted bool
+	SourceDeleted bool `json:"source_deleted"`
 	// Error is set when no plan could be computed for any target, e.g. the
 	// source API failed.
-	Error string
+	Error string `json:"error,omitempty"`
 	// Targets is in configuration order.
-	Targets []Target
+	Targets []Target `json:"targets"`
 }
 
 // Changes counts the changes over all targets.
@@ -57,33 +57,33 @@ func (r Repo) Failed() bool {
 
 // Target is the plan for one target.
 type Target struct {
-	Name string
+	Name string `json:"name"`
 	// Create means the target repository is missing and will be created.
-	Create bool
+	Create bool `json:"create"`
 	// Privatise means the public target repository is made private before
 	// the push.
-	Privatise bool
+	Privatise bool `json:"privatise"`
 	// Delete means the target repository will be deleted.
-	Delete bool
+	Delete bool `json:"delete"`
 	// RefsUnknown means the target's refs could not be listed; the sync then
 	// pushes everything, as git decides what actually changes.
-	RefsUnknown bool
-	Refs        []RefChange
+	RefsUnknown bool        `json:"refs_unknown"`
+	Refs        []RefChange `json:"refs"`
 	// RefsOmitted counts ref changes left out of Refs to bound memory; they
 	// still count as changes.
-	RefsOmitted int
-	Settings    []FieldChange
-	Labels      []LabelChange
+	RefsOmitted int           `json:"refs_omitted"`
+	Settings    []FieldChange `json:"settings"`
+	Labels      []LabelChange `json:"labels"`
 	// Releases are in the order they are applied: creations and updates by
 	// the source release date, oldest first, then deletions.
-	Releases []ReleaseChange
-	Packages []PackageChange
+	Releases []ReleaseChange `json:"releases"`
+	Packages []PackageChange `json:"packages"`
 	// Warnings are notes that do not block the sync, e.g. topics the target
 	// forge cannot store.
-	Warnings []string
+	Warnings []string `json:"warnings"`
 	// Error is set when the plan of this target could not be computed or the
 	// target cannot be synced (e.g. missing repository without create).
-	Error string
+	Error string `json:"error,omitempty"`
 }
 
 // Changes counts the changes of the target. Unknown refs count as one: a
@@ -134,7 +134,9 @@ func (r Repo) Truncate(maxRefs int) Repo {
 // RefChange is one ref that a push creates (Old empty), updates or deletes
 // (New empty).
 type RefChange struct {
-	Ref, Old, New string
+	Ref string `json:"ref"`
+	Old string `json:"old"`
+	New string `json:"new"`
 }
 
 // Kind is KindCreate, KindUpdate or KindDelete.
@@ -152,14 +154,16 @@ func (c RefChange) Kind() string {
 // FieldChange is one repository setting, with values formatted for display.
 type FieldChange struct {
 	// Field is the config key of the setting, e.g. "default_branch".
-	Field    string
-	Old, New string
+	Field string `json:"field"`
+	Old   string `json:"old"`
+	New   string `json:"new"`
 }
 
 // LabelChange creates (Old nil), updates or deletes (New nil) a label.
 type LabelChange struct {
-	Name     string
-	Old, New *forge.Label
+	Name string       `json:"name"`
+	Old  *forge.Label `json:"old"`
+	New  *forge.Label `json:"new"`
 }
 
 // Kind is KindCreate, KindUpdate or KindDelete.

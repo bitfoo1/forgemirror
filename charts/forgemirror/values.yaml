@@ -26,6 +26,9 @@ config:
     timeout: 10m
     max_concurrent: 4
     work_dir: /work
+  state:
+    # -- Set /var/lib/forgemirror/state.db and enable persistence.state below for restart-safe UI history. Requires source API credentials.
+    database: ""
   filter: {}
   ui:
     # -- Serve the web UI (status, diffs, refresh and sync) on port 8080 (service port "web").
@@ -184,6 +187,14 @@ persistence:
     globalMounts:
       - path: /run/secrets/forgemirror
         readOnly: true
+  state:
+    # -- Opt-in local PVC for SQLite; keep one replica with Recreate.
+    enabled: false
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    globalMounts:
+      - path: /var/lib/forgemirror
   work:
     # Temporary clones; the root filesystem stays read-only. sizeLimit evicts
     # the pod instead of filling the node.

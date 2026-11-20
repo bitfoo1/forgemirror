@@ -2,8 +2,7 @@
 // memory for the web UI. It receives the same events as the metrics, but
 // per repository, which metrics cannot afford (unbounded label values).
 //
-// State is not persisted: after a restart the UI fills again with the next
-// runs, which is enough for a status page.
+// Optional persistence keeps the last comparison and sync attempt across restarts.
 package status
 
 import (
@@ -28,6 +27,10 @@ const maxPlanRefs = 100
 
 // Options configures a [Store].
 type Options struct {
+	Persistence Persistence
+	OnError     func()
+	// Redact removes configured secrets from serialized state before it reaches disk.
+	Redact func([]byte) ([]byte, error)
 	// ScheduleInterval is sync.schedule; 0 means no schedule.
 	ScheduleInterval time.Duration
 	// Now returns the current time; nil means [time.Now].
@@ -38,18 +41,25 @@ type Options struct {
 // implements dispatch.Observer and schedule.Observer and is safe for
 // concurrent use.
 type Store struct {
-	now      func() time.Time
-	started  time.Time
-	mu       sync.Mutex
-	repos    map[string]*repoState
-	schedule Schedule
+	persistence Persistence
+	redact      func([]byte) ([]byte, error)
+	persistErr  string
+	onError     func()
+	now         func() time.Time
+	started     time.Time
+	mu          sync.Mutex
+	repos       map[string]*repoState
+	schedule    Schedule
 }
 
 type repoState struct {
 	running int
 	// applying is set while the running run applies its plan.
 	applying     bool
+	attempt      *Attempt
+	stale        bool
 	plan         *plan.Repo
+	current      *plan.Repo
 	lastStarted  time.Time
 	lastFinished time.Time
 	targets      map[string]*Target
@@ -64,6 +74,7 @@ type repoState struct {
 type Snapshot struct {
 	// Started is when the store, and so the service, started.
 	Started  time.Time
+	Error    string
 	Repos    []Repo
 	Schedule Schedule
 }
@@ -71,39 +82,42 @@ type Snapshot struct {
 // Repo is the state of one source repository.
 type Repo struct {
 	// Name is the full name, "owner/name".
-	Name    string
-	Running bool
+	Name    string `json:"name"`
+	Running bool   `json:"-"`
 	// Applying is set while the running run applies its plan; a running run
 	// without it only plans.
-	Applying     bool
-	LastStarted  time.Time
-	LastFinished time.Time
+	Applying     bool      `json:"-"`
+	LastStarted  time.Time `json:"last_started"`
+	LastFinished time.Time `json:"last_finished"`
 	// Targets is sorted by target name.
-	Targets []Target
+	Targets []Target `json:"targets"`
 	// Plan is the newest plan; nil before the first. It is shared, not
 	// copied: callers must not modify it.
-	Plan *plan.Repo
+	Plan        *plan.Repo `json:"plan"`
+	LastAttempt *Attempt   `json:"last_attempt"`
+	Current     *plan.Repo `json:"current"`
+	Stale       bool       `json:"-"`
 }
 
 // Target is the state of one repository on one target.
 type Target struct {
-	Name string
+	Name string `json:"name"`
 	// LastRun is when the last push (or failed attempt) finished; zero if
 	// only forge operations ran so far.
-	LastRun  time.Time
-	Duration time.Duration
+	LastRun  time.Time     `json:"last_run"`
+	Duration time.Duration `json:"duration"`
 	// Error is the redacted error text of the last push; empty on success.
-	Error string
+	Error string `json:"error"`
 	// Operations holds the last result of each forge operation, sorted by
 	// name.
-	Operations []Operation
+	Operations []Operation `json:"operations"`
 }
 
 // Operation is the last result of one forge API operation.
 type Operation struct {
-	Name  string
-	At    time.Time
-	Error string
+	Name  string    `json:"name"`
+	At    time.Time `json:"at"`
+	Error string    `json:"error"`
 }
 
 // Schedule is the state of scheduled syncs.
@@ -124,10 +138,13 @@ func New(opts Options) *Store {
 	}
 
 	return &Store{
-		now:      now,
-		started:  now(),
-		repos:    make(map[string]*repoState),
-		schedule: Schedule{Interval: opts.ScheduleInterval},
+		now:         now,
+		persistence: opts.Persistence,
+		onError:     opts.OnError,
+		redact:      opts.Redact,
+		started:     now(),
+		repos:       make(map[string]*repoState),
+		schedule:    Schedule{Interval: opts.ScheduleInterval},
 	}
 }
 
@@ -152,7 +169,7 @@ func (r *repoState) target(name string) *Target {
 }
 
 // RunStarted implements dispatch.Observer.
-func (s *Store) RunStarted(_ context.Context, repo string, apply bool) {
+func (s *Store) RunStarted(ctx context.Context, repo string, apply bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -161,20 +178,33 @@ func (s *Store) RunStarted(_ context.Context, repo string, apply bool) {
 	r.applying = apply
 	r.lastStarted = s.now()
 	r.deleting, r.deleteFailed = false, false
+	if apply {
+		r.stale = true
+	}
+	_ = s.persist(ctx, repo)
 }
 
 // PlanFinished implements dispatch.Observer.
-func (s *Store) PlanFinished(_ context.Context, p plan.Repo) {
+func (s *Store) PlanFinished(ctx context.Context, p plan.Repo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	kept := p.Truncate(maxPlanRefs)
-	s.repo(p.Name).plan = &kept
+	r := s.repo(p.Name)
+	r.plan = &kept
+	if p.Apply {
+		r.attempt = &Attempt{Plan: kept, Started: r.lastStarted, Status: "running"}
+		r.stale = true
+	} else {
+		r.current = &kept
+		r.stale = p.Failed()
+	}
+	_ = s.persist(ctx, p.Name)
 }
 
 // RunFinished implements dispatch.Observer. A repository is forgotten once
 // it is gone from the source and nothing is left to delete on the targets.
-func (s *Store) RunFinished(_ context.Context, repo string) {
+func (s *Store) RunFinished(ctx context.Context, repo string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -184,16 +214,29 @@ func (s *Store) RunFinished(_ context.Context, repo string) {
 	if r.running > 0 {
 		return
 	}
+	if r.applying && r.attempt != nil {
+		r.attempt.Finished = r.lastFinished
+		r.attempt.Status = attemptStatus(r.attempt)
+		if ctx.Err() != nil {
+			r.attempt.Status = attemptInterrupted
+			r.stale = true
+		}
+	}
+	if err := s.persist(ctx, repo); err != nil && r.applying && r.attempt != nil {
+		r.attempt.Status = attemptInterrupted
+		r.attempt.Error = "Sync completion could not be saved; verification is required."
+		r.stale = true
+	}
 	r.applying = false
 
 	gone := r.plan != nil && r.plan.SourceDeleted && (r.plan.Changes() == 0 || r.plan.Apply)
-	if (r.deleting || gone) && !r.deleteFailed {
+	if (r.deleting || gone) && !r.deleteFailed && r.attempt == nil {
 		delete(s.repos, repo)
 	}
 }
 
 // TargetFinished implements dispatch.Observer.
-func (s *Store) TargetFinished(_ context.Context, repo, target string, duration time.Duration, err error) {
+func (s *Store) TargetFinished(ctx context.Context, repo, target string, duration time.Duration, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -201,10 +244,15 @@ func (s *Store) TargetFinished(_ context.Context, repo, target string, duration 
 	t.LastRun = s.now()
 	t.Duration = duration
 	t.Error = errorText(err)
+	r := s.repo(repo)
+	if r.applying && r.attempt != nil {
+		r.attempt.recordTarget(*t)
+	}
+	_ = s.persist(ctx, repo)
 }
 
 // SyncFinished implements dispatch.Observer.
-func (s *Store) SyncFinished(_ context.Context, repo, target, operation string, err error) {
+func (s *Store) SyncFinished(ctx context.Context, repo, target, operation string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -218,11 +266,19 @@ func (s *Store) SyncFinished(_ context.Context, repo, target, operation string, 
 	op := Operation{Name: operation, At: s.now(), Error: errorText(err)}
 	if i := slices.IndexFunc(t.Operations, func(o Operation) bool { return o.Name == operation }); i >= 0 {
 		t.Operations[i] = op
+		if r.applying && r.attempt != nil {
+			r.attempt.recordOperation(target, op)
+		}
+		_ = s.persist(ctx, repo)
 
 		return
 	}
 	t.Operations = append(t.Operations, op)
 	slices.SortFunc(t.Operations, func(a, b Operation) int { return cmp.Compare(a.Name, b.Name) })
+	if r.applying && r.attempt != nil {
+		r.attempt.recordOperation(target, op)
+	}
+	_ = s.persist(ctx, repo)
 }
 
 // ScheduledRunFinished implements schedule.Observer.
@@ -242,7 +298,12 @@ func (s *Store) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	snap := Snapshot{Started: s.started, Schedule: s.schedule, Repos: make([]Repo, 0, len(s.repos))}
+	snap := Snapshot{
+		Started:  s.started,
+		Error:    s.persistErr,
+		Schedule: s.schedule,
+		Repos:    make([]Repo, 0, len(s.repos)),
+	}
 	for _, name := range slices.Sorted(maps.Keys(s.repos)) {
 		r := s.repos[name]
 		repo := Repo{
@@ -250,6 +311,9 @@ func (s *Store) Snapshot() Snapshot {
 			Running:      r.running > 0,
 			Applying:     r.applying,
 			Plan:         r.plan,
+			LastAttempt:  cloneAttempt(r.attempt),
+			Current:      r.current,
+			Stale:        r.stale,
 			LastStarted:  r.lastStarted,
 			LastFinished: r.lastFinished,
 			Targets:      make([]Target, 0, len(r.targets)),

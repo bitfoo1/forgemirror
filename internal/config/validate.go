@@ -116,7 +116,7 @@ func (c *Config) validateSync() []error {
 	}
 
 	if c.UsesSourceAPI() {
-		const need = "required when a target has a type, sync.schedule is set or sync.auto is false"
+		const need = "required when a target has a type, sync.schedule is set or sync.auto is false, or when state.database is set"
 		if c.Source.BaseURL == "" {
 			add("source.base_url", errors.New(need))
 		}
