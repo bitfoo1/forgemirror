@@ -59,7 +59,7 @@ func securityHeaders() map[string]string {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js
+//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js static/icons/*
 var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
@@ -391,7 +391,8 @@ func parseLevel(s string) slog.Level {
 
 func (h *handler) funcs() template.FuncMap {
 	return template.FuncMap{
-		"iso": func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+		"forgeName": h.forgeIdentity,
+		"iso":       func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"when": func(t time.Time) string {
 			return t.UTC().Format("2006-01-02 15:04:05 UTC") + " (" + ago(h.opts.Now().Sub(t)) + ")"
 		},

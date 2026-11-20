@@ -189,28 +189,27 @@ func targetViews(r status.Repo) []targetView {
 // what is configured.
 type targetType struct {
 	Label string
+	Icon  string
 	// Names are the configured targets of this kind, in configuration order.
 	Names []string
 }
 
-// targetTypes follows the types config validation accepts; the empty type is
-// a plain git push destination without forge API.
+// Codeberg uses the Forgejo API, but has its own identity in the overview.
 func targetTypes(targets []config.Target) []targetType {
-	kinds := []struct{ typ, label string }{
-		{forge.TypeGitHub, "GitHub"},
-		{forge.TypeGitLab, "GitLab"},
-		{forge.TypeForgejo, "Forgejo"},
-		{"", "Git"},
+	types := []targetType{
+		{Label: labelGitHub, Icon: forge.TypeGitHub},
+		{Label: labelGitLab, Icon: forge.TypeGitLab},
+		{Label: labelCodeberg, Icon: brandCodeberg},
+		{Label: "Forgejo"},
+		{Label: "Git"},
 	}
-	types := make([]targetType, len(kinds))
-	for i, k := range kinds {
-		types[i].Label = k.label
-		for _, t := range targets {
-			if t.Type == k.typ {
-				types[i].Names = append(types[i].Names, t.Name)
+	for _, target := range targets {
+		brand := targetBrand(target)
+		for i := range types {
+			if types[i].Label == brand.Label {
+				types[i].Names = append(types[i].Names, target.Name)
 			}
 		}
 	}
-
 	return types
 }

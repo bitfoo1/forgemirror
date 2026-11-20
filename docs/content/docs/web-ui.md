@@ -58,8 +58,14 @@ rather than assuming everything is in sync.
 
 ### Forge status badges and grouped changes
 
-Forge-name badges sit immediately after each repository name. Hover a badge
-for its status; the same information is provided to assistive technology.
+Forge-name badges sit immediately after each repository name. GitHub, GitLab,
+and Codeberg use their proper names and official icons throughout the UI.
+Icons are served locally and work without internet access; Codeberg uses its
+blue mark in light mode and white mark in dark mode. Custom target aliases
+remain distinct, and configuration identifiers and form values are unchanged.
+Codeberg is identified by its public host, not by treating every Forgejo
+instance as Codeberg. Hover a badge for its status; the same information is
+provided to assistive technology.
 Green means the latest Git/metadata comparison matches, yellow means pending
 changes, red means a comparison, push, or feature-operation error, and gray
 means not checked, not verified, or awaiting fresh verification. Green does

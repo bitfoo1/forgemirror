@@ -485,14 +485,14 @@ func TestAppliedPlanStates(t *testing.T) {
 			fail: func(s *status.Store, ctx context.Context) {
 				s.TargetFinished(ctx, "acme/app", "github", time.Second, errors.New("rejected"))
 			},
-			want: `title="github: error`,
+			want: `title="GitHub: error`,
 		},
 		{
 			name: "operation failed while applying", changes: true,
 			fail: func(s *status.Store, ctx context.Context) {
 				s.SyncFinished(ctx, "acme/app", "github", "labels", errors.New("forbidden"))
 			},
-			want: `title="github: error`,
+			want: `title="GitHub: error`,
 		},
 	}
 	for _, tc := range tests {

@@ -13,13 +13,13 @@ test('forge badges stay beside the repository and shared changes appear once', a
     await page.goto('/');
     const repo = page.locator('.repo').filter({ has: page.locator('.repo-name', { hasText: /^acme\/app$/ }) });
     const badges = repo.locator('.repo-head .forge-badge');
-    await expect(badges).toHaveText(['github', 'codeberg', 'gitlab']);
-    await expect(badges.first()).toHaveAttribute('title', /github: out of sync/);
+    await expect(badges).toHaveText(['GitHub', 'Codeberg', 'GitLab']);
+    await expect(badges.first()).toHaveAttribute('title', /GitHub: out of sync/);
     await badges.first().focus();
     await expect(badges.first()).toBeFocused();
     const changes = repo.locator('.grouped-changes li');
     await expect(changes).toHaveCount(1);
-    await expect(changes.locator('.forge-badge')).toHaveText(['github', 'codeberg']);
+    await expect(changes.locator('.forge-badge')).toHaveText(['GitHub', 'Codeberg']);
     const positions = await repo.evaluate(node => {
       const name = node.querySelector('.repo-name').getBoundingClientRect();
       const badge = node.querySelector('.repo-head .forge-badge').getBoundingClientRect();
@@ -34,6 +34,33 @@ test('forge badges stay beside the repository and shared changes appear once', a
     await expect(repo.locator('[data-publication-state="review_required"]').first()).toContainText('Sync uses the latest state.');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
+});
+
+test('official forge icons work offline in both themes and keep header badges inline', async ({ page }) => {
+  await page.route('https://**/*', route => route.abort());
+  await page.goto('/');
+  const repo = page.locator('[data-repo="acme/app"]');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({width, height: 900});
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      const badges = repo.locator('.repo-head .forge-badge');
+      await expect(badges).toHaveText(['GitHub', 'Codeberg', 'GitLab']);
+      await expect(repo.locator('.repo-head [data-forge="codeberg"] img:visible')).toHaveAttribute('src',
+        theme === 'dark' ? 'static/icons/codeberg-white.svg' : 'static/icons/codeberg.svg');
+      await expect.poll(() => page.locator('.forge-icon:visible').evaluateAll(images =>
+        images.length > 0 && images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
+      const inline = await repo.locator('.repo-head').evaluate(head => {
+        const name = head.querySelector('.repo-name').getBoundingClientRect();
+        return [...head.querySelectorAll('.forge-badge')].every(badge => Math.abs(badge.getBoundingClientRect().top - name.top) < 5);
+      });
+      expect(inline).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  }
+  await repo.locator('.target-details > summary').click();
+  await expect(repo.locator('.target h3').first()).toHaveText('GitHub');
+  await expect(repo.locator('.target h3').first().locator('img')).toHaveAttribute('src', 'static/icons/github.svg');
 });
 
 // Exercise the real CSP, HTMX and browser selection/focus APIs, not a DOM mock.
@@ -60,7 +87,7 @@ test('sync updates current diff and retains the applied plan without reloading',
   await page.evaluate(() => {window.pageIdentity = 'retained';});
   await page.locator('.repo-actions button', { hasText: /^Sync$/ }).click();
   await expect(page.locator('.applied > summary')).toContainText('Last applied plan', {timeout: 12000});
-  await expect(page.locator('.repo-head .forge-badge').first()).toHaveAttribute('title', 'github: in sync');
+  await expect(page.locator('.repo-head .forge-badge').first()).toHaveAttribute('title', 'GitHub: in sync');
   await expect(page.locator('details.diff').first().locator('.changes code')).toHaveCount(0);
   await expect(page.locator('.repo-actions button', { hasText: /^Sync$/ })).toBeFocused();
   await page.locator('.applied > summary').click();

@@ -164,8 +164,8 @@ func TestRoutes(t *testing.T) {
 			want: []string{
 				"Uptime",
 				// Every accepted target type is shown; configured ones are on.
-				`<li class="kind kind-on" title="github">GitHub</li>`,
-				`<li class="kind" title="not configured">GitLab</li>`,
+				`<li class="kind kind-on" title="GitHub"><img`,
+				`<li class="kind" title="not configured"><img class="forge-icon forge-icon-monochrome" src="static/icons/gitlab.svg"`,
 				`<li class="kind" title="not configured">Forgejo</li>`,
 				`<li class="kind kind-on" title="backup">Git</li>`,
 				"every 1h0m0s",

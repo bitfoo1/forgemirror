@@ -9,7 +9,13 @@ import (
 func (h *handler) pauseAction(r *http.Request) (string, error) {
 	repo, target := r.PostForm.Get("repo"), r.PostForm.Get("target")
 	if r.PostForm.Get("mode") == "resume" {
-		return "Resume requested for " + target + ".", h.opts.Actions.Resume(r.Context(), repo, target)
+		return "Resume requested for " + h.forgeIdentity(
+				target,
+			).Label + ".", h.opts.Actions.Resume(
+				r.Context(),
+				repo,
+				target,
+			)
 	}
 	reason := r.PostForm.Get("reason")
 	const maxReasonBytes = 256
@@ -24,5 +30,13 @@ func (h *handler) pauseAction(r *http.Request) (string, error) {
 		}
 		until = h.opts.Now().Add(duration)
 	}
-	return "Pause requested for " + target + ".", h.opts.Actions.Pause(r.Context(), repo, target, reason, until)
+	return "Pause requested for " + h.forgeIdentity(
+			target,
+		).Label + ".", h.opts.Actions.Pause(
+			r.Context(),
+			repo,
+			target,
+			reason,
+			until,
+		)
 }

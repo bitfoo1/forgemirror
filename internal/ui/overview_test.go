@@ -14,7 +14,11 @@ func TestTargetsOnlyRenderForgeTiles(t *testing.T) {
 		if strings.Contains(body, "<code>"+name+"</code>") {
 			t.Errorf("target %q duplicated beneath forge tiles: %s", name, body)
 		}
-		if !strings.Contains(body, `class="kind kind-on" title="`+name+`"`) {
+		label := name
+		if name == "github" {
+			label = "GitHub"
+		}
+		if !strings.Contains(body, `class="kind kind-on" title="`+label+`"`) {
 			t.Errorf("configured target %q missing from tile tooltip: %s", name, body)
 		}
 	}

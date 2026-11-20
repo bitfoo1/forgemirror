@@ -78,7 +78,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   <span class="tile-label">Targets</span>
   <ul class="kinds">
     {{- range .Types}}
-    <li class="kind{{if .Names}} kind-on{{end}}" title="{{if .Names}}{{range $i, $n := .Names}}{{if $i}}, {{end}}{{$n}}{{end}}{{else}}not configured{{end}}">{{.Label}}</li>
+    <li class="kind{{if .Names}} kind-on{{end}}" title="{{if .Names}}{{range $i, $n := .Names}}{{if $i}}, {{end}}{{(forgeName $n).Label}}{{end}}{{else}}not configured{{end}}">{{template "forge-icon" .Icon}}{{.Label}}</li>
     {{- end}}
   </ul>
 </div>
@@ -140,18 +140,18 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <details data-live-key="target-controls"><summary>Pause or resume a target</summary>
   <p class="muted">A pause waits for active operations to finish. Empty repository means the whole target. Resume plans fresh state.</p>
   <form method="post" action="actions/pause" hx-post="actions/pause" hx-target="#repos" hx-swap="innerHTML" hx-sync="#repos:queue all">
-    <label>Target <select name="target">{{range .TargetNames}}<option>{{.}}</option>{{end}}</select></label>
+    <label>Target <select name="target">{{range .TargetNames}}<option value="{{.}}">{{(forgeName .).Label}}</option>{{end}}</select></label>
     <label>Repository <input name="repo" placeholder="owner/name (optional)"></label>
     <label>Reason <input name="reason" maxlength="256"></label>
     <label>Duration <input name="duration" placeholder="30m, 2h, or empty"></label>
     <label>Action <select name="mode"><option value="pause">Pause</option><option value="resume">Resume</option></select></label>
     <button class="btn" type="submit">Apply</button>
   </form>
-  {{range .Pauses}}<p class="warn"><code>{{.Target}}</code> · {{if .Repo}}{{.Repo}}{{else}}all repositories{{end}} · paused{{with .Reason}}: {{.}}{{end}}{{if not .Until.IsZero}} until <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}</p>{{end}}
+  {{range .Pauses}}<p class="warn">{{template "forge-name" .Target}} · {{if .Repo}}{{.Repo}}{{else}}all repositories{{end}} · paused{{with .Reason}}: {{.}}{{end}}{{if not .Until.IsZero}} until <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}</p>{{end}}
 </details>
 {{end}}
 {{with .Retries}}<details data-live-key="retry-status"><summary>Retry status · {{len .}}</summary>
-{{range .}}<p><code>{{.Repo}}</code> → <code>{{.Target}}</code>: {{.State}} · {{.Attempts}} failures{{if or (eq .State "waiting") (eq .State "paused")}} · next eligible <time datetime="{{iso .Next}}">{{when .Next}}</time>{{end}}</p>{{end}}
+{{range .}}<p><code>{{.Repo}}</code> → {{template "forge-name" .Target}}: {{.State}} · {{.Attempts}} failures{{if or (eq .State "waiting") (eq .State "paused")}} · next eligible <time datetime="{{iso .Next}}">{{when .Next}}</time>{{end}}</p>{{end}}
 </details>{{end}}
 {{- if not .Repos}}
 <p class="empty muted">No repositories yet. They appear after the first push, scheduled sweep or refresh.</p>
@@ -228,7 +228,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 {{- end}}
 
 {{define "target-heading" -}}
-<h3><code>{{.Name}}</code>{{with .Pause}} <span class="pill pill-warn">paused</span>{{end}}
+<h3><code>{{template "forge-name" .Name}}</code>{{with .Pause}} <span class="pill pill-warn">paused</span>{{end}}
   {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
 </h3>
 {{- end}}

@@ -84,8 +84,8 @@ func TestForgeBadgeStatus(t *testing.T) {
 			}
 			body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
 			heading := regexp.MustCompile(`(?s)<div class="repo-head".*?</div>`).FindString(body)
-			badge := regexp.MustCompile(`(?s)<span[^>]*data-forge="github"[^>]*>github</span>`).FindString(heading)
-			for _, want := range []string{`pill-` + tc.class, `title="github: ` + tc.status, `aria-label="github: ` + tc.status} {
+			badge := regexp.MustCompile(`(?s)<span[^>]*data-forge="github"[^>]*>.*?</span>`).FindString(heading)
+			for _, want := range []string{`pill-` + tc.class, `title="GitHub: ` + tc.status, `aria-label="GitHub: ` + tc.status} {
 				if !strings.Contains(badge, want) {
 					t.Errorf("badge missing %q: %s", want, heading)
 				}

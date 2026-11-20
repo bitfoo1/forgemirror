@@ -1,5 +1,14 @@
+{{define "forge-icon" -}}
+{{if .}}<img class="forge-icon {{if eq . "codeberg"}}forge-icon-light{{else}}forge-icon-monochrome{{end}}" src="static/icons/{{.}}.svg" alt="" aria-hidden="true" width="16" height="16">{{if eq . "codeberg"}}<img class="forge-icon forge-icon-dark" src="static/icons/codeberg-white.svg" alt="" aria-hidden="true" width="16" height="16">{{end}}{{end}}
+{{- end}}
+
+{{define "forge-name" -}}
+{{$forge := forgeName .}}{{template "forge-icon" $forge.Icon}}{{$forge.Label}}
+{{- end}}
+
 {{define "forge-badge" -}}
-<span class="pill pill-{{.Class}} forge-badge" data-forge="{{.Name}}" data-live-key="forge:{{.Name}}" title="{{.Name}}: {{.Status}}" aria-label="{{.Name}}: {{.Status}}" tabindex="0">{{.Name}}</span>
+{{$forge := forgeName .Name}}
+<span class="pill pill-{{.Class}} forge-badge" data-forge="{{.Name}}" data-live-key="forge:{{.Name}}" title="{{$forge.Label}}: {{.Status}}" aria-label="{{$forge.Label}}: {{.Status}}" tabindex="0">{{template "forge-icon" $forge.Icon}}{{$forge.Label}}</span>
 {{- end}}
 
 {{define "change-badges" -}}

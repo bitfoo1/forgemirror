@@ -14,8 +14,8 @@ func TestStaleComparisonWithoutAttemptIsNotInSync(t *testing.T) {
 	recordPlan(t, f.store, plan.Repo{Name: "acme/app"})
 	f.store.RunStarted(t.Context(), "acme/app", true)
 	body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
-	if strings.Contains(body, `title="github: in sync`) ||
-		!strings.Contains(body, `title="github: awaiting verification`) {
+	if strings.Contains(body, `title="GitHub: in sync`) ||
+		!strings.Contains(body, `title="GitHub: awaiting verification`) {
 		t.Fatalf("stale comparison is authoritative: %s", body)
 	}
 }
@@ -30,7 +30,7 @@ func TestFailedVerificationIsNotInSync(t *testing.T) {
 		plan.Repo{Name: "acme/app", Targets: []plan.Target{{Name: "github", Error: "Could not verify refs"}}},
 	)
 	body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
-	if !strings.Contains(body, `title="github: error`) || !strings.Contains(body, "Could not verify") {
+	if !strings.Contains(body, `title="GitHub: error`) || !strings.Contains(body, "Could not verify") {
 		t.Fatalf("verification failure hidden: %s", body)
 	}
 }
