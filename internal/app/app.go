@@ -176,7 +176,7 @@ func serveAndDrain(
 	metrics *telemetry.Metrics,
 	clients forgeClients,
 ) (resultErr error) {
-	store, closeStore, err := openStatus(ctx, cfg, logger)
+	store, db, closeStore, err := openStatus(ctx, cfg, logger)
 	if err != nil {
 		return err
 	}
@@ -188,7 +188,8 @@ func serveAndDrain(
 		scheduleObs = append(scheduleObs, store)
 	}
 
-	dispatcher := newDispatcher(cfg, logger, clients, store, dispatchObs)
+	notifications, outcome := newNotifications(ctx, cfg, db, store, logger)
+	dispatcher := newDispatcher(cfg, logger, clients, store, dispatchObs, outcome)
 
 	// Without a secret the endpoint must not exist: an HMAC over an empty key
 	// is forgeable by anyone. Config validation allows this only when nothing
@@ -232,6 +233,7 @@ func serveAndDrain(
 	shutdownCtx, cancelShutdown := shutdownContext(runCtx, cfg.Server.ShutdownTimeout)
 	defer cancelShutdown()
 
+	notificationsDone := startNotifications(runCtx, notifications, logger)
 	dispatcher.StartRetries(runCtx)
 	schedulerDone := startScheduler(runCtx, cfg, logger, flt, scheduleObs, clients.source, dispatcher)
 	refreshDone := startReviewRefresh(runCtx, cfg, logger, actions)
@@ -249,22 +251,22 @@ func serveAndDrain(
 	// still dispatching would only produce dropped-event warnings. Every
 	// step honours runCtx, so this is quick; the deadline guards shutdown
 	// against a scheduler stuck anyway.
-	select {
-	case <-schedulerDone:
-	case <-shutdownCtx.Done():
-		logger.WarnContext(ctx, "scheduler did not stop before the shutdown deadline")
-	}
-	select {
-	case <-refreshDone:
-	case <-shutdownCtx.Done():
-		logger.WarnContext(ctx, "startup refresh did not stop before the shutdown deadline")
-	}
-
+	waitBackground(shutdownCtx, schedulerDone, "scheduler", logger)
+	waitBackground(shutdownCtx, refreshDone, "startup refresh", logger)
+	waitBackground(shutdownCtx, notificationsDone, "notifications", logger)
 	logger.InfoContext(ctx, "waiting for running mirrors")
 	dispatchErr := dispatcher.Shutdown(shutdownCtx)
 	logger.InfoContext(ctx, "forgemirror stopped")
 
 	return errors.Join(serveErr, dispatchErr)
+}
+
+func waitBackground(ctx context.Context, done <-chan struct{}, name string, logger *slog.Logger) {
+	select {
+	case <-done:
+	case <-ctx.Done():
+		logger.WarnContext(ctx, "background worker did not stop before the shutdown deadline", "worker", name)
+	}
 }
 
 // listener is one HTTP listener to open.

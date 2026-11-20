@@ -44,6 +44,7 @@ func (c *Config) Validate() error {
 		add("source.base_url", err)
 	}
 	errs = append(errs, c.validateSync()...)
+	errs = append(errs, c.validateNotifications()...)
 
 	if c.Mirror.Timeout <= 0 {
 		add("mirror.timeout", errMustBePositive)

@@ -85,6 +85,46 @@ This is not a forge-wide circuit breaker, an independent source-discovery
 scheduler, or exactly-once execution. Ambiguous failures are reconciled by
 fresh remote reads before repeating the existing operations.
 
+## Blocked-sync notifications
+
+Configure an optional generic outbound webhook:
+
+```yaml
+notifications:
+  webhook_url_file: /run/secrets/notification-webhook-url
+  token_file: /run/secrets/notification-token # optional bearer token
+  ui_url: https://mirrors.example/forgemirror # optional public link root
+  timeout: 10s
+```
+
+`webhook_url`/`webhook_url_file` and `token`/`token_file` are mutually exclusive
+pairs. The delivery URL is treated as a secret because webhook paths and
+queries may contain credentials. It is redacted in effective configuration.
+Use dedicated notification credentials, never a forge token. No redirects
+are followed. No source address or UI address is inferred automatically.
+
+The JSON payload contains an event `id`, repository, target, state, reason
+code, timestamp and optional public UI link. It contains no source snippet,
+raw error, token or matched secret. States cover pauses, blocks, intervention,
+retry exhaustion and recovery after a notified problem. Temporary retries
+alone do not page the operator. Future secret scanning can supply sanitized
+reason codes; scanning itself is not part of this feature.
+
+Events are deduplicated across restarts in a separate SQLite namespace and
+sent by an independent worker. Delivery is **at least once**: deduplicate by
+`id` or the matching `Idempotency-Key` header. Transitions for the same
+repository/target are kept in order. Failed delivery is retried up to five
+times with bounded backoff, separately from mirror retries. Up to 128 pending
+and 32 exhausted deliveries are retained. Exhausted delivery errors and queue
+failures are logged without endpoint URLs, credentials or response bodies.
+
+Notification failure does not roll back or prevent publication. If the outbox
+cannot be restored, delivery is disabled with an error log while mirroring
+continues. Changing the endpoint selects a new namespace rather than sending
+old events to the replacement. Queued shutdown-time events remain durable for
+the next start. This is a generic webhook, not a provider-specific Slack,
+Matrix or email integration.
+
 ## Metrics
 
 ForgeMirror records metrics with OpenTelemetry and exposes them in the

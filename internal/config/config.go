@@ -56,19 +56,20 @@ const (
 
 // Config is the complete runtime configuration.
 type Config struct {
-	Server  Server       `koanf:"server"`
-	State   State        `koanf:"state"`
-	UI      UI           `koanf:"ui"`
-	Log     Log          `koanf:"log"`
-	Webhook Webhook      `koanf:"webhook"`
-	Source  Source       `koanf:"source"`
-	Sync    Sync         `koanf:"sync"`
-	Mirror  Mirror       `koanf:"mirror"`
-	Filter  filter.Rules `koanf:"filter"`
-	Targets []Target     `koanf:"targets"`
+	Server        Server        `koanf:"server"`
+	State         State         `koanf:"state"`
+	UI            UI            `koanf:"ui"`
+	Log           Log           `koanf:"log"`
+	Webhook       Webhook       `koanf:"webhook"`
+	Source        Source        `koanf:"source"`
+	Sync          Sync          `koanf:"sync"`
+	Mirror        Mirror        `koanf:"mirror"`
+	Filter        filter.Rules  `koanf:"filter"`
+	Targets       []Target      `koanf:"targets"`
+	Notifications Notifications `koanf:"notifications"`
 }
 
-// State configures optional restart-safe status storage.
+// State configures mandatory restart-safe status storage.
 type State struct {
 	// Database is a required local SQLite path; defaults to data/state.db.
 	Database         string        `koanf:"database"`
@@ -267,8 +268,9 @@ func FindFile(candidates []string) (string, error) {
 }
 
 const (
-	defaultHistoryLimit     = 50
-	defaultHistoryRetention = 720 * time.Hour
+	defaultNotificationTimeout = 10 * time.Second
+	defaultHistoryLimit        = 50
+	defaultHistoryRetention    = 720 * time.Hour
 )
 
 func defaults() map[string]any {
@@ -277,6 +279,7 @@ func defaults() map[string]any {
 		"server.ops_listen_address":  ":9090",
 		"server.read_header_timeout": defaultReadHeaderTimeout,
 		"server.shutdown_timeout":    defaultShutdownTimeout,
+		"notifications.timeout":      defaultNotificationTimeout,
 		"state.database":             "data/state.db",
 		"state.history_limit":        defaultHistoryLimit,
 		"state.history_retention":    defaultHistoryRetention,
@@ -333,6 +336,16 @@ func (c *Config) resolve() error {
 		errs = append(errs, err)
 	}
 	if err := readSecretFile(&c.Source.Token, c.Source.TokenFile, "source.token"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := readSecretFile(
+		&c.Notifications.WebhookURL,
+		c.Notifications.WebhookURLFile,
+		"notifications.webhook_url",
+	); err != nil {
+		errs = append(errs, err)
+	}
+	if err := readSecretFile(&c.Notifications.Token, c.Notifications.TokenFile, "notifications.token"); err != nil {
 		errs = append(errs, err)
 	}
 

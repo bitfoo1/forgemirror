@@ -134,6 +134,23 @@
         }
       }
     },
+    "notifications": {
+      "description": "Optional generic outbound webhook with a durable transition-deduplicated outbox.",
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {"not": {"required": ["webhook_url", "webhook_url_file"]}},
+        {"not": {"required": ["token", "token_file"]}}
+      ],
+      "properties": {
+        "webhook_url": {"type": "string", "description": "Secret HTTP(S) delivery URL; empty disables notifications."},
+        "webhook_url_file": {"type": "string", "minLength": 1, "description": "File containing the secret delivery URL."},
+        "token": {"type": "string", "description": "Optional bearer token; never reuse forge credentials."},
+        "token_file": {"type": "string", "minLength": 1, "description": "File containing the delivery bearer token."},
+        "ui_url": {"type": "string", "default": "", "description": "Explicit public UI root URL for event links; empty omits links."},
+        "timeout": {"$ref": "#/$defs/duration", "default": "10s", "description": "Positive per-delivery timeout."}
+      }
+    },
     "source": {
       "description": "Credentials for cloning from Forgejo. Leave the token empty if only public repositories are mirrored.",
       "type": "object",

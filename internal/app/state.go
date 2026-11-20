@@ -28,6 +28,7 @@ func newDispatcher(
 	clients forgeClients,
 	store *status.Store,
 	observer dispatch.Observer,
+	outcome func(context.Context, string, string, error),
 ) *dispatch.Dispatcher {
 	var checkpoint func(context.Context, plan.Repo) error
 	if store != nil {
@@ -49,6 +50,7 @@ func newDispatcher(
 		Observer:         observer,
 		BeforeApply:      checkpoint,
 		Retries:          store,
+		Outcome:          outcome,
 		VerifyAfterApply: store != nil,
 		Mutation: func(repo, target string) (func(), error) {
 			if store == nil {
@@ -79,7 +81,11 @@ func newController(
 	})
 }
 
-func openStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*status.Store, func() error, error) {
+func openStatus(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+) (*status.Store, *state.DB, func() error, error) {
 	opts := status.Options{
 		HistoryLimit:     cfg.State.HistoryLimit,
 		HistoryRetention: cfg.State.HistoryRetention,
@@ -91,22 +97,27 @@ func openStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*
 	}
 	db, err := state.Open(ctx, cfg.State.Database, strings.TrimRight(cfg.Source.BaseURL, "/"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	opts.Persistence = db
 	opts.ControlPersistence = db.Namespace("controls")
 	store := status.New(opts)
 	if err = store.Restore(ctx); err != nil {
 		err = errors.Join(err, db.Close())
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return store, db.Close, nil
+	return store, db, db.Close, nil
 }
 
 // State contains only plans/results, never config or credentials. Scrub known
 // secret values as a second boundary in case an upstream error echoes one.
 func stateRedactor(cfg *config.Config) func([]byte) ([]byte, error) {
-	secrets := []string{cfg.Webhook.Secret.Reveal(), cfg.Source.Token.Reveal()}
+	secrets := []string{
+		cfg.Webhook.Secret.Reveal(),
+		cfg.Source.Token.Reveal(),
+		cfg.Notifications.WebhookURL.Reveal(),
+		cfg.Notifications.Token.Reveal(),
+	}
 	for _, target := range cfg.Targets {
 		secrets = append(secrets, target.Token.Reveal())
 	}

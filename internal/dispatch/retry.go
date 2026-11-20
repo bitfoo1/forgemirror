@@ -113,7 +113,7 @@ func (d *Dispatcher) recordRetryOutcomes(
 	e webhook.Event,
 	apply, repair, deleted bool,
 ) {
-	if d.opts.Retries == nil {
+	if d.opts.Retries == nil && d.opts.Outcome == nil {
 		return
 	}
 	kind := "sync"
@@ -124,7 +124,13 @@ func (d *Dispatcher) recordRetryOutcomes(
 		kind = "delete"
 	}
 	for _, tr := range runs {
-		d.writeRetry(ctx, e.Repository.FullName, tr.cfg.Name, kind, !e.Operator, errors.Join(tr.err, tr.syncErr))
+		result := errors.Join(tr.err, tr.syncErr)
+		if d.opts.Retries != nil {
+			d.writeRetry(ctx, e.Repository.FullName, tr.cfg.Name, kind, !e.Operator, result)
+		}
+		if d.opts.Outcome != nil {
+			d.opts.Outcome(ctx, e.Repository.FullName, tr.cfg.Name, result)
+		}
 	}
 }
 

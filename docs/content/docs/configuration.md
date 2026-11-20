@@ -105,6 +105,16 @@ their pre-sync checkpoint succeeds.
 See [operations](../operations/#persistent-state-and-backups) for recovery and
 backups, and the deployment READMEs for default persistent-volume configuration.
 
+## Outbound notifications
+
+`notifications.webhook_url` (or `webhook_url_file`) enables a generic JSON
+webhook with a durable outbox. The URL is secret/redacted. Optional `token`
+(or `token_file`) supplies a dedicated bearer credential; `ui_url` supplies an
+explicit public UI root for links. `timeout` defaults to `10s` and must be
+positive. Notifications are disabled when no delivery URL is configured.
+See [operations](../operations/#blocked-sync-notifications) for payload,
+deduplication, retry and failure behavior.
+
 ## Secrets
 
 Every secret has two forms: an inline value, or a `*_file` path to read it

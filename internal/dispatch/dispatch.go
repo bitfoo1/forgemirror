@@ -52,6 +52,7 @@ type Options struct {
 	// Mutation grants a permit held through one remote operation.
 	Mutation func(repo, target string) (func(), error)
 	Retries  RetryState
+	Outcome  func(context.Context, string, string, error)
 	// Source holds the credentials for cloning from Forgejo.
 	Source  config.Source
 	Targets []config.Target

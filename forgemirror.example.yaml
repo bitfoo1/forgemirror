@@ -57,6 +57,13 @@ source:
   username: oauth2
   # token_file: /run/secrets/forgemirror/source-token
 
+# Optional outbound notifications; the delivery URL itself is a secret.
+notifications:
+  # webhook_url_file: /run/secrets/notification-webhook-url
+  # token_file: /run/secrets/notification-token
+  ui_url: "" # explicit public UI root; empty omits links
+  timeout: 10s
+
 # What starts a mirror run. Scheduled runs and typed targets
 # read from the Forgejo API, so they need source.base_url and a source token.
 sync:
