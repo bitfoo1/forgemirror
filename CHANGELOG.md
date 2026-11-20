@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-11-20
+
+### Bug fixes
+
+- **forge:** Give forge HTTP clients their own transport (287fa9a)
+- **dispatch:** Stop copying a package after an access denial (6106515)
+
+### Documentation
+
+- Explain registry denials during package sync (6ec3da0)
+
 ## [0.6.0] - 2026-11-16
 
 ### Features
