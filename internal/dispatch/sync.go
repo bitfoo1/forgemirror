@@ -11,6 +11,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/plan"
+	"go.bitfoo.de/forgemirror/internal/repo"
 )
 
 // Operations reported through [Observer.SyncFinished].
@@ -32,6 +33,7 @@ var (
 // targetRun is the state of one target during one run. Each step hands a
 // targetRun to exactly one goroutine, so it needs no lock.
 type targetRun struct {
+	source repo.Repository
 	// repo is the full name of the source repository of this run.
 	repo string
 	cfg  *config.Target
@@ -182,12 +184,12 @@ func (d *Dispatcher) privatise(ctx context.Context, logger *slog.Logger, tr *tar
 func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *targetRun) {
 	var errs []error
 
-	if err := d.mutateAPI(ctx, tr, func() error { return d.syncSettings(ctx, logger, tr) }); err != nil {
+	if err := d.mutateAPI(ctx, tr, opSettings, func() error { return d.syncSettings(ctx, logger, tr) }); err != nil {
 		errs = append(errs, fmt.Errorf("target %q: updating settings: %w", tr.cfg.Name, err))
 	}
 
 	if tr.syncLabels {
-		if err := d.mutateAPI(ctx, tr, func() error { return d.syncLabels(ctx, logger, tr) }); err != nil {
+		if err := d.mutateAPI(ctx, tr, opLabels, func() error { return d.syncLabels(ctx, logger, tr) }); err != nil {
 			errs = append(errs, fmt.Errorf("target %q: syncing labels: %w", tr.cfg.Name, err))
 		}
 	}
@@ -198,13 +200,23 @@ func (d *Dispatcher) syncTarget(ctx context.Context, logger *slog.Logger, tr *ta
 	defer cancel()
 
 	if len(tr.plan.Releases) > 0 {
-		if err := d.mutateAPI(ctx, tr, func() error { return d.syncReleases(transferCtx, logger, tr) }); err != nil {
+		if err := d.mutateAPI(
+			ctx,
+			tr,
+			opReleases,
+			func() error { return d.syncReleases(transferCtx, logger, tr) },
+		); err != nil {
 			errs = append(errs, fmt.Errorf("target %q: syncing releases: %w", tr.cfg.Name, err))
 		}
 	}
 
 	if len(tr.plan.Packages) > 0 {
-		if err := d.mutateAPI(ctx, tr, func() error { return d.syncPackages(transferCtx, logger, tr) }); err != nil {
+		if err := d.mutateAPI(
+			ctx,
+			tr,
+			opPackages,
+			func() error { return d.syncPackages(transferCtx, logger, tr) },
+		); err != nil {
 			errs = append(errs, fmt.Errorf("target %q: syncing packages: %w", tr.cfg.Name, err))
 		}
 	}
@@ -322,7 +334,7 @@ func (d *Dispatcher) deleteRepos(ctx context.Context, logger *slog.Logger, runs 
 }
 
 func (d *Dispatcher) deleteRepo(ctx context.Context, logger *slog.Logger, tr *targetRun) error {
-	err := d.mutate(tr, func() error { return d.deleteAt(ctx, tr.api, tr.addr) })
+	err := d.mutateWith(tr, false, func() error { return d.deleteAt(ctx, tr.api, tr.addr) })
 	// A repository that is already gone is exactly the desired outcome.
 	if errors.Is(err, forge.ErrNotFound) {
 		err = nil

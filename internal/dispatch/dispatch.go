@@ -50,9 +50,10 @@ type Observer interface {
 type Options struct {
 	Mirrorer mirror.Mirrorer
 	// Mutation grants a permit held through one remote operation.
-	Mutation func(repo, target string) (func(), error)
-	Retries  RetryState
-	Outcome  func(context.Context, string, string, error)
+	Mutation         func(repo.Repository, *config.Target, bool) (func(), error)
+	ApprovalRequired func(repo.Repository, *config.Target) (bool, string)
+	Retries          RetryState
+	Outcome          func(context.Context, string, string, error)
 	// Source holds the credentials for cloning from Forgejo.
 	Source  config.Source
 	Targets []config.Target
@@ -368,10 +369,7 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repai
 	logger := d.eventLogger(e)
 	start := time.Now()
 
-	runs := d.targetRuns(name)
-	if e.Target != "" {
-		runs = slices.DeleteFunc(runs, func(tr *targetRun) bool { return tr.cfg.Name != e.Target })
-	}
+	runs := d.eventRuns(e)
 	p := d.plan(ctx, logger, runs, e)
 	p.Apply = apply || repair
 	if p.Apply && !e.Retry {
@@ -410,6 +408,17 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repai
 	if apply && d.opts.VerifyAfterApply && ctx.Err() == nil {
 		d.verify(ctx, logger, e)
 	}
+}
+
+func (d *Dispatcher) eventRuns(e webhook.Event) []*targetRun {
+	runs := d.targetRuns(e.Repository.FullName)
+	for _, tr := range runs {
+		tr.source = e.Repository
+	}
+	if e.Target != "" {
+		runs = slices.DeleteFunc(runs, func(tr *targetRun) bool { return tr.cfg.Name != e.Target })
+	}
+	return runs
 }
 
 func (d *Dispatcher) checkpoint(ctx context.Context, p plan.Repo) error {
@@ -565,7 +574,7 @@ func (d *Dispatcher) push(
 	t *config.Target,
 	e webhook.Event,
 ) ([]mirror.RefUpdate, error) {
-	permit, permitErr := d.beginMutation(e.Repository.FullName, t.Name)
+	permit, permitErr := d.beginMutation(e.Repository, t, true)
 	if permitErr != nil {
 		return nil, permitErr
 	}

@@ -22,23 +22,19 @@ type Pause struct {
 	Until  time.Time `json:"until"`
 }
 
-const controlVersion = 2
+const controlVersion = 3
 
 type controlRecord struct {
-	Version int           `json:"version"`
-	Pauses  []Pause       `json:"pauses"`
-	Retries []retry.Entry `json:"retries,omitempty"`
+	Version   int           `json:"version"`
+	Pauses    []Pause       `json:"pauses"`
+	Retries   []retry.Entry `json:"retries,omitempty"`
+	Approvals []Approval    `json:"approvals,omitempty"`
 }
 
 // BeginMutation keeps pause acknowledgement behind operations already started.
 // Callers release the permit at the end of one bounded remote operation.
 func (s *Store) BeginMutation(repo, target string) (func(), error) {
-	s.controlMu.RLock()
-	if _, ok := s.pauseLocked(repo, target); ok {
-		s.controlMu.RUnlock()
-		return nil, ErrPaused
-	}
-	return s.controlMu.RUnlock, nil
+	return s.BeginPublication(repo, target, "", false)
 }
 
 func (s *Store) pauseLocked(repo, target string) (Pause, bool) {
@@ -69,6 +65,11 @@ func (s *Store) Pauses() []Pause {
 
 // Pause acknowledges only after active mutations finish and persistence succeeds.
 func (s *Store) Pause(ctx context.Context, p Pause) error {
+	var redactErr error
+	p.Reason, redactErr = s.redactControlReason(p.Reason)
+	if redactErr != nil {
+		return redactErr
+	}
 	if p.Target == "" || (!p.Until.IsZero() && !p.Until.After(s.now())) {
 		return errors.New("pause requires a target and a future expiry")
 	}
@@ -92,17 +93,34 @@ func (s *Store) Resume(ctx context.Context, repo, target string) error {
 	return s.saveControls(ctx, next)
 }
 
+func (s *Store) redactControlReason(reason string) (string, error) {
+	if s.redact == nil {
+		return reason, nil
+	}
+	raw, err := json.Marshal(reason)
+	if err != nil {
+		return "", fmt.Errorf("encoding pause reason: %w", err)
+	}
+	raw, err = s.redact(raw)
+	if err != nil {
+		return "", fmt.Errorf("redacting pause reason: %w", err)
+	}
+	var clean string
+	if err = json.Unmarshal(raw, &clean); err != nil {
+		return "", fmt.Errorf("decoding pause reason: %w", err)
+	}
+	return clean, nil
+}
+
 func (s *Store) saveControls(ctx context.Context, pauses []Pause) error {
-	data, err := json.Marshal(controlRecord{Version: controlVersion, Pauses: pauses, Retries: s.retries})
+	data, err := json.Marshal(
+		controlRecord{Version: controlVersion, Pauses: pauses, Retries: s.retries, Approvals: s.approvals},
+	)
 	if err != nil {
 		return fmt.Errorf("encoding controls: %w", err)
 	}
-	if s.redact != nil {
-		data, err = s.redact(data)
-		if err != nil {
-			return fmt.Errorf("redacting controls: %w", err)
-		}
-	}
+	// Functional identifiers and static reason codes are not credential copies.
+	// Redact free-text pause reasons at admission, not hashes/state metadata.
 	var record controlRecord
 	if err = json.Unmarshal(data, &record); err != nil {
 		return fmt.Errorf("decoding controls: %w", err)
@@ -114,6 +132,7 @@ func (s *Store) saveControls(ctx context.Context, pauses []Pause) error {
 	}
 	s.pauses = record.Pauses
 	s.retries = record.Retries
+	s.approvals = record.Approvals
 	return nil
 }
 
@@ -131,8 +150,11 @@ func (s *Store) restoreControls(ctx context.Context) error {
 			data,
 			&record,
 		); err != nil ||
-			(record.Version != 1 && record.Version != controlVersion) {
+			(record.Version != 1 && record.Version != 2 && record.Version != controlVersion) {
 			return errors.New("invalid publication controls")
+		}
+		if !validApprovals(record.Approvals) {
+			return errors.New("invalid persisted approvals")
 		}
 		if !validRetries(record.Retries) {
 			return errors.New("invalid persisted retries")
@@ -145,6 +167,7 @@ func (s *Store) restoreControls(ctx context.Context) error {
 		s.controlMu.Lock()
 		s.pauses = record.Pauses
 		s.retries = record.Retries
+		s.approvals = record.Approvals
 		s.controlMu.Unlock()
 	}
 	return nil

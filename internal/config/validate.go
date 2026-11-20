@@ -145,11 +145,31 @@ func (c *Config) validateSync() []error {
 	if c.Sync.Auto && !c.Sync.OnPush && c.Sync.Schedule <= 0 {
 		add("sync", errors.New("on_push is false and no schedule is set"))
 	}
+	if c.firstPublicationEnabled() && !c.UI.Enabled {
+		add("sync.first_publication_approval", errors.New("requires ui.enabled for explicit destination approval"))
+	}
 	if !c.Sync.Auto && !c.UI.Enabled {
 		add("sync.auto", errors.New("false requires ui.enabled, the only place to apply changes"))
 	}
 
 	return errs
+}
+
+func (c *Config) firstPublicationEnabled() bool {
+	if c.Sync.FirstPublicationApproval {
+		return true
+	}
+	for _, t := range c.Targets {
+		if t.FirstPublicationApproval != nil && *t.FirstPublicationApproval {
+			return true
+		}
+		for _, o := range t.Overrides {
+			if o.FirstPublicationApproval != nil && *o.FirstPublicationApproval {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *Config) anyDelete() bool {
@@ -215,7 +235,7 @@ func (t *Target) validateTyped(i int) []error {
 			{"registry", t.Registry != ""},
 			{"api_url", t.APIURL != ""},
 			{"settings", !t.Settings.IsZero()},
-			{"overrides", len(t.Overrides) > 0},
+			{"overrides", slices.ContainsFunc(t.Overrides, func(o Override) bool { return !o.Settings.IsZero() || o.FirstPublicationApproval == nil })},
 		} {
 			if f.set {
 				add(f.field, errNeedsType)

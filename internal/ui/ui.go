@@ -64,6 +64,7 @@ var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
 type Actions interface {
+	Approve(context.Context, string, string, string) error
 	Pause(ctx context.Context, repo, target, reason string, until time.Time) error
 	Resume(ctx context.Context, repo, target string) error
 	RepairLFS(ctx context.Context, fullName string) error
@@ -142,6 +143,7 @@ func Handler(opts Options) (http.Handler, error) {
 		mux.HandleFunc("POST /actions/sync", h.action(true))
 		mux.HandleFunc("POST /actions/repair-lfs", h.action(true))
 		mux.HandleFunc("POST /actions/pause", h.action(true))
+		mux.HandleFunc("POST /actions/approve", h.action(true))
 	}
 
 	// Safe methods pass unchanged; a POST from another origin is rejected
@@ -189,6 +191,8 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 		var notice string
 		var err error
 		switch r.URL.Path {
+		case "/actions/approve":
+			notice, err = h.approvalAction(r)
 		case "/actions/pause":
 			notice, err = h.pauseAction(r)
 		case "/actions/repair-lfs":
@@ -203,6 +207,9 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 			notice, err = h.runAction(r.Context(), sync, r.PostForm.Get("repo"))
 		}
 		switch {
+		case errors.Is(err, control.ErrStaleApproval):
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
 		case errors.Is(err, control.ErrUnknownRepository), errors.Is(err, control.ErrUnknownTarget):
 			http.Error(w, "unknown repository", http.StatusNotFound)
 
@@ -343,6 +350,8 @@ func (h *handler) data(r *http.Request) pageData {
 	for i := range d.Repos {
 		d.Repos[i].Actionable = h.opts.Known == nil || h.opts.Known(d.Repos[i].Name)
 		for j := range d.Repos[i].Targets {
+			d.Repos[i].Targets[j].Repo = d.Repos[i].Name
+			d.Repos[i].Targets[j].Actionable = d.Actions && d.Repos[i].Actionable
 			if pause, ok := h.opts.Store.Paused(d.Repos[i].Name, d.Repos[i].Targets[j].Name); ok {
 				d.Repos[i].Targets[j].Pause = &pause
 			}

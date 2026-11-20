@@ -34,6 +34,9 @@ func (d *Dispatcher) plan(ctx context.Context, logger *slog.Logger, runs []*targ
 
 	for _, tr := range runs {
 		tr.plan.Name = tr.cfg.Name
+		if !p.SourceDeleted && d.opts.ApprovalRequired != nil {
+			tr.plan.ApprovalRequired, tr.plan.PublicationID = d.opts.ApprovalRequired(e.Repository, tr.cfg)
+		}
 		if remote, remoteErr := targetRemote(tr.cfg, e); remoteErr == nil {
 			tr.plan.URL = remote.URL
 		}

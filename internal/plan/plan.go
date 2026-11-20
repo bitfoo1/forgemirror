@@ -60,8 +60,10 @@ func (r Repo) Failed() bool {
 
 // Target is the plan for one target.
 type Target struct {
-	Name string `json:"name"`
-	URL  string `json:"url,omitempty"`
+	ApprovalRequired bool   `json:"approval_required,omitempty"`
+	PublicationID    string `json:"publication_id,omitempty"`
+	Name             string `json:"name"`
+	URL              string `json:"url,omitempty"`
 	// Create means the target repository is missing and will be created.
 	Create bool `json:"create"`
 	// Privatise means the public target repository is made private before

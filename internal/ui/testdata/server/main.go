@@ -19,6 +19,7 @@ type actions struct{ store *status.Store }
 
 func (a actions) Refresh(context.Context, string) error   { return nil }
 func (a actions) RefreshAll(context.Context) (int, error) { return 1, nil }
+func (a actions) Approve(context.Context,string,string,string) error {return nil}
 func (a actions) Pause(context.Context,string,string,string,time.Time) error { return nil }
 func (a actions) Resume(context.Context,string,string) error { return nil }
 func (a actions) RepairLFS(ctx context.Context, name string) error { return a.Sync(ctx, name) }

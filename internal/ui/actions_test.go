@@ -59,6 +59,11 @@ func (a *fakeActions) Sync(_ context.Context, name string) error {
 	return nil
 }
 
+func (a *fakeActions) Approve(_ context.Context, _, target, _ string) error {
+	a.record("approve " + target)
+	return nil
+}
+
 func (a *fakeActions) Pause(_ context.Context, _, target, _ string, _ time.Time) error {
 	a.record("pause " + target)
 	return nil
@@ -222,7 +227,7 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 
 			actions := &fakeActions{}
 			f := newFixtureWith(t, nil, actions)
-			for _, path := range []string{"/actions/sync", "/actions/repair-lfs", "/actions/pause"} {
+			for _, path := range []string{"/actions/sync", "/actions/repair-lfs", "/actions/pause", "/actions/approve"} {
 				rec := f.post(t, path, url.Values{"repo": {"acme/app"}}, headers)
 				if rec.Code != http.StatusForbidden {
 					t.Errorf("%s status = %d, want 403", path, rec.Code)
@@ -232,6 +237,22 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 				t.Errorf("calls = %v, want none", got)
 			}
 		})
+	}
+}
+
+func TestApprovalAction(t *testing.T) {
+	t.Parallel()
+	actions := &fakeActions{}
+	f := newFixtureWith(t, nil, actions)
+	rec := f.post(
+		t,
+		"/actions/approve",
+		url.Values{"repo": {"acme/app"}, "target": {"github"}, "identity": {"current-mapping"}},
+		map[string]string{"HX-Request": "true"},
+	)
+	assertAction(t, rec, actions, http.StatusOK, "approve github", "")
+	if rec = f.do(t, http.MethodGet, "/actions/approve"); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET approval status=%d", rec.Code)
 	}
 }
 

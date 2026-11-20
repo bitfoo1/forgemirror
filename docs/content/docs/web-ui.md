@@ -77,6 +77,17 @@ scheduled sync if publication should catch up without another push.
 Controls survive restarts in the mandatory SQLite database. A failed durable
 write leaves the previous control state intact and reports an error.
 
+### First-publication approval
+
+With [first-publication protection](../configuration/#first-publication-protection)
+enabled for a scope, its target card shows **Awaiting first-publication
+approval** and the destination. **Approve destination and sync** confirms
+ongoing authorization, persists the grant, then syncs fresh source state.
+It does not approve one exact reviewed snapshot. A source/destination remap
+requires a matching new grant; a stale browser form gets a conflict and must
+be refreshed. Existing targets are not automatically adopted. Pauses still
+apply after approval.
+
 ### Review mode
 
 With `sync.auto: false` nothing reaches a target until you press *Sync*,

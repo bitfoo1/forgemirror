@@ -105,6 +105,39 @@ their pre-sync checkpoint succeeds.
 See [operations](../operations/#persistent-state-and-backups) for recovery and
 backups, and the deployment READMEs for default persistent-volume configuration.
 
+## First-publication protection
+
+```yaml
+ui:
+  enabled: true
+sync:
+  first_publication_approval: true # default false
+```
+
+This policy requires explicit authorization before a repository can publish
+to a destination. It applies to Git refs, LFS objects, releases, images,
+repository creation and settings, regardless of automatic/manual entry point.
+Read-only planning continues. Deletion removes exposure and needs no
+first-publication grant, but still obeys pauses.
+
+Override the global setting with `targets[].first_publication_approval` or
+`targets[].overrides[].first_publication_approval` for matching repositories.
+These policy-only overrides also work for untyped Git targets without a
+`settings` section. Last matching override wins. Enabling protection requires
+the UI, but does not by itself require source API credentials.
+
+The target card shows its destination and **Approve destination and sync**.
+Confirmation grants **ongoing** mirroring to this source/destination pair and
+requests a fresh target-scoped sync. It does not approve an exact snapshot:
+new source commits may be included. Grants survive restarts; source/destination
+URL changes do not match an old grant, while credential rotation alone does
+not change identity. Stale browser forms are rejected if the mapping changed.
+
+Existing mirrors are not silently adopted when protection is enabled: every
+unapproved scope requires a grant, even if Git refs already match. There is
+no bulk approval. Set a scope's policy to false only when you intentionally
+want ordinary automatic publication there. Approval never bypasses a pause.
+
 ## Outbound notifications
 
 `notifications.webhook_url` (or `webhook_url_file`) enables a generic JSON

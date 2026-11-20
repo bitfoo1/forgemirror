@@ -136,6 +136,7 @@ type Source struct {
 
 // Sync selects what starts a mirror run.
 type Sync struct {
+	FirstPublicationApproval bool `koanf:"first_publication_approval"`
 	// Auto applies runs started by pushes, the schedule and deletions. When
 	// false (review mode) those only compute a plan, and changes reach the
 	// targets only when an operator syncs from the UI.
@@ -275,26 +276,27 @@ const (
 
 func defaults() map[string]any {
 	return map[string]any{
-		"server.listen_address":      ":8081",
-		"server.ops_listen_address":  ":9090",
-		"server.read_header_timeout": defaultReadHeaderTimeout,
-		"server.shutdown_timeout":    defaultShutdownTimeout,
-		"notifications.timeout":      defaultNotificationTimeout,
-		"state.database":             "data/state.db",
-		"state.history_limit":        defaultHistoryLimit,
-		"state.history_retention":    defaultHistoryRetention,
-		"ui.enabled":                 false,
-		"ui.listen_address":          ":8080",
-		"ui.log_entries":             defaultUILogEntries,
-		"log.level":                  "info",
-		"log.format":                 LogFormatJSON,
-		"webhook.max_body_bytes":     defaultMaxBodyBytes,
-		"source.username":            defaultUsername,
-		"sync.auto":                  true,
-		"sync.on_push":               true,
-		"mirror.timeout":             defaultMirrorTimeout,
-		"mirror.max_concurrent":      defaultConcurrency,
-		"mirror.git_binary":          "git",
+		"server.listen_address":           ":8081",
+		"server.ops_listen_address":       ":9090",
+		"server.read_header_timeout":      defaultReadHeaderTimeout,
+		"server.shutdown_timeout":         defaultShutdownTimeout,
+		"notifications.timeout":           defaultNotificationTimeout,
+		"state.database":                  "data/state.db",
+		"state.history_limit":             defaultHistoryLimit,
+		"state.history_retention":         defaultHistoryRetention,
+		"ui.enabled":                      false,
+		"ui.listen_address":               ":8080",
+		"ui.log_entries":                  defaultUILogEntries,
+		"log.level":                       "info",
+		"log.format":                      LogFormatJSON,
+		"webhook.max_body_bytes":          defaultMaxBodyBytes,
+		"source.username":                 defaultUsername,
+		"sync.first_publication_approval": false,
+		"sync.auto":                       true,
+		"sync.on_push":                    true,
+		"mirror.timeout":                  defaultMirrorTimeout,
+		"mirror.max_concurrent":           defaultConcurrency,
+		"mirror.git_binary":               "git",
 	}
 }
 

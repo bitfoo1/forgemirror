@@ -31,8 +31,9 @@ type Dispatcher interface {
 
 // Options configures a [Controller].
 type Options struct {
-	Store   *status.Store
-	Targets []config.Target
+	Store                    *status.Store
+	Targets                  []config.Target
+	FirstPublicationApproval bool
 	// Source lists the source repositories; nil limits "all" to the known
 	// repositories (push-only setups without source API credentials).
 	Source        forge.Source

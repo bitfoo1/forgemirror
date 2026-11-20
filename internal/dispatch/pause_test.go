@@ -6,12 +6,20 @@ import (
 	"strings"
 	"testing"
 
+	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/dispatch"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/mirror"
+	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
+
+func pausePermit(store *status.Store) func(repo.Repository, *config.Target, bool) (func(), error) {
+	return func(source repo.Repository, target *config.Target, _ bool) (func(), error) {
+		return store.BeginMutation(source.FullName, target.Name)
+	}
+}
 
 func TestPausePreventsPublication(t *testing.T) {
 	t.Parallel()
@@ -34,7 +42,7 @@ func TestPausePreventsPublication(t *testing.T) {
 			Auto:          true,
 			Logger:        slog.New(slog.DiscardHandler),
 			Observer:      obs,
-			Mutation:      store.BeginMutation,
+			Mutation:      pausePermit(store),
 		},
 	)
 	d.Dispatch(t.Context(), event("app"))
@@ -64,7 +72,7 @@ func TestPausePreventsTargetCreation(t *testing.T) {
 			MaxConcurrent: 2,
 			Auto:          true,
 			Logger:        slog.New(slog.DiscardHandler),
-			Mutation:      store.BeginMutation,
+			Mutation:      pausePermit(store),
 		},
 	)
 	e := event("app")

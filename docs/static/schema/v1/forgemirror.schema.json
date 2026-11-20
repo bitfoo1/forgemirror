@@ -187,6 +187,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "first_publication_approval": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require ongoing source/destination authorization before publication. Requires UI; target/repository overrides take precedence. Existing unapproved mirrors also require approval."
+        },
         "auto": {
           "description": "Apply runs started by pushes, the schedule and deletions. false enables review mode: those runs only compute what a sync would change, and changes reach the targets only when an operator syncs from the web UI. false requires ui.enabled, source.base_url and a source token.",
           "type": "boolean",
@@ -301,6 +306,7 @@
       "required": ["name", "url"],
       "oneOf": [{ "required": ["token"] }, { "required": ["token_file"] }],
       "properties": {
+        "first_publication_approval": {"type": "boolean", "description": "Override global first-publication authorization policy for this target."},
         "name": {
           "description": "Unique name of the target, used in logs and metrics.",
           "type": "string",
@@ -452,8 +458,10 @@
     "override": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repos", "settings"],
+      "required": ["repos"],
+      "anyOf": [{"required": ["settings"]}, {"required": ["first_publication_approval"]}],
       "properties": {
+        "first_publication_approval": {"type": "boolean", "description": "Override first-publication authorization policy for matching repositories."},
         "repos": {
           "description": "Go regular expression (RE2) that must match the whole \"owner/name\" of the Forgejo repository.",
           "type": "string",

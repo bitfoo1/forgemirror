@@ -23,6 +23,7 @@ var errTargetNotValidated = errors.New("target URL template not compiled; valida
 
 // Target is a forge that repositories are mirrored to.
 type Target struct {
+	FirstPublicationApproval *bool `koanf:"first_publication_approval"`
 	// Name identifies the target in logs and metrics.
 	Name string `koanf:"name"`
 	// URL is a text/template for the push URL, rendered with a
@@ -60,11 +61,26 @@ type Target struct {
 
 // Override applies Settings to the repositories matched by Repos.
 type Override struct {
+	FirstPublicationApproval *bool `koanf:"first_publication_approval"`
 	// Repos is matched against the whole "owner/name", like the filter rules.
 	Repos    string         `koanf:"repos"`
 	Settings forge.Settings `koanf:"settings"`
 
 	re *regexp.Regexp
+}
+
+// RequiresFirstPublicationApproval applies policy overrides in the same order as settings.
+func (t *Target) RequiresFirstPublicationApproval(repo string, fallback bool) bool {
+	required := fallback
+	if t.FirstPublicationApproval != nil {
+		required = *t.FirstPublicationApproval
+	}
+	for _, o := range t.Overrides {
+		if o.re != nil && o.re.MatchString(repo) && o.FirstPublicationApproval != nil {
+			required = *o.FirstPublicationApproval
+		}
+	}
+	return required
 }
 
 // Address derives the API address of r on this target from the rendered URL.

@@ -21,7 +21,7 @@ func (d *Dispatcher) fetchLFS(ctx context.Context, ws mirror.Workspace, e webhoo
 }
 
 func (d *Dispatcher) uploadLFS(ctx context.Context, ws mirror.Workspace, target *config.Target, e webhook.Event) error {
-	permit, permitErr := d.beginMutation(e.Repository.FullName, target.Name)
+	permit, permitErr := d.beginMutation(e.Repository, target, true)
 	if permitErr != nil {
 		return permitErr
 	}

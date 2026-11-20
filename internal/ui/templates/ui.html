@@ -220,6 +220,20 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   <h3><code>{{.Name}}</code>{{with .Pause}} <span class="pill pill-warn">paused</span>{{end}}
     {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
   </h3>
+  {{$target := .}}
+  {{with .Plan}}{{if .ApprovalRequired}}
+    <p class="warn">Awaiting first-publication approval. No publication is allowed to this destination yet.</p>
+    {{with .URL}}<p><a href="{{.}}" rel="noreferrer">Destination repository</a></p>{{end}}
+    {{if and $target.Actionable .PublicationID}}
+    <form method="post" action="actions/approve" hx-post="actions/approve" hx-target="#repos" hx-swap="innerHTML"
+      hx-confirm="Approve ongoing publication to this destination and sync current source state? This does not approve an exact snapshot.">
+      <input type="hidden" name="repo" value="{{$target.Repo}}">
+      <input type="hidden" name="target" value="{{$target.Name}}">
+      <input type="hidden" name="identity" value="{{.PublicationID}}">
+      <button class="btn btn-small" type="submit">Approve destination and sync</button>
+    </form>
+    {{end}}
+  {{end}}{{end}}
   {{- with .Pause}}<p class="warn">Publication paused{{with .Reason}}: {{.}}{{end}}{{if not .Until.IsZero}} until <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}.</p>{{end}}
   {{- with .Plan}}
   <ul class="changes">

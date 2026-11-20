@@ -67,6 +67,7 @@ notifications:
 # What starts a mirror run. Scheduled runs and typed targets
 # read from the Forgejo API, so they need source.base_url and a source token.
 sync:
+  first_publication_approval: false # true requires UI; authorize each source/destination once
   # Apply runs automatically. false enables review mode: pushes, the schedule
   # and deletions only compute what a sync would change, and an operator
   # syncs from the web UI. Requires ui.enabled, source.base_url and a source

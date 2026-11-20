@@ -13,6 +13,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/mirror"
 	"go.bitfoo.de/forgemirror/internal/plan"
 	"go.bitfoo.de/forgemirror/internal/registry"
+	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/state"
 	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/ui"
@@ -52,11 +53,33 @@ func newDispatcher(
 		Retries:          store,
 		Outcome:          outcome,
 		VerifyAfterApply: store != nil,
-		Mutation: func(repo, target string) (func(), error) {
+		Mutation: func(source repo.Repository, target *config.Target, publication bool) (func(), error) {
 			if store == nil {
-				return func() {}, nil
+				return nil, errors.New("durable publication controls unavailable")
 			}
-			return store.BeginMutation(repo, target)
+			destination, err := target.RemoteURL(source)
+			if err != nil {
+				return nil, err
+			}
+			required := publication &&
+				target.RequiresFirstPublicationApproval(source.FullName, cfg.Sync.FirstPublicationApproval)
+			return store.BeginPublication(
+				source.FullName,
+				target.Name,
+				status.PublicationID(source.CloneURL, destination),
+				required,
+			)
+		},
+		ApprovalRequired: func(source repo.Repository, target *config.Target) (bool, string) {
+			if !target.RequiresFirstPublicationApproval(source.FullName, cfg.Sync.FirstPublicationApproval) {
+				return false, ""
+			}
+			destination, err := target.RemoteURL(source)
+			if err != nil {
+				return true, ""
+			}
+			id := status.PublicationID(source.CloneURL, destination)
+			return store == nil || !store.Approved(source.FullName, target.Name, id), id
 		},
 	})
 }
@@ -75,9 +98,10 @@ func newController(
 	return control.New(control.Options{
 		Source: clients.source, Filter: flt, Dispatcher: dispatcher,
 		Pending: func() []string { return ui.Pending(store.Snapshot()) }, Logger: logger,
-		CheckCloneURL: cfg.Source.CheckCloneURL,
-		Store:         store,
-		Targets:       cfg.Targets,
+		CheckCloneURL:            cfg.Source.CheckCloneURL,
+		Store:                    store,
+		Targets:                  cfg.Targets,
+		FirstPublicationApproval: cfg.Sync.FirstPublicationApproval,
 	})
 }
 

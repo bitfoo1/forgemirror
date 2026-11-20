@@ -50,6 +50,7 @@ type Store struct {
 	controls         Persistence
 	controlMu        sync.RWMutex
 	pauses           []Pause
+	approvals        []Approval
 	retries          []retry.Entry
 	persistence      Persistence
 	redact           func([]byte) ([]byte, error)

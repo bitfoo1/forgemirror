@@ -41,8 +41,10 @@ type repoView struct {
 // targetView merges a target's part of the newest plan with its last
 // results.
 type targetView struct {
-	Pause *status.Pause
-	Name  string
+	Repo       string
+	Actionable bool
+	Pause      *status.Pause
+	Name       string
 	// Plan is nil when the newest plan does not mention the target (e.g. a
 	// deletion that does not touch it).
 	Plan *plan.Target
