@@ -90,11 +90,10 @@ type Options struct {
 }
 
 type handler struct {
-	opts    Options
-	tmpl    *template.Template
-	config  string
-	targets []string
-	types   []targetType
+	opts   Options
+	tmpl   *template.Template
+	config string
+	types  []targetType
 }
 
 // Handler returns the UI's routing table: GET and HEAD for pages and
@@ -120,9 +119,6 @@ func Handler(opts Options) (http.Handler, error) {
 		return nil, fmt.Errorf("rendering configuration: %w", err)
 	}
 	h.config = string(cfgYAML)
-	for _, t := range opts.Config.Targets {
-		h.targets = append(h.targets, t.Name)
-	}
 	h.types = targetTypes(opts.Config.Targets)
 
 	static, err := fs.Sub(staticFS, "static")
@@ -241,7 +237,6 @@ type pageData struct {
 	Version  string
 	Refresh  time.Duration
 	Snapshot status.Snapshot
-	Targets  []string
 	Types    []targetType
 	OnPush   bool
 	Auto     bool
@@ -297,7 +292,6 @@ func (h *handler) data(r *http.Request) pageData {
 		Version:  h.opts.Version,
 		Refresh:  refresh,
 		Snapshot: h.opts.Store.Snapshot(),
-		Targets:  h.targets,
 		Types:    h.types,
 		OnPush:   h.opts.Config.Sync.OnPush,
 		Auto:     h.opts.Config.Sync.Auto,

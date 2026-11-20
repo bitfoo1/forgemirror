@@ -158,8 +158,6 @@ func TestRoutes(t *testing.T) {
 			path: "/fragments/overview",
 			want: []string{
 				"Uptime",
-				"<code>github</code>",
-				"<code>backup</code>",
 				// Every accepted target type is shown; configured ones are on.
 				`<li class="kind kind-on" title="github">GitHub</li>`,
 				`<li class="kind" title="not configured">GitLab</li>`,
