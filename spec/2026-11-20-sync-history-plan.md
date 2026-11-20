@@ -15,7 +15,7 @@
 - [x] RED/GREEN configuration defaults/validation and trigger/retry metadata; add safe target links.
 - [x] RED/GREEN history page, pagination and unknown repository behavior; update docs/schema/examples.
 - [x] Full gate and self-review (all checks passed, 5 browser tests).
-- [ ] Final gate after startup-pruning review fix, commit and PR 4.
+- [x] Final gate after startup-pruning review fix, commit and PR 4 (#51).
 
 ## Ledger
 - RED tests covered missing history API/configuration and unregistered history

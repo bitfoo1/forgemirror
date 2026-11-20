@@ -7,7 +7,23 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
+
+func waitForApprovalIdentity(t *testing.T, web string) string {
+	t.Helper()
+	const pollInterval = 10 * time.Millisecond
+	pattern := regexp.MustCompile(`name="identity" value="([a-f0-9]{64})"`)
+	var body string
+	for deadline := time.Now().Add(waitTimeout); time.Now().Before(deadline); time.Sleep(pollInterval) {
+		_, body = httpGet(t.Context(), t, "http://"+web+"/fragments/repos")
+		if match := pattern.FindStringSubmatch(body); len(match) == 2 {
+			return match[1]
+		}
+	}
+	t.Fatalf("approval identity missing after verification: %s", body)
+	return ""
+}
 
 func TestFirstPublicationNeedsCurrentApproval(t *testing.T) {
 	t.Parallel()
@@ -32,12 +48,8 @@ ui:
 	if source.called("POST /api/v3/orgs/acme/repos") {
 		t.Fatal("repository created before approval")
 	}
-	_, body := httpGet(t.Context(), t, "http://"+web+"/fragments/repos")
-	identity := regexp.MustCompile(`name="identity" value="([a-f0-9]{64})"`).FindStringSubmatch(body)
-	if len(identity) != 2 {
-		t.Fatalf("approval identity missing: %s", body)
-	}
-	form := url.Values{"repo": {"acme/app"}, "target": {"gh"}, "identity": {identity[1]}}
+	identity := waitForApprovalIdentity(t, web)
+	form := url.Values{"repo": {"acme/app"}, "target": {"gh"}, "identity": {identity}}
 	request, err := http.NewRequestWithContext(
 		t.Context(),
 		http.MethodPost,

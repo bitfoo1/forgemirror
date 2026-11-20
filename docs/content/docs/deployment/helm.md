@@ -73,6 +73,28 @@ The output prints the webhook URL to configure in
 
 {{% /steps %}}
 
+## State and publication features
+
+The chart enables persistent SQLite storage by default at
+`/var/lib/forgemirror/state.db` on a 1 GiB ReadWriteOnce PVC. Keep one replica
+and `Recreate`; use local/block-backed storage and ensure UID/GID 65532 can
+write it. State includes bounded history, pauses, retry intent, publication
+grants and notification outboxes. `persistence.work` remains separate scratch
+space for Git clones and automatic LFS downloads.
+
+All service features use the same `config` values as the binary:
+`config.state.history_limit` / `history_retention`,
+`config.sync.first_publication_approval`, and `config.notifications`.
+Approval and pause actions use the protected [web UI](../../web-ui/).
+Identity is configured in target `settings.mirror_note`, `mirror_url`,
+`mirror_topic` and `mirror_description_limit`. LFS and bounded mirror retries
+are automatic; no separate enable flag is required.
+
+See [Token permissions](../../configuration/#token-permissions) for provider
+scopes. Notification URL/token files need corresponding keys in the mounted
+credentials Secret; they are not forge tokens. For an existing state volume,
+set `persistence.state.existingClaim`.
+
 ## Ingresses
 
 The chart has two ingresses, both disabled by default. Each takes the plain

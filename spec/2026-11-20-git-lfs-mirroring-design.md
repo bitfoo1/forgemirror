@@ -1,8 +1,9 @@
 # Git LFS mirroring — design
 
-Status: draft for approval. User decisions: use the official `git-lfs` CLI;
-LFS mirroring is automatically enabled. Remaining behavior below is the
-recommended design, not yet approved.
+Status: implemented in PR #47 after the user authorized execution of all
+increments without further approval prompts. User decisions: official
+`git-lfs` CLI, automatically enabled. The implementation plan and operator
+documentation record final delivery decisions.
 
 ## Intent
 

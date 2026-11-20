@@ -113,8 +113,9 @@ reason codes; scanning itself is not part of this feature.
 Events are deduplicated across restarts in a separate SQLite namespace and
 sent by an independent worker. Delivery is **at least once**: deduplicate by
 `id` or the matching `Idempotency-Key` header. Transitions for the same
-repository/target are kept in order. Failed delivery is retried up to five
-times with bounded backoff, separately from mirror retries. Up to 128 pending
+repository/target are kept in order. Each event gets at most five delivery attempts in normal operation (the initial
+attempt plus four retries), with bounded backoff and Retry-After handling,
+separately from mirror retries. Up to 128 pending
 and 32 exhausted deliveries are retained. Exhausted delivery errors and queue
 failures are logged without endpoint URLs, credentials or response bodies.
 
@@ -137,12 +138,14 @@ included as well.
 | `forgemirror_duration_seconds`          | histogram | `target`           | Duration of each push to a target; buckets from 0.5 s to 10 min |
 | `forgemirror_webhook_requests_total`    | counter   | `outcome`          | Webhook requests by [outcome](../forgejo-webhook/#responses) |
 | `forgemirror_active_operations`         | gauge     |                    | Mirror runs in progress                          |
-| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Sync operations; `operation` is `create`, `lfs`, `settings`, `labels`, `releases`, `packages` or `delete`, `status` is `success` or `failure`. Runs without changes for an operation are not counted |
+| `forgemirror_sync_operations_total`     | counter   | `target`, `operation`, `status` | Sync operations; `operation` is `create`, `lfs`, `settings`, `labels`, `releases`, `packages` or `delete`, `status` is `success` or `failure`. Unchanged metadata/artifact steps are not counted; an evaluated LFS reconciliation step is counted even when no object upload is needed |
 | `forgemirror_scheduled_runs_total`      | counter   | `status`           | Scheduled sweeps; `failure` means the source repositories could not be listed |
 | `target_info`                           | gauge     | `service_name`, `service_version` | Build information                 |
 
-A failed clone counts as a failure for every target, because none of them
-could be updated. A typed target whose repository could not be read or
+A failed clone counts as a failure for every participating push target,
+because none of them could be updated. An apply denied by pause/approval policy
+also records a failed outcome rather than pretending a push succeeded; use
+publication reasons to distinguish intentional holds when designing alerts. A typed target whose repository could not be read or
 created counts as a failed mirror operation as well.
 
 Example alerts:
@@ -251,6 +254,15 @@ restore ownership for its runtime user, and keep file permissions restrictive.
 Restored diffs are verified before being treated as current. This is a bounded sync timeline, not a complete audit trail; retention limits
 remove old attempts. Ship logs externally for long-term auditing.
 
+## Explain publication state
+
+Use the UI's per-destination **Publication status** and **All publication
+reasons** before inferring health from a matching ref map. They distinguish
+operator holds, first-publication authorization, database/checkpoint failure,
+retry timing/exhaustion, review mode, stale/failed comparisons and LFS evidence.
+The next action and last successful retained target run are shown separately
+from old failures. See [the explanation reference](../web-ui/#why-was-this-not-published).
+
 ## Troubleshooting
 
 | Symptom                                    | Cause and fix                                                  |
@@ -261,11 +273,11 @@ remove old attempts. Ship logs externally for long-term auditing.
 | `200 not mirrored: …`                      | A filter rule excludes the push; the body names the rule        |
 | `target failed` … `Repository not found`   | Target repository does not exist, or the URL template renders a different name |
 | `target failed` … `403` / `Authentication failed` | Token lacks push permission or has expired; GitHub fine-grained tokens need *Contents: read and write* |
-| `package …: writing …` … `DENIED` / `access denied, N remaining tags skipped` | The target token cannot write to the registry: ghcr.io needs a **classic** token with `write:packages` (fine-grained tokens cannot write there), GitLab needs `write_registry`; `username` must be the token's account. See [Token rights](../security/#token-rights) |
+| `package …: writing …` … `DENIED` / `access denied, N remaining tags skipped` | The target token cannot write to the registry: ghcr.io needs a **classic** token with `write:packages` (fine-grained tokens cannot write there), GitLab needs registry write access (`read_registry` + `write_registry`, or broad `api` access); `username` must be the token's account. See [Token permissions](../configuration/#token-permissions) |
 | `target failed` … `protected branch`       | Force pushes are blocked on the target; allow them for the mirror account, because mirroring rewrites history like the source |
 | `mirror failed` on private repositories    | `source.token` is missing or lacks read access                  |
 | `target … does not exist and create is false` | The target repository is missing; create it or set `create: true` on the typed target |
 | `cannot create repository in namespace …`  | The namespace is neither an organisation or group nor the token's user |
 | Typed targets fail while Forgejo is down   | Expected: ForgeMirror starts anyway, connects on first use and waits 10 s after a failed attempt |
-| Private repository is not mirrored         | No matching `filter.allow_private` (required with typed targets or `sync.schedule`; otherwise only with `filter.exclude_private`), or a source token with public-only repository access |
+| Private repository is not mirrored         | No matching `filter.allow_private` (required with typed targets, `sync.schedule` or review mode; otherwise only with `filter.exclude_private`), or a source token with public-only repository access |
 | Pod evicted                                | Clones exceed the `/work` emptyDir `sizeLimit`; raise it        |

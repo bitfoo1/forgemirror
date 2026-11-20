@@ -59,17 +59,30 @@ pushes to all targets in parallel; targets already in sync are skipped.
   webhooks; unchanged repositories are skipped. Optionally delete a mirror
   when its Forgejo repository is deleted.
 - 🎯 **Filters:** include or exclude repositories by pattern, restrict
-  branches, skip private repositories and forks, or opt in per repository
+  branch push triggers, skip private repositories and forks, or opt in per repository
   with a topic.
 - 🔒 **Secrets stay secret:** tokens never touch disk, process arguments or
   logs. Each token is sent only to its own remote, and `source.base_url` pins
   clone URLs to your Forgejo.
+- 🧭 **Publication controls:** pause a whole destination or one repository,
+  with an optional expiry. Transient failures get durable bounded retries;
+  successful destinations are left alone.
+- 🚦 **First-publication approval:** optionally require ongoing authorization
+  for each source/destination pair before Git, LFS or artifact publication.
+- 🪪 **Public mirror identity:** templated notes, topics and explicit public
+  contribution links, without rewriting commits or exposing a private origin.
+- 🔔 **Actionable notifications:** an optional outbound webhook reports blocks,
+  exhausted retries and recovery through a durable, deduplicated outbox.
 - 🔍 **Review before publishing:** every run first computes what it would
   change, and the logs record every ref, setting and label it changed. With
-  `sync.auto: false` nothing is pushed until you press *Sync* in the web UI.
+  `sync.auto: false` automatic events only compare; publication needs explicit
+  UI authorization (Sync, approval, resume or object-only LFS repair).
 - 🖥️ **Web UI:** an optional status page shows every repository with its
   diff per target, recent logs and the effective configuration, in Tokyo
-  Night light and dark. It runs on its own port, ready for your proxy or SSO.
+  Night light and dark. A durable, paginated timeline retains sync outcomes;
+  per-destination explanations show why publication is held and what happens
+  next, without confusing ref agreement with LFS health. The UI runs on its
+  own port, ready for your proxy or SSO.
 - 📈 **Ready to operate:** Prometheus metrics, structured logs, health probes
   on a separate port, graceful shutdown, a Helm chart and signed multi-arch
   images.
@@ -124,6 +137,10 @@ Target repositories must already exist, unless the target has a `type` and
 | Helm chart | `oci://git.bitfoo.de/dvonessen/charts/forgemirror`, see [its README](charts/forgemirror/README.md) |
 | Kustomize  | [`deploy/`](deploy/README.md)                                                          |
 | Binary     | [Releases](https://git.bitfoo.de/dvonessen/forgemirror/releases) for linux and darwin, amd64 and arm64 |
+
+Binary deployments require Git and the official Git LFS CLI on PATH;
+container images bundle both. Provider token scopes are organized under
+[Configuration → Token permissions](https://forgemirror.bitfoo.de/docs/configuration/#token-permissions).
 
 ## Verify a release
 

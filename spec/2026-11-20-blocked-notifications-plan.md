@@ -15,8 +15,8 @@
 - [x] RED/GREEN config validation, secret-file loading/redaction and defaults.
 - [x] RED/GREEN outbox transition deduplication, restore, delivery/retry/order and credential-safe HTTP.
 - [x] Wire final dispatcher outcomes and worker lifecycle; schema/examples/docs and self-review.
-- [ ] Final full gate after delivery Retry-After fix.
-- [ ] Commit and PR 6.
+- [x] Final full gate after delivery Retry-After fix.
+- [x] Commit and PR 6 (#53).
 
 ## Ledger
 - Full gate passed once with 89.3% aggregate internal coverage and 5 browser

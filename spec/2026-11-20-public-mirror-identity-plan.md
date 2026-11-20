@@ -13,7 +13,7 @@
 ## Tasks
 - [x] RED/GREEN explicit URL rendering/validation, override precedence, description bounds, repeat stability and unsupported website capability.
 - [x] Schema/examples/operator documentation; full gate and self-review.
-- [ ] Commit and PR 5.
+- [x] Commit and PR 5 (#52).
 
 ## Ledger
 - Full `mise run check` passed, including all 5 browser tests and the coverage

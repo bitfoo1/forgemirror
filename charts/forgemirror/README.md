@@ -52,8 +52,8 @@ credentials:
 
 A `type` makes forgemirror use the forge's API, which needs
 `source.base_url` and a source token. Without a `type` a target is a plain
-git push destination and its repository must already exist. Token rights are
-listed in the [security docs](https://forgemirror.bitfoo.de/docs/security/#token-rights).
+git push destination and its repository must already exist. Token types and
+per-feature scopes are listed under [Configuration → Token permissions](https://forgemirror.bitfoo.de/docs/configuration/#token-permissions).
 
 Rendering fails if `config.targets` is empty or if no credentials are given,
 so a pod is never deployed in a state where it would just crash-loop.
@@ -82,9 +82,26 @@ clones. Use local/block-backed storage, not NFS/SMB, and keep one replica with
 your storage driver must honour it. For an existing claim, set
 `persistence.state.existingClaim`. Source API credentials enable automatic
 startup rediscovery but are not required solely for database use.
-The latest attempt and comparison survive pod replacement; logs do not.
+History, comparisons, pauses, retry intent, publication grants and notification
+outboxes survive pod replacement; recent UI logs do not.
 See the [operations guide](https://forgemirror.bitfoo.de/docs/operations/#persistent-state-and-backups)
 for backup and recovery.
+
+## Publication controls and observability
+
+LFS transfer and bounded mirror retries are automatic. The image includes Git
+LFS; temporary objects share `/work` with clones, not the state PVC. Configure
+`config.ui.enabled` for pause/resume, LFS repair, bounded history, per-target
+publication explanations and optional first-publication authorization.
+`config.sync.first_publication_approval` defaults to false and can be overridden
+per target/repository. Mirror identity extends existing target settings with
+`mirror_url` and `mirror_description_limit`.
+
+`config.notifications` enables a generic webhook with a separately retried
+outbox. Put its secret URL/token files in the mounted credentials Secret and
+set an explicit public `ui_url` if notification links are desired. See
+[Configuration](https://forgemirror.bitfoo.de/docs/configuration/) and
+[Operations](https://forgemirror.bitfoo.de/docs/operations/) for scope and limits.
 
 ## Values
 
@@ -97,6 +114,11 @@ for backup and recovery.
 | `controllers.forgemirror.containers.app.image.tag` | appVersion | Image tag                                                                             |
 | `controllers.forgemirror.containers.app.resources` | 50m / 64Mi, 512Mi limit | Raise the limit for large repositories or a higher `config.mirror.max_concurrent` |
 | `config.state.database`               | `/var/lib/forgemirror/state.db` | Required SQLite file path on persistent local storage                              |
+| `config.state.history_limit` | `50` | Retained attempts per repository, maximum 1000 |
+| `config.state.history_retention` | `720h` | History age retention, pruned on writes and startup |
+| `config.sync.first_publication_approval` | `false` | Require identity-bound destination authorization; needs UI |
+| `config.notifications.webhook_url_file` | unset | Optional secret delivery-URL file in the credentials mount |
+| `config.notifications.ui_url` | `""` | Explicit public UI root for notification links |
 | `persistence.state.enabled`           | `true`          | Provision/mount the SQLite PVC (default 1 GiB); provide equivalent persistent storage if replacing it |
 | `persistence.work.sizeLimit`          | `5Gi`           | emptyDir for temporary clones                                                                     |
 | `config.ui.enabled`                   | `false`         | Serve the web UI (status, diffs, refresh and sync) on service port `web` (8080)                   |

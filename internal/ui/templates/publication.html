@@ -1,0 +1,14 @@
+{{define "publication" -}}
+<div class="publication" data-publication-state="{{.Code}}" data-live-key="publication-status">
+  <p><strong>{{.Headline}}</strong> · {{.Message}}</p>
+  <p><strong>What happens next:</strong> {{.Next}}</p>
+  <p class="muted">{{if .LastSuccess.IsZero}}No successful target run retained in history.{{else}}Last successful target run: <time datetime="{{iso .LastSuccess}}">{{when .LastSuccess}}</time>.{{end}}</p>
+  <p class="muted">{{if .CheckedAt.IsZero}}No current comparison timestamp available.{{else}}Comparison computed: <time datetime="{{iso .CheckedAt}}">{{when .CheckedAt}}</time>.{{end}}</p>
+  {{if not .LFSAt.IsZero}}<p class="muted">Last LFS step: {{if .LFSSucceeded}}succeeded{{else}}failed{{end}} <time datetime="{{iso .LFSAt}}">{{when .LFSAt}}</time> (historical evidence, not continuous verification).</p>{{end}}
+  <details data-live-key="publication-reasons"><summary>All publication reasons · {{len .Reasons}}</summary>
+    <ul class="publication-reasons">
+    {{range .Reasons}}<li data-reason="{{.Code}}" data-live-key="reason:{{.Code}}"><strong>{{.Title}}:</strong> {{.Message}} {{.Action}}{{if not .At.IsZero}} Eligibility: <time datetime="{{iso .At}}">{{when .At}}</time>.{{end}}</li>{{end}}
+    </ul>
+  </details>
+</div>
+{{- end}}

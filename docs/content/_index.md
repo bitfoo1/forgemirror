@@ -34,19 +34,19 @@ layout: hextra-home
   {{< hextra/feature-card
     title="Push-driven"
     class="fm-card"
-    subtitle="Every push triggers one clone and a parallel push to all targets; pushes that arrive during a run are coalesced. A schedule can sweep every repository too."
+    subtitle="Pushes and schedules compute current state, clone once when needed and publish to permitted targets in parallel. Follow-up events are coalesced."
     icon="lightning-bolt"
   >}}
   {{< hextra/feature-card
     title="Review before publishing"
     class="fm-card"
-    subtitle="Every run plans first. The web UI shows the diff per target, and in review mode nothing is pushed until you press Sync."
+    subtitle="Every run plans first. Review mode needs explicit publication authorization, and optional first-publication grants bind a source repository to its destination."
     icon="eye"
   >}}
   {{< hextra/feature-card
     title="Creates and syncs repositories"
     class="fm-card"
-    subtitle="On GitHub, GitLab and Forgejo targets: create missing repositories and keep settings and labels in line. A private repository never becomes public."
+    subtitle="Create repositories and synchronize metadata, labels and public mirror identity, including an explicit contribution link. Private sources stay private."
     icon="collection"
   >}}
   {{< hextra/feature-card
@@ -70,7 +70,7 @@ layout: hextra-home
   {{< hextra/feature-card
     title="Filters"
     class="fm-card"
-    subtitle="Include and exclude repositories by pattern, restrict branches, skip private repositories and forks, or opt in per repository with a topic."
+    subtitle="Filter repositories, restrict which branch pushes trigger work, skip private repositories and forks, or opt in with a topic. Mirrors still copy all branches and tags."
     icon="filter"
   >}}
   {{< hextra/feature-card
@@ -78,6 +78,24 @@ layout: hextra-home
     class="fm-card"
     subtitle="Tokens never touch disk, argv or logs. Credentials can come from mounted files, as Kubernetes expects."
     icon="key"
+  >}}
+  {{< hextra/feature-card
+    title="Complete Git LFS mirrors"
+    class="fm-card"
+    subtitle="Automatically transfer source-history LFS objects before Git refs. Repair missing objects even when refs already match."
+    icon="cube"
+  >}}
+  {{< hextra/feature-card
+    title="Pause and recover"
+    class="fm-card"
+    subtitle="Pause a destination or repository, resume fresh state, and let bounded durable retries recover transient failures without retrying successful targets."
+    icon="adjustments"
+  >}}
+  {{< hextra/feature-card
+    title="Explain every hold"
+    class="fm-card"
+    subtitle="Retained history, per-target reasons and next actions distinguish current blockers from old failures. Optional webhook notifications report blocks and recovery."
+    icon="eye"
   >}}
   {{< hextra/feature-card
     title="Ready to operate"

@@ -14,9 +14,11 @@ repository. For production, see [Deployment](../deployment/).
   example a GitHub fine-grained token with *Contents: read and write* on the
   destination repositories. A [typed target](../configuration/#typed-targets)
   that creates repositories or syncs settings, releases or packages needs
-  more; see [Token rights](../security/#token-rights).
-- **Source token:** a Forgejo token with read access, if private repositories
-  should be mirrored.
+  more; see [Token permissions](../configuration/#token-permissions).
+- **Source token:** a read-only Forgejo token for private clones and API-driven
+  features (typed targets, schedules, review mode and startup rediscovery).
+  The [source permission table](../configuration/#forgejo-source-permissions)
+  lists feature-specific scopes.
 - **Existing target repositories:** a plain target pushes to repositories
   that already exist. Only a [typed target](../configuration/#typed-targets)
   with `create: true` creates them.
@@ -28,7 +30,8 @@ repository. For production, see [Deployment](../deployment/).
 {{< tabs >}}
   {{< tab name="Container" >}}
   Multi-arch images (linux/amd64, linux/arm64) are published with every
-  release. The image runs as a non-root user and already contains `git`.
+  release. The image runs as a non-root user and contains Git and the official
+  Git LFS CLI.
 
   ```sh
   docker pull {{< param "project.image" >}}:<version>
@@ -37,7 +40,10 @@ repository. For production, see [Deployment](../deployment/).
   {{< tab name="Binary" >}}
   Download the archive for your platform (linux or darwin, amd64 or arm64)
   from the [releases page]({{< param "project.releases" >}})
-  and put `forgemirror` on your `PATH`. `git` must be installed.
+  and put `forgemirror` on your `PATH`. Git and the official `git-lfs` CLI must
+  be installed. The mandatory database defaults to `data/state.db`, so the
+  process needs a writable persistent working directory or a configured state
+  path.
   {{< /tab >}}
   {{< tab name="From source" >}}
   Requires [mise](https://mise.jdx.dev); it installs the pinned Go toolchain.
@@ -74,8 +80,9 @@ All options, including filters and secrets read from files, are covered in
 [Configuration](../configuration/).
 
 {{< callout type="info" >}}
-  **Try it in review mode first.** With the settings below nothing reaches a
-  target until you press *Sync* in the [web UI](../web-ui/) at
+  **Try it in review mode first.** Automatic events only compare. Explicit
+  actions such as *Sync*, *Resume*, *Approve destination and sync*, or object-only
+  *Repair LFS* authorize writes through the [web UI](../web-ui/) at
   `http://localhost:8080`, so you can check what would be published before
   it is. Review mode reads the repository list from Forgejo, hence the
   source settings; add `-p 8080:8080` to `docker run`.

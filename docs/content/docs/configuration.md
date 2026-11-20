@@ -186,13 +186,151 @@ public ones are mirrored. It becomes required, together with `base_url`, as
 soon as a target has a `type`, `sync.schedule` is set or `sync.auto` is
 `false`, because ForgeMirror then reads repositories, settings and labels
 through the Forgejo API
-(`base_url` + `api/v1`). The rights it needs are listed under
-[Security](../security/#token-rights).
+(`base_url` + `api/v1`). Required scopes are listed in
+[Token permissions](#token-permissions).
 
 Forgejo clients connect on first use, not at startup, and a failed connection
 attempt is not repeated for 10 seconds. ForgeMirror therefore starts even
 when Forgejo is unreachable, and a scheduled sweep does not hammer an
 unreachable instance once per repository.
+
+## Token permissions
+
+This is the token setup reference. Permissions depend on the enabled features,
+not just the forge: a plain Git destination needs repository push access,
+whereas a typed target also synchronizes settings and, by default, labels,
+releases and packages for public repositories.
+
+Configure source credentials in `source.token` / `source.token_file` and one
+destination credential in each `targets[].token` / `token_file`. That target
+credential is also used for its registry; there is no separate registry-token
+setting. Use the actual token account for `username` when the registry requires
+it. Provider roles, repository coverage, organisation approval/SSO policies,
+protected branches and force-push rules still apply: token scopes do not
+implicitly grant membership or bypass those restrictions.
+
+### Forgejo source permissions
+
+The source token is read-only. Add the rows needed by your setup:
+
+| Feature | Required source permission | Configuration / notes |
+|---------|----------------------------|-----------------------|
+| Git clone and LFS download | `read:repository` | Same repository credential for Git and LFS; anonymous public access can be used where the instance permits it |
+| Repository details, topics, published releases and attachments | `read:repository` | Typed targets read these through the Forgejo API |
+| Repository discovery for schedules, review mode and startup recovery | `read:repository` | Listing only returns repositories visible to the token's account |
+| Label synchronization | `read:issue` | Label routes belong to Forgejo's issue scope; labels default to enabled |
+| Container package discovery and authenticated pulls | `read:package` | Needed when copying source packages; target `settings.packages` defaults to enabled for public repositories |
+| Private repository visibility | Repository access **All (public, private, and limited)** plus account access | A public-only token hides private repositories, regardless of `filter.allow_private` |
+
+Use a bot account with read access to the owners you mirror. An administrator
+account can make discovery return every repository; admin scopes are not a
+requirement. Forgejo's **Specific repositories** token mode supports only
+repository/issue scopes, not package scopes: choose an access mode that covers
+all enabled features.
+
+The source token is optional for anonymous public Git/LFS mirroring when
+there are no typed targets, no schedule and no review-mode repository listing.
+The mandatory database and first-publication policy do not by themselves
+require source API credentials. Supplying source API credentials enables
+startup rediscovery; webhook-only setups wait for newly admitted events.
+
+### GitHub destination permissions
+
+For a fine-grained PAT, choose the destination's resource owner and repository
+coverage. If ForgeMirror creates repositories, the token must cover newly
+created repositories too, not only a fixed list of existing ones.
+
+| Feature | Fine-grained PAT repository permission | Classic PAT scope |
+|---------|----------------------------------------|-------------------|
+| Git push/prune and repository-content access, including LFS | **Contents: read and write** | `repo`, or `public_repo` when every destination remains public |
+| Settings, topics, mirror identity, repository creation and deletion | **Administration: read and write** | `repo` / `public_repo`; add `delete_repo` for `delete: true` |
+| Label synchronization (default on) | **Issues: read and write**; GitHub also permits the equivalent Pull requests permission set | Covered by `repo` / `public_repo` |
+| Published releases and release attachments (default on) | **Contents: read and write** | Covered by `repo` / `public_repo` |
+| Changes under `.github/workflows/` | **Workflows: read and write** in addition to Contents | Add `workflow` |
+| Container images in `ghcr.io` | **Not supported by fine-grained PATs** | Add `write:packages` (includes package download/upload); account must have package access |
+
+GitHub's required Metadata read permission is included automatically. A
+fine-grained token is restricted to one resource owner; organisation approval
+or SSO authorization may also be necessary. Ensure the bot is an appropriate
+member/owner, not an unsupported outside-collaborator token arrangement.
+
+**Package sync is on by default for public repositories.** Use a classic token
+with repository permissions and `write:packages` when copying images to
+GHCR. If choosing a fine-grained token, explicitly set `settings.packages:
+false` for that target. ForgeMirror never deletes registry tags, so it does
+not require `delete:packages`.
+
+Provider references: [PAT types and limitations](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens),
+[label API permissions](https://docs.github.com/en/rest/issues/labels#create-a-label),
+and [GHCR authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry).
+
+### GitLab destination permissions
+
+Use a personal, group or project access token appropriate to the destination
+namespace. A project token is scoped to its existing project; it is not a
+credential for creating arbitrary sibling projects.
+
+| Feature | Required scope / access |
+|---------|-------------------------|
+| Plain Git push/prune and LFS | `write_repository`; a personal access token's `api` scope also grants Git-over-HTTP write access |
+| Typed-target settings, labels, releases/attachments, creation and deletion | `api`, with the project/group role needed for each operation |
+| Git with a group/project access token | Include `write_repository`; do not assume the personal-token `api` Git-over-HTTP implication applies to every token type |
+| Container image comparison and push | `read_registry` and `write_registry`, or broad `api` access that includes the registry; the registry must be enabled |
+
+For a typical typed destination using a **personal access token**, `api`
+covers Git, API and registry access. For group/project tokens, include explicit
+Git-over-HTTP rights and verify namespace coverage. GitLab's registry-only
+scope profile is `read_registry` + `write_registry`; its current fine-grained
+PAT registry permissions do not support image push. A correctly scoped token
+can still be denied by branch protection or the account's role.
+
+Provider references: [token scope matrix](https://docs.gitlab.com/security/tokens/access_token_scopes/),
+[Git-over-HTTP authentication](https://docs.gitlab.com/user/profile/personal_access_tokens/#use-git-over-https),
+and [registry authentication](https://docs.gitlab.com/user/packages/container_registry/authenticate_with_container_registry/).
+
+### Forgejo and Codeberg destination permissions
+
+These scope names apply to Forgejo-based targets. Features such as registries
+may be disabled on a particular instance; disable the corresponding sync
+feature instead of adding unrelated permissions.
+
+| Feature | Required target permission |
+|---------|----------------------------|
+| Git push/prune, LFS, repository metadata, topics, mirror identity and releases/attachments | `write:repository` |
+| Label synchronization (default on) | `write:issue` |
+| Create in an organisation | `write:organization`, in addition to repository permission and an account allowed to create there |
+| Create in the token account's personal namespace | `write:user`, plus `read:organization` for ForgeMirror's namespace probe, in addition to repository permission |
+| Delete a repository (`delete: true`) | `write:repository` plus the account's permission to delete it |
+| Container package/registry writes | `write:package`, with access to that package owner/registry |
+
+Write scopes include their corresponding read operations. Creation first
+checks whether the namespace is an organisation; personal creation then checks
+the authenticated user. ForgeMirror does not create repositories in an
+unrelated user's personal namespace. **Specific repositories** tokens cannot
+carry organisation/user/package scopes and restrict administrative operations;
+use an access mode that covers creation, visibility changes and package sync
+when those features are enabled.
+
+Provider reference: [Forgejo access-token scopes and repository access modes](https://forgejo.org/docs/latest/user/token-scope/).
+
+### How the new controls affect token permissions
+
+- LFS mirroring and **Repair LFS** need source read and destination write access;
+  repair uploads objects even when refs already match. Provider LFS enablement,
+  storage quotas and object-size limits are separate from token permissions.
+- Public mirror identity uses existing repository settings permissions; it does
+  not edit README files or commit history.
+- Pause/resume, retries, history and publication explanations are local control
+  features and need no extra forge scopes.
+- First-publication approval authorizes ForgeMirror's ongoing destination
+  mapping; it does not grant rights on the forge or replace token permissions.
+- Outbound notifications use their own optional bearer token and secret URL,
+  never a source or destination forge token.
+
+Disable unused `settings.labels`, `settings.releases` or `settings.packages`
+features before omitting their permissions. A temporary pause or review mode
+is not a reason to provision an incomplete token: planning still performs
+read-only API calls, and a later approved sync needs its write permissions.
 
 ## Sync
 
@@ -223,8 +361,10 @@ sync:
   and labels are still synchronised.
 - **Review mode:** with `auto: false`, pushes, scheduled runs and deletions
   only compute what a sync would change. The [web UI](../web-ui/) shows the
-  diff per repository, and nothing reaches a target until you press *Sync*
-  (per repository) or *Sync all*. `on_push` and `schedule` then decide when
+  diff per repository. Publication requires an explicit UI authorization:
+  *Sync*, *Sync all*, *Resume*, *Approve destination and sync*, or *Repair LFS*
+  (objects only). Previously authorized explicit retries can continue while
+  still obeying pause and approval policy. `on_push` and `schedule` decide when
   the diffs are refreshed; neither is required. At startup all diffs are
   computed once. Use it to review the first run of a new deployment.
 - **Schedule-only:** with `on_push: false`, `webhook.secret` is only
@@ -232,8 +372,12 @@ sync:
   `404`. With a secret but `on_push: false`, push events are answered with
   `200` and ignored.
 - `on_push: false` without a schedule is an error, unless `auto` is `false`.
-- **Deletions need a webhook.** Scheduled runs never delete; see
-  [`delete`](#typed-targets).
+- **Deletion is explicit policy, not listing reconciliation.** A sweep does
+  not infer deletion merely because a repository is absent from its listing.
+  With `delete: true`, an admitted deletion event or a run whose fresh source
+  lookup reports not found can plan target deletion; review mode still needs
+  explicit application, and admitted deletion retries can run later. Verify
+  source visibility before enabling deletion; see [`delete`](#typed-targets).
 
 ## Targets
 
@@ -389,12 +533,16 @@ without a leading `#`.
 | `topics`            | lower-cased; only `a-z`, `0-9` and `-`, starting with a letter or digit, at most 50 characters; others (e.g. `node.js`) are skipped with a warning | lower-cased    | lower-cased |
 | Create in           | organisation or own user | group or own user | organisation or own user |
 
-`delete: true` removes the target repository when Forgejo sends a
-`repository` event with action `deleted`. Only that event deletes: not an
-exclusion by the filter, not a repository turning private, not a
-configuration change, and not a scheduled run. The event goes through the
-[filter](#filter) first, and a target repository that is already gone counts
-as success. See [Forgejo webhook](../forgejo-webhook/#repository-events).
+`delete: true` permits target deletion for an admitted source-deletion event
+or when an admitted run's fresh Forgejo lookup reports the source not found.
+A missing item in a listing, a filter change or a configuration edit alone
+is not deletion evidence. Review mode plans deletion until explicitly applied;
+retries may repeat already admitted deletion work. A target already gone counts
+as success. Deletion events intentionally bypass ordinary push filters, so
+scope webhook delivery and target URL ownership carefully rather than relying
+on push filters to protect unrelated destination names. Also verify source
+visibility: insufficient token access can hide a repository behind a not-found
+response. See [Forgejo webhook](../forgejo-webhook/#repository-events).
 `prune_labels` is off by default because deleting a label strips it from every
 issue and pull request, and new GitHub repositories start with default
 labels.
@@ -455,7 +603,7 @@ descriptions exceeding the default byte limit may be shortened.
 
 Release and package sync are on by default for typed targets, like labels.
 They copy files that may be large and need extra token scopes (see
-[Security](../security/#token-rights)); without them, the step is skipped
+[Token permissions](#token-permissions)); without them, the step is skipped
 with a plan warning or fails and shows up in the
 [metrics](../operations/#metrics). Disable them per target or
 per repository:
@@ -525,7 +673,7 @@ log.
 |--------------------|--------------------------------------------------------------------------------|
 | `include_branches` | Only pushes to these branches trigger a mirror. Tag pushes always do.          |
 | `require_topic`    | Only repositories with this Forgejo topic, for per-repository opt-in. Not an access control: every repository owner can set topics. |
-| `exclude_private`  | Skip private repositories. Only with untyped targets and no `sync.schedule`, see below. |
+| `exclude_private`  | Skip private repositories. Only with untyped targets, no schedule and automatic mode; see below. |
 | `allow_private`    | Private repositories whose `owner/name` matches are synced, see below. They stay private on every target. |
 | `exclude_forks`    | Skip forks.                                                                    |
 | `include_repos`    | Only repositories whose `owner/name` matches.                                  |
@@ -546,23 +694,43 @@ filter:
   allow_private: "acme/notes"   # private, but mirrored anyway; stays private
 ```
 
-**Private repositories.** With any [typed target](#typed-targets) or a
-`sync.schedule`, a private repository is synced only if `allow_private`
-matches it, and `exclude_private` has no effect. With only untyped targets
-and no schedule, `exclude_private` skips private repositories and
+**Private repositories.** With any [typed target](#typed-targets), a
+`sync.schedule`, or review mode (`sync.auto: false`), a private repository is
+synced only if `allow_private` matches it, and `exclude_private` has no effect.
+With only untyped targets, no schedule and automatic mode, `exclude_private` skips private repositories and
 `allow_private` makes exceptions; without `exclude_private` they are
 mirrored, as before typed targets existed. Either way `allow_private` needs a
 source token with access to private repositories (see
-[Security](../security/#token-rights)). A filter only decides *whether* a push
+[Token permissions](#token-permissions)). A filter only decides *whether* a push
 triggers a mirror. The mirror itself
 always copies all branches and tags.
+
+## Git LFS
+
+Git LFS mirroring is automatic, using the official `git-lfs` CLI; there is no
+opt-in switch. Binary installations need Git and Git LFS on PATH. Images bundle
+both. Standard HTTP(S) LFS endpoints use the existing source/target repository
+credentials; custom repository-supplied endpoints and transfer agents are not
+supported.
+
+Transfers cover LFS objects in history reachable from published branches and
+tags, not hidden forge refs. Source objects are fetched once per workspace and
+uploaded to each destination before its Git refs. An LFS failure holds back
+that destination's push. Temporary objects live under `mirror.work_dir`; allow
+sufficient disk space and tune `mirror.timeout` for large initial transfers.
+
+Unchanged Git-ref checks stay cheap and do not audit LFS. **Repair LFS** is an
+explicit write action that reconciles source-history objects on existing
+destinations without pushing refs or unrelated changes, including in review
+mode. It still obeys pauses and destination approval. See
+[operations](../operations/#git-lfs) for scope, failure handling and limitations.
 
 ## Concurrency and timeouts
 
 | Key                       | Default | Meaning                                                                  |
 |---------------------------|---------|--------------------------------------------------------------------------|
-| `mirror.max_concurrent`   | `4`     | Maximum git processes (clones and pushes) running at once, across all repositories; forge API steps of typed targets (reading the source, creating, syncing settings and labels, deleting) are capped separately by the same number |
-| `mirror.timeout`          | `10m`   | Upper bound for each git command                                         |
+| `mirror.max_concurrent`   | `4`     | Maximum concurrent Git/LFS operations (clones, transfers and pushes), across all repositories; forge API steps of typed targets (reading the source, creating, syncing settings and labels, deleting) are capped separately by the same number |
+| `mirror.timeout`          | `10m`   | Upper bound for each Git/LFS command and each release/package transfer step                                         |
 | `server.shutdown_timeout` | `60s`   | Budget for a graceful shutdown, covering open requests and running mirrors |
 
 Only one mirror run per repository is active at a time. Pushes that arrive

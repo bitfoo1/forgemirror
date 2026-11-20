@@ -66,7 +66,7 @@
       }
     },
     "ui": {
-      "description": "Read-only web UI (configuration, status, logs). It has no authentication: put a reverse proxy or SSO in front of it.",
+      "description": "Web UI for configuration, comparisons, history, explanations and publication controls. It has no authentication: put a reverse proxy or SSO in front of it.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -193,7 +193,7 @@
           "description": "Require ongoing source/destination authorization before publication. Requires UI; target/repository overrides take precedence. Existing unapproved mirrors also require approval."
         },
         "auto": {
-          "description": "Apply runs started by pushes, the schedule and deletions. false enables review mode: those runs only compute what a sync would change, and changes reach the targets only when an operator syncs from the web UI. false requires ui.enabled, source.base_url and a source token.",
+          "description": "Apply runs started by pushes, the schedule and deletions. false enables review mode: those runs only compute what a sync would change, and publication needs an explicit UI authorization (sync, resume, approval or object-only LFS repair); authorized retry intent remains subject to current policy. false requires ui.enabled, source.base_url and a source token.",
           "type": "boolean",
           "default": true
         },
@@ -211,29 +211,29 @@
       }
     },
     "mirror": {
-      "description": "How git runs.",
+      "description": "Git/LFS runtime settings and transfer bounds. Git LFS mirroring is automatic.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "timeout": {
-          "description": "Upper bound for one clone + push to one target.",
+          "description": "Per Git/LFS command timeout; also bounds each release/package transfer step.",
           "$ref": "#/$defs/duration",
           "default": "10m"
         },
         "max_concurrent": {
-          "description": "Maximum git processes running at once, across all repositories. Forge API steps of typed targets are capped separately by the same number.",
+          "description": "Maximum concurrent Git/LFS operations across all repositories. Forge API steps of typed targets are capped separately by the same number.",
           "type": "integer",
           "minimum": 1,
           "default": 4
         },
         "git_binary": {
-          "description": "git executable: a name looked up in PATH or an absolute path.",
+          "description": "Git executable: a name looked up in PATH or an absolute path. The official git-lfs CLI must also be on PATH.",
           "type": "string",
           "minLength": 1,
           "default": "git"
         },
         "work_dir": {
-          "description": "Directory for temporary clones; empty uses the OS temp directory.",
+          "description": "Directory for temporary clones and downloaded LFS objects; empty uses the OS temp directory.",
           "type": "string",
           "default": ""
         }
@@ -264,12 +264,12 @@
           "examples": [["main", "release/.*"]]
         },
         "exclude_private": {
-          "description": "Skip repositories that are private on Forgejo. Only applies with only untyped targets and no sync.schedule; otherwise private repositories are synced only if allow_private matches them.",
+          "description": "Skip repositories that are private on Forgejo. Only applies with untyped targets, no sync.schedule and automatic mode; otherwise private repositories are synced only if allow_private matches them.",
           "type": "boolean",
           "default": false
         },
         "allow_private": {
-          "description": "With any typed target or a sync.schedule, a private repository is synced only if this pattern matches its \"owner/name\", and exclude_private has no effect. With only untyped targets and no schedule, matching private repositories pass exclude_private. Private repositories are created and kept private on every target.",
+          "description": "With any typed target, a sync.schedule or review mode, a private repository is synced only if this pattern matches its \"owner/name\", and exclude_private has no effect. With untyped targets, no schedule and automatic mode, matching private repositories pass exclude_private. Private repositories are created and kept private on every target.",
           "type": "string",
           "default": "",
           "examples": ["acme/notes"]
@@ -352,7 +352,7 @@
           "default": false
         },
         "delete": {
-          "description": "Delete the target repository when Forgejo reports the source repository as deleted. Requires type and a webhook secret.",
+          "description": "Permit deletion for an admitted deletion event or a fresh source lookup reporting not found. Review mode still requires application; pauses apply, first-publication grants do not. Listing absence alone never infers deletion. Requires type and a webhook secret.",
           "type": "boolean",
           "default": false
         },

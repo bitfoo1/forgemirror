@@ -7,6 +7,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/forge"
 	"go.bitfoo.de/forgemirror/internal/plan"
+	"go.bitfoo.de/forgemirror/internal/publication"
 	"go.bitfoo.de/forgemirror/internal/status"
 )
 
@@ -36,15 +37,17 @@ type repoView struct {
 	Targets        []targetView
 	AppliedTargets []targetView
 	Actionable     bool
+	HeldTargets    int
 }
 
 // targetView merges a target's part of the newest plan with its last
 // results.
 type targetView struct {
-	Repo       string
-	Actionable bool
-	Pause      *status.Pause
-	Name       string
+	Publication *publication.View
+	Repo        string
+	Actionable  bool
+	Pause       *status.Pause
+	Name        string
 	// Plan is nil when the newest plan does not mention the target (e.g. a
 	// deletion that does not touch it).
 	Plan *plan.Target

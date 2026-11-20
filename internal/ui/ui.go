@@ -291,6 +291,7 @@ type pageData struct {
 // counts summarises the repository states for the section header.
 type counts struct {
 	OutOfSync, Failed, Pending int
+	HeldTargets                int
 }
 
 func (h *handler) render(name string) http.HandlerFunc {
@@ -349,14 +350,8 @@ func (h *handler) data(r *http.Request) pageData {
 	d.Repos, d.Counts = repoViews(d.Snapshot.Repos, queued)
 	for i := range d.Repos {
 		d.Repos[i].Actionable = h.opts.Known == nil || h.opts.Known(d.Repos[i].Name)
-		for j := range d.Repos[i].Targets {
-			d.Repos[i].Targets[j].Repo = d.Repos[i].Name
-			d.Repos[i].Targets[j].Actionable = d.Actions && d.Repos[i].Actionable
-			if pause, ok := h.opts.Store.Paused(d.Repos[i].Name, d.Repos[i].Targets[j].Name); ok {
-				d.Repos[i].Targets[j].Pause = &pause
-			}
-		}
 	}
+	h.explainPublications(&d)
 
 	minLevel := parseLevel(r.URL.Query().Get("level"))
 	for _, l := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {

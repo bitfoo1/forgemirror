@@ -90,9 +90,11 @@ apply after approval.
 
 ### Review mode
 
-With `sync.auto: false` nothing reaches a target until you press *Sync*,
-*Sync all*, or explicitly request *Repair LFS* (objects only). Pushes, scheduled runs and deletion events only refresh the
-diff. At startup every repository is planned once, so after a restart the
+With `sync.auto: false`, pushes, scheduled runs and deletion events only
+refresh the diff. Publication requires an explicit UI authorization: *Sync*,
+*Sync all*, *Resume*, *Approve destination and sync*, or *Repair LFS* (objects
+only). Previously authorized explicit retries can continue, but still obey
+pauses and destination approval. At startup every repository is planned once, so after a restart the
 page shows what is pending. Use it to check the first run of a new
 deployment before dozens of repositories are created on a public forge; see
 [Sync](../configuration/#sync).
@@ -105,6 +107,47 @@ ui:
 ```
 
 In auto mode (the default) the buttons work too: *Sync* is "sync now".
+
+## Why was this not published?
+
+Each destination has a **Publication status** explanation, separate from the
+Git/metadata comparison badge and historical attempt results. Held destinations
+also get a visible repository summary, and their current diff opens by default.
+The card shows:
+
+- A primary status and **What happens next**: automatic retry eligibility,
+  manual Sync, approval, resume, refresh or storage repair.
+- **All publication reasons**, so a pause does not hide a missing approval,
+  review requirement or failed comparison.
+- Current comparison time, last successful retained target run, and the last
+  LFS step's historical result when available.
+
+A missing success timestamp means no success is retained within the configured
+history window, not that the destination was never published. A successful
+no-op run can provide evidence too. Partial failures are evaluated per target;
+interrupted runs are not invented as successes.
+
+**Git and metadata match** does not certify LFS object availability. A failed
+LFS step remains visible even after matching refs; **Repair LFS** reconciles
+objects. A successful past LFS step is historical evidence, not continuous
+health verification. Historical push failures stay in results/history and do
+not override a fresh verified comparison by themselves. A comparison with
+warnings is identified separately: skipped artifact checks or normalized
+provider fields are not silently presented as a complete feature match.
+
+Reasons are derived from structured state, not parsed error text. HTML
+`data-reason` attributes expose codes including `publication_paused`,
+`approval_required`, `state_unavailable`, `not_admitted`, `target_not_configured`,
+`retry_scheduled`, `retry_exhausted`, `retry_review_hold`, `comparison_failed`,
+`verification_pending`, `comparison_warning`, `review_required`, `lfs_transfer_failed` and
+`lfs_not_verified`.
+
+Automatic-origin retries are visibly held in review mode. Explicit operator
+retry intent remains eligible, but never bypasses pauses or approval. A
+read-only Refresh finding changes does not itself queue publication; the
+explanation says to Sync or wait for the next enabled trigger rather than
+promising an immediate automatic push. Removed destinations are identified as
+retained history, not silently treated as configured mirrors.
 
 ## Sync history timeline
 

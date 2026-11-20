@@ -38,7 +38,10 @@ CI runs exactly the same tasks, so a green push predicts a green pipeline.
 | `internal/webhook`     | Signature check, payload parsing, filter decision          |
 | `internal/filter`      | Mirror rules                                               |
 | `internal/dispatch`    | Background runs: coalescing, fan-out, concurrency limit    |
-| `internal/mirror`      | git clone and push with injected credentials               |
+| `internal/mirror`      | Git and official Git LFS orchestration with isolated credentials |
+| `internal/status`, `internal/state` | Bounded history, durable SQLite records and publication controls |
+| `internal/retry`, `internal/notify` | Failure classification and an independent durable notification outbox |
+| `internal/publication`, `internal/ui` | Evidence-based publication explanations and operator actions |
 | `internal/server`      | HTTP routing, health, graceful shutdown                    |
 | `internal/telemetry`   | OpenTelemetry metrics and Prometheus exporter              |
 | `deploy/`, `charts/`   | kustomize manifests, Helm chart                            |
@@ -49,8 +52,9 @@ CI runs exactly the same tasks, so a green push predicts a green pipeline.
 - **Go:** modern idioms for the pinned Go version. There is no package-level
   mutable state, `context.Context` comes first, and errors are wrapped with
   `%w`.
-- **Tests:** table-driven and parallel, with fakes instead of real networks
-  or remotes. Real git is used only in the integration tests of
+- **Tests:** table-driven and parallel, without external networks or real
+  remotes. Local HTTP fixtures exercise SDKs, the real pinned Git LFS CLI,
+  notifications and UI actions. Real Git is used in the integration tests of
   `internal/mirror` and in the end-to-end test (`e2e/`, build tag `e2e`),
   which also runs a real Forgejo and is not part of `mise run check`.
 - **Comments:** explain *why*, not *what*.

@@ -1,7 +1,8 @@
 # Mirroring improvements roadmap
 
-Status: delivery order and incremental approach approved in conversation;
-individual feature designs still require approval.
+Status: implementation of all eight increments was authorized without further
+approval prompts. Increments 1–7 have separate PRs; increment 8 publishes the
+final explanation view and the requested documentation audit.
 
 ## Delivery approach
 
@@ -11,8 +12,8 @@ store and SQLite persistence rather than building another job system.
 
 Each increment includes tests, configuration/schema changes where needed,
 operator documentation, deployment/release integration and the full
-`mise run check` gate before a commit. No product implementation is approved
-merely by this roadmap.
+`mise run check` gate before a commit. The user subsequently authorized full
+execution of this roadmap without additional approval questions.
 
 ## Ordered increments
 
@@ -22,7 +23,7 @@ merely by this roadmap.
    Design: `2026-11-20-git-lfs-mirroring-design.md`.
 2. **Per-target pause/resume.** Persistent global-target and repository-target
    pauses; continue planning but prevent new mutations. Optional reason and
-   expiry; resume computes fresh state. Proposed active-operation semantics:
+   expiry; resume computes fresh state. Active-operation semantics:
    finish the operation already started, then stop further mutations.
 3. **Retry and outage handling.** Typed retry decisions, bounded backoff with
    jitter, rate-limit awareness, persistent timing, fresh planning and event
@@ -39,12 +40,28 @@ merely by this roadmap.
 7. **Configurable first-publication protection.** Optional, default off;
    persisted approval per source/destination identity; cover Git, releases
    and packages. Explicit adoption behavior for existing destinations.
-   Proposed approval scope: destination authorization for ongoing mirroring,
+   Approval scope: destination authorization for ongoing mirroring,
    not approval of one exact source snapshot.
 8. **Explainable publication status.** Consolidated reasons, last publication,
    pending work, next automatic action and operator remedies. Introduce
    structured reason codes as earlier features need them; assemble the full
    explanation view here.
+
+## Delivery record
+
+1. Git LFS — PR [#47](https://git.bitfoo.de/dvonessen/forgemirror/pulls/47).
+2. Pause/resume and mandatory default SQLite — PR [#48](https://git.bitfoo.de/dvonessen/forgemirror/pulls/48).
+3. Retry/outage handling — PR [#50](https://git.bitfoo.de/dvonessen/forgemirror/pulls/50).
+4. Sync history — PR [#51](https://git.bitfoo.de/dvonessen/forgemirror/pulls/51).
+5. Public identity — PR [#52](https://git.bitfoo.de/dvonessen/forgemirror/pulls/52).
+6. Notifications — PR [#53](https://git.bitfoo.de/dvonessen/forgemirror/pulls/53).
+7. First-publication protection — PR [#54](https://git.bitfoo.de/dvonessen/forgemirror/pulls/54).
+8. Publication explanations and docs alignment — branch
+   `feat/publication-explanations`, based on increment 7.
+
+PRs are dependency-stacked in this order; no automatic merging was performed.
+See `2026-11-20-documentation-audit.md` for feature-by-feature documentation
+coverage and the move of provider token permissions into Configuration.
 
 ## Shared constraints
 

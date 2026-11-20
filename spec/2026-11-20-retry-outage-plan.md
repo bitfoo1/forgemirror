@@ -15,7 +15,7 @@
 - [x] RED/GREEN durable retry state, pause/exhaustion/reset and restore.
 - [x] RED/GREEN due-job admission, target scoping, review mode, single-run/coalescing and shutdown; wire dispatch results and startup loop.
 - [x] UI/docs and self-review.
-- [ ] Final full `mise run check`, commit, PR 3.
+- [x] Final full `mise run check`, commit, PR 3 (#50).
 
 ## Ledger
 - Tests observed RED for missing retry APIs, joined Retry-After lower bounds,

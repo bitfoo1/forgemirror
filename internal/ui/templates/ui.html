@@ -117,6 +117,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       {{- len .Repos}} {{plural (len .Repos) "repository" "repositories"}}
       {{- if .Counts.OutOfSync}} · <span class="warn">{{.Counts.OutOfSync}} out of sync</span>{{end}}
       {{- if .Counts.Failed}} · <span class="fail">{{.Counts.Failed}} failed</span>{{end}}
+      {{- if .Counts.HeldTargets}} · <span class="warn">{{.Counts.HeldTargets}} destinations held</span>{{end}}
     </p>
   </div>
   {{- if .Actions}}
@@ -161,7 +162,8 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     <div class="repo-head" data-live-key="repository-heading">
       <span class="dot" aria-hidden="true"></span>
       <code class="repo-name">{{$r.Name}}</code>
-      {{template "state" $r}}
+      <span class="muted">comparison:</span> {{template "state" $r}}
+      {{if $r.HeldTargets}}<span class="pill pill-warn">{{$r.HeldTargets}} destinations held</span>{{end}}
       {{- if $r.Running}}
       <span class="pill pill-info">{{if $r.Applying}}syncing{{else}}planning{{end}}</span>
       {{- if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
@@ -187,7 +189,8 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       </div>
       {{- end}}
     </div>
-    <details class="diff" data-live-key="current:{{$r.Name}}" data-key="current:{{$r.Name}}"{{if and (eq $r.State "out-of-sync") (not $.Auto)}} data-open-default{{end}}>
+    {{range $r.Targets}}{{$destination := .}}{{with .Publication}}{{if .Held}}<p class="notice warn" data-live-key="hold-summary:{{$destination.Name}}"><strong>{{$destination.Name}} — {{.Headline}}</strong> · {{.Next}}</p>{{end}}{{end}}{{end}}
+    <details class="diff" data-live-key="current:{{$r.Name}}" data-key="current:{{$r.Name}}"{{if or $r.HeldTargets (and (eq $r.State "out-of-sync") (not $.Auto))}} data-open-default{{end}}>
       <summary>Current diff{{if $r.Changes}} · {{$r.Changes}} {{plural $r.Changes "change" "changes"}}{{end}}{{if $r.Stale}} · awaiting verification{{end}}</summary>
       {{- if $r.Stale}}<p class="muted">{{if $r.Running}}Verification pending; the previous diff may be outdated.{{else}}Saved results may be outdated. Awaiting a fresh comparison.{{end}}</p>{{end}}
       {{- with $r.Current}}{{if .Failed}}<p class="fail">Could not verify{{with .Error}}: {{.}}{{end}}</p>{{end}}{{end}}
@@ -220,9 +223,9 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   <h3><code>{{.Name}}</code>{{with .Pause}} <span class="pill pill-warn">paused</span>{{end}}
     {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
   </h3>
+  {{with .Publication}}{{template "publication" .}}{{end}}
   {{$target := .}}
   {{with .Plan}}{{if .ApprovalRequired}}
-    <p class="warn">Awaiting first-publication approval. No publication is allowed to this destination yet.</p>
     {{with .URL}}<p><a href="{{.}}" rel="noreferrer">Destination repository</a></p>{{end}}
     {{if and $target.Actionable .PublicationID}}
     <form method="post" action="actions/approve" hx-post="actions/approve" hx-target="#repos" hx-swap="innerHTML"

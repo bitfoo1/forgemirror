@@ -14,7 +14,7 @@ test('polling preserves selected text and expanded diffs', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.getSelection().toString())).toBe('refs/heads/main');
   expect(await page.evaluate(() => window.originalRef.isConnected)).toBe(true);
   await page.evaluate(() => window.getSelection().removeAllRanges());
-  await diff.locator('summary').click();
+  await diff.locator(':scope > summary').click();
   await page.waitForResponse(response => response.url().endsWith('/fragments/repos'));
   await expect(diff).not.toHaveAttribute('open');
 });
@@ -23,11 +23,11 @@ test('sync updates current diff and retains the applied plan without reloading',
   await page.goto('/');
   await page.evaluate(() => {window.pageIdentity = 'retained';});
   await page.locator('.repo-actions button', { hasText: /^Sync$/ }).click();
-  await expect(page.locator('.applied summary')).toContainText('Last applied plan', {timeout: 12000});
+  await expect(page.locator('.applied > summary')).toContainText('Last applied plan', {timeout: 12000});
   await expect(page.locator('.repo-head')).toContainText('in sync');
   await expect(page.locator('details.diff').first().locator('.changes code')).toHaveCount(0);
   await expect(page.locator('.repo-actions button', { hasText: /^Sync$/ })).toBeFocused();
-  await page.locator('.applied summary').click();
+  await page.locator('.applied > summary').click();
   await expect(page.locator('.applied .changes').first()).toContainText('refs/heads/main');
   expect(await page.evaluate(() => window.pageIdentity)).toBe('retained');
   await page.waitForResponse(response => response.url().endsWith('/fragments/repos'));

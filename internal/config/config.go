@@ -91,7 +91,7 @@ type Server struct {
 	ShutdownTimeout time.Duration `koanf:"shutdown_timeout"`
 }
 
-// UI configures the read-only web UI. It has no authentication of its own;
+// UI configures status, history and publication controls. It has no authentication of its own;
 // operators put a proxy or SSO in front of it, which is why it gets its own
 // listener and is off by default.
 type UI struct {
@@ -139,7 +139,7 @@ type Sync struct {
 	FirstPublicationApproval bool `koanf:"first_publication_approval"`
 	// Auto applies runs started by pushes, the schedule and deletions. When
 	// false (review mode) those only compute a plan, and changes reach the
-	// targets only when an operator syncs from the UI.
+	// targets only through an explicit UI authorization or its retained retry intent.
 	Auto bool `koanf:"auto"`
 	// OnPush lets Forgejo push webhooks start runs.
 	OnPush bool `koanf:"on_push"`
@@ -173,7 +173,7 @@ func (c *Config) Typed() bool {
 
 // Mirror configures how git runs.
 type Mirror struct {
-	// Timeout bounds one complete mirror operation (clone + push) per target.
+	// Timeout bounds each Git/LFS command and each release/package transfer step.
 	Timeout time.Duration `koanf:"timeout"`
 	// MaxConcurrent caps the number of git operations running at once.
 	MaxConcurrent int `koanf:"max_concurrent"`

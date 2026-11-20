@@ -21,7 +21,8 @@ server:
   # Upper bound for a graceful shutdown, including running mirrors.
   shutdown_timeout: 60s
 
-# Read-only web UI: status, logs and this configuration (secrets redacted).
+# Web UI: status, history, explanations, review/sync and publication controls.
+# Configuration secrets are redacted.
 # It has no login of its own: put a proxy or SSO in front of it.
 ui:
   enabled: false
@@ -29,9 +30,10 @@ ui:
   # Log records kept in memory for the UI.
   log_entries: 1000
 
-# Optional restart-safe status: last sync attempt and current diff, even when
-# the UI is disabled. Requires source.base_url and a source token for safe
-# startup rediscovery. Mount a persistent local volume; one process per file.
+# Mandatory restart-safe state, even with the UI disabled: history, current
+# comparisons, controls, retry intent and notification outboxes. Source API
+# credentials enable startup rediscovery but are not required solely for state.
+# Mount persistent local storage; one process per database.
 state:
   database: data/state.db # required; mount persistent storage here in containers
   history_limit: 50 # per repository, maximum 1000
@@ -69,8 +71,8 @@ notifications:
 sync:
   first_publication_approval: false # true requires UI; authorize each source/destination once
   # Apply runs automatically. false enables review mode: pushes, the schedule
-  # and deletions only compute what a sync would change, and an operator
-  # syncs from the web UI. Requires ui.enabled, source.base_url and a source
+  # and deletions only compare. Sync, resume, approval and LFS repair are
+  # explicit UI authorizations. Requires ui.enabled, source.base_url and a source
   # token.
   auto: true
   # Forgejo push webhooks start runs (in review mode: refresh the diff).
@@ -82,7 +84,7 @@ sync:
   schedule: 0s
 
 mirror:
-  # Upper bound for one clone + push to one target.
+  # Per Git/LFS command timeout; also bounds each release/package transfer step.
   timeout: 10m
   # Upper bound for git operations running at the same time; forge API steps
   # of typed targets are capped separately by the same number.
@@ -100,9 +102,9 @@ filter:
   exclude_repos: ""
   # Only pushes to these branches trigger a mirror; tag pushes always do.
   include_branches: [] # e.g. ["main", "release/.*"]
-  # Private repositories: with any typed target or a sync.schedule, a private
+  # Private repositories: with a typed target, schedule or review mode, a private
   # repository is synced only if allow_private matches it, and exclude_private
-  # has no effect. With only untyped targets and no schedule, exclude_private
+  # has no effect. With untyped targets, no schedule and auto mode, exclude_private
   # skips private repositories and allow_private makes exceptions. Private
   # repositories are created and kept private on every target.
   exclude_private: false

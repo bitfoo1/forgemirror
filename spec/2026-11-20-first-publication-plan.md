@@ -16,7 +16,7 @@
 - [x] RED/GREEN policy defaults/overrides/validation; wire every publication mutation and read-only plan flags.
 - [x] RED/GREEN admitted approval action, CSRF, explicit confirmation and status; schema/docs/examples.
 - [x] Full gate and self-review.
-- [ ] Commit and PR 7.
+- [x] Commit and PR 7 (#54).
 
 ## Ledger
 - Full `mise run check` passed, including all 5 browser tests and the coverage

@@ -104,6 +104,23 @@ is network-backed: SQLite on NFS/SMB is unsupported. Keep one replica with
 from disposable `/work` clones. See the
 [operations guide](https://forgemirror.bitfoo.de/docs/operations/#persistent-state-and-backups).
 
+## Publication features
+
+Git LFS transfer and bounded mirror retries are automatic. LFS downloads share
+`/work` with clones; increase its scratch capacity for large repositories.
+Configure UI access for pause/resume, object-only LFS repair, history and
+publication explanations. Optional first-publication authorization is
+`sync.first_publication_approval`; target/repository overrides are supported.
+Public mirror identity uses target `settings.mirror_*` values. Generic outbound
+notifications use `notifications` with their own secret URL/token files in the
+credentials Secret, not a forge token.
+
+Provider scopes are documented under
+[Configuration → Token permissions](https://forgemirror.bitfoo.de/docs/configuration/#token-permissions).
+See the [web UI guide](https://forgemirror.bitfoo.de/docs/web-ui/) and
+[operations guide](https://forgemirror.bitfoo.de/docs/operations/) for approval,
+retry, notification and retention semantics.
+
 ## Operational notes
 
 - **Single replica, `Recreate` strategy.** Coalescing of concurrent pushes is

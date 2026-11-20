@@ -14,6 +14,7 @@ hardened setup as the [Helm chart](../helm/).
 | `configmap.yaml`      | `forgemirror.yaml` without secrets                          |
 | `secret.example.yaml` | Template for the credentials. Not applied by kustomize, so secrets stay out of git |
 | `deployment.yaml`     | One replica, `Recreate`, non-root, read-only root filesystem, probes |
+| `pvc.yaml` | Default 1 GiB ReadWriteOnce storage for the mandatory SQLite state |
 | `service.yaml`        | ClusterIP service on port 80                                |
 
 {{% steps %}}
@@ -22,6 +23,10 @@ hardened setup as the [Helm chart](../helm/).
 
 Edit `deploy/configmap.yaml` (targets, filter, timeouts). In
 `kustomization.yaml`, pin the image tag or a digest instead of `latest`.
+The base enables SQLite at `/var/lib/forgemirror/state.db` with a persistent
+volume. Select local/block-backed storage in `deploy/pvc.yaml`, not NFS/SMB;
+UID/GID 65532 must be able to write it. LFS temporary objects share `/work`
+with Git clones, so size that separate scratch volume for your repositories.
 
 ### Create the Secret
 
@@ -32,6 +37,10 @@ kubectl -n forgemirror create secret generic forgemirror \
   --from-literal=source-token=<forgejo-token> \
   --from-literal=github-token=<github-token>
 ```
+
+Choose the source and destination token scopes from
+[Configuration → Token permissions](../../configuration/#token-permissions).
+Optional notification URL/token files must also be keys in the mounted Secret.
 
 ### Apply
 

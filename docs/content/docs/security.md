@@ -15,8 +15,9 @@ weight: 7
   no reason to make the endpoint publicly reachable.
 - **The web UI has no login.** It is off by default and runs on its own
   port. When enabled, protect that port with a proxy or SSO; see
-  [Web UI](../web-ui/#secure-it). It shows no secrets; its only actions
-  are refresh and sync, protected against cross-site requests.
+  [Web UI](../web-ui/#secure-it). It shows no configured secrets. Refresh,
+  sync, LFS repair, pause/resume and first-publication approval actions are
+  protected against cross-site requests.
 - **Probes and metrics stay internal.** They are served on the ops port,
   separate from the webhook, so exposing the webhook exposes nothing else.
 - **Targets get everything.** The mirror copies all branches and tags. A
@@ -68,64 +69,36 @@ the webhook payload; with `base_url`, ForgeMirror rejects payloads whose
 clone URL points anywhere else, so not even a leaked webhook secret can send
 the Forgejo token to another host.
 
-Use tokens with the narrowest scope; see [Token rights](#token-rights).
+Token types, scopes and per-feature permission requirements are part of the
+setup reference: see [Configuration → Token permissions](../configuration/#token-permissions).
 
-## Token rights
+Forge API redirects to another host are refused. Release attachment downloads
+may be redirected to object storage without forwarding the forge token, and
+HTTPS-to-HTTP redirects are refused. Git LFS similarly keeps forge credentials
+out of cross-origin object-storage requests; raw CLI diagnostics and diagnostic
+files are suppressed so they cannot persist authentication headers. Outbound
+notification URLs and bearer tokens are separate credentials, not reused forge
+tokens.
 
-Grant only what the features you enable need. All tokens are sent as an
-`Authorization` header and only to their own host; API redirects to another
-host are refused. Release attachment downloads may be redirected to object
-storage: such a redirect is followed without the token, and a redirect from
-HTTPS to HTTP is refused.
-
-### Forgejo source (`source.token`)
-
-Needed for cloning, and for the API reads of typed targets and the schedule.
-It never needs a write scope.
-
-| Scope             | Why                                                                  |
-|-------------------|----------------------------------------------------------------------|
-| `read:repository` | Repository details, topics, `GET /repos/search` (the schedule's repository list) and cloning |
-| `read:issue`      | Labels: Forgejo files its label routes under the issue scope          |
-| `read:package`    | Package sync (on unless `settings.packages: false`): list the repository's packages and pull images from the registry |
-| Repository access: all (public, private and limited) | A public-only token hides private repositories, so `filter.allow_private` cannot work |
-
-The repository list contains what the token's user can read, and an admin
-user sees every repository. Use a dedicated bot user with read access to the
-organisations you mirror rather than an admin or personal account.
-
-With only public repositories, no typed target and no schedule, the token is
-optional.
-
-### Targets (`targets[].token`)
-
-Plain git targets (no `type`) need push permission only. Typed targets need
-API rights as well:
-
-| Target  | Token                                                                 |
-|---------|-----------------------------------------------------------------------|
-| GitHub  | Fine-grained token on the owner: *Administration: read and write* (create, delete, settings) and *Contents: read and write* (also releases). Classic token: `repo`, plus `delete_repo` when `delete: true`. Package sync needs a **classic** token with `write:packages`, because fine-grained tokens cannot write to ghcr.io. |
-| GitLab  | `api` scope (also releases); `write_registry` for package sync        |
-| Forgejo | `write:repository` (also releases), `write:issue` (labels), and `write:organization` to create in an organisation or `write:user` to create in a user account; `write:package` for package sync |
-
-Store tokens as files (`*_file`) from a secret manager rather than inline.
-
-### Safety rules for typed targets
+## Safety rules for typed targets
 
 - **Private stays private.** A private source repository is created and kept
   private on every target. `settings.private` accepts only `true`, so
   configuration can hide a public repository but never expose a private one.
-- **Private repositories are opt-in.** With any typed target or a
-  `sync.schedule`, a private repository is synced only if
+- **Private repositories are opt-in.** With any typed target, a
+  `sync.schedule`, or review mode, a private repository is synced only if
   `filter.allow_private` matches it, and `filter.exclude_private` has no
-  effect. With only untyped targets and no schedule, `filter.exclude_private`
+  effect. With only untyped targets, no schedule and automatic mode, `filter.exclude_private`
   skips private repositories and `filter.allow_private` makes exceptions;
   set `exclude_private: true` there to keep them out.
-- **Deletion is opt-in and narrow.** `delete` defaults to `false` and only a
-  signed `repository` event with action `deleted` from Forgejo triggers it,
-  after the filter. A filter or configuration change never deletes anything.
-  Because deletion is destructive, give the target token delete rights only
-  on targets where you set `delete: true`.
+- **Deletion is opt-in.** `delete` defaults to `false`. An admitted deletion
+  event or a fresh source lookup reporting not found can plan target deletion;
+  review mode still requires application, and admitted work may be retried.
+  Absence from a repository listing or a filter change alone does not delete
+  targets. Keep source visibility reliable: a hidden repository can also be
+  reported as not found. Deletion events bypass ordinary push filters; scope
+  webhook coverage and destination naming accordingly. Enable `delete` only
+  where this behavior is intended.
 - **Label pruning is opt-in.** `prune_labels` defaults to `false`, because a
   deleted label disappears from every issue and pull request.
 - **Releases and packages are on by default, deletion stays opt-in.**
@@ -139,14 +112,15 @@ Store tokens as files (`*_file`) from a secret manager rather than inline.
 
 ## Persistent review state
 
-Optional SQLite state contains repository names, plan contents and results,
+Mandatory SQLite state contains repository names, plan contents and results,
 including metadata from private repositories. Protect its directory and backups
 like other operational data. Configured credentials are redacted before state
 is written; release asset/download and upload URLs are excluded from persisted
 plans. Tokens are still supplied separately at runtime, never restored from
-state. Historical records never authorize a sync: startup discovery must admit
-the repository under current source URL and filter rules before its actions
-become available. The UI itself still needs your proxy/SSO protection.
+state. Historical plans/results never authorize execution: current source
+admission and filters still apply. Explicit destination grants and retry intent
+are separate durable control records; they do not bypass current pause,
+first-publication or review policies. The UI still needs proxy/SSO protection.
 
 ## Runtime hardening
 

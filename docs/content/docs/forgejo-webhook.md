@@ -57,8 +57,10 @@ well.
 With `sync.on_push: false` and a `sync.schedule`, ForgeMirror pulls the
 repository list from Forgejo and no webhook is required. Without a
 `webhook.secret` the `/webhook` endpoint answers `404`. A secret is only
-needed if a target sets `delete`, because deletions arrive as webhook events;
-scheduled runs never delete. See [Sync](../configuration/#sync).
+needed if a target sets `delete`, so it can receive source-deletion events.
+A scheduled listing does not infer deletion from absent entries. Fresh
+not-found lookups and admitted retry work are described under
+[deletion policy](../configuration/#typed-targets).
 
 ## Allow Forgejo to reach ForgeMirror
 
@@ -84,7 +86,7 @@ ForgeMirror answers right away, and mirroring happens in the background. A
 | Status | Outcome (`outcome` label)  | Meaning                                                        |
 |--------|----------------------------|----------------------------------------------------------------|
 | 202    | `accepted`                 | Mirror queued, or coalesced into a running one (`mirror queued`); or a repository deletion queued (`delete queued`) |
-| 200    | `filtered`                 | Valid push, release, package or deletion event, but a filter rule excludes it; the body names the rule |
+| 200    | `filtered`                 | Valid push, release or package event, but a filter rule excludes it; the body names the rule (deletion events bypass these filters) |
 | 200    | `ignored`                  | Not a push, repository, release or package event; a repository event other than `deleted`; a package not linked to a repository; or a push, release or package event while `sync.on_push` is `false` (`push events disabled (sync.on_push is false)`) |
 | 400    | `bad_request`              | Malformed JSON, required fields missing, a clone URL outside `source.base_url`, or a repository, release or package event whose `full_name` is not `owner.login/name` |
 | 401    | `unauthorized`             | Missing or wrong signature, so the secrets differ              |
