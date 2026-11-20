@@ -284,6 +284,9 @@ form.run-action.htmx-request > .btn > .request-spinner { display: inline-flex; }
 .repo:first-child { border-top: 0; }
 .repo-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
 .repo-name { font-size: 13.5px; font-weight: 600; color: var(--fg-strong); overflow-wrap: anywhere; }
+.forge-badges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
+.forge-badge { font-size: 11px; padding: .02rem .4rem; vertical-align: baseline; }
+.forge-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .checked { font-size: 12.5px; }
 .repo-actions { display: flex; gap: .4rem; margin-left: auto; }
 .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--dot, var(--muted)); flex: none; }
@@ -316,6 +319,11 @@ form.run-action.htmx-request > .btn > .request-spinner { display: inline-flex; }
 .target h3 { margin: 0 0 .35rem; font-size: 13px; font-weight: 600; }
 .changes { list-style: none; margin: 0; padding: 0; font-size: 13px; }
 .changes li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .35rem; padding: .1rem 0; overflow-wrap: anywhere; }
+.grouped-changes { margin-top: .5rem; }
+.grouped-changes li { display: block; padding: .2rem 0; }
+.grouped-changes .sign { margin-right: .35rem; }
+.grouped-changes .forge-badge { margin-left: .35rem; }
+.target-details { margin-top: .5rem; }
 .sign { display: inline-block; width: 1ch; font-family: ui-monospace, monospace; font-weight: 700; }
 .c-add .sign { color: var(--ok); }
 .c-del .sign { color: var(--fail); }

@@ -30,20 +30,22 @@ func stateRank(s string) int {
 type repoView struct {
 	status.Repo
 
-	State    string
-	Activity *activity
-	// Changes is the number of changes in the newest plan.
-	Changes        int
-	Queued         bool
-	Targets        []targetView
-	AppliedTargets []targetView
-	Actionable     bool
-	HeldTargets    int
+	State           string
+	Activity        *activity
+	Queued          bool
+	Targets         []targetView
+	AppliedTargets  []targetView
+	Actionable      bool
+	HeldTargets     int
+	ChangeGroups    []changeGroup
+	DistinctChanges int
 }
 
 // targetView merges a target's part of the newest plan with its last
 // results.
 type targetView struct {
+	Badge       forgeBadge
+	Badges      []forgeBadge
 	Publication *publication.View
 	Repo        string
 	Actionable  bool
@@ -65,9 +67,6 @@ func repoViews(repos []status.Repo, queued map[string]bool) ([]repoView, counts)
 		current := r.Current
 		if current == nil && r.LastAttempt == nil {
 			current = r.Plan
-		}
-		if current != nil {
-			v.Changes = current.Changes()
 		}
 		v.Targets = targetViews(status.Repo{Plan: current, Targets: r.Targets})
 		if r.LastAttempt != nil {

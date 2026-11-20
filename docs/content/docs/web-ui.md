@@ -56,6 +56,27 @@ The applied plan stays available separately. While verification is pending,
 saved diffs are marked stale; a failed comparison says **Could not verify**
 rather than assuming everything is in sync.
 
+### Forge status badges and grouped changes
+
+Forge-name badges sit immediately after each repository name. Hover a badge
+for its status; the same information is provided to assistive technology.
+Green means the latest Git/metadata comparison matches, yellow means pending
+changes, red means a comparison, push, or feature-operation error, and gray
+means not checked, not verified, or awaiting fresh verification. Green does
+not audit LFS object availability. Pause and approval holds are included in
+the status explanation.
+
+**Current diff** lists identical changes once, followed immediately by badges
+for every affected forge. Different old/new values remain separate, even when
+shortened commit IDs look alike. Its change count counts shared changes once;
+the same change can be applied to multiple targets. Omitted changes remain
+separate because their equality cannot be verified.
+
+One **Sync** action applies the repository to all eligible configured targets;
+there are no separate per-forge Sync buttons. Expand **Target details** for
+publication explanations, approval controls, pauses, and previous operation
+results. Historical applied plans keep their per-target detail.
+
 ### Action notifications
 
 Refresh/Sync acknowledgements appear as a small drop-down notification at the
@@ -121,7 +142,7 @@ write leaves the previous control state intact and reports an error.
 ### First-publication approval
 
 With [first-publication protection](../configuration/#first-publication-protection)
-enabled for a scope, its target card shows **Awaiting first-publication
+enabled for a scope, expand **Target details** to see **Awaiting first-publication
 approval** and the destination. **Approve destination and sync** confirms
 ongoing authorization, persists the grant, then syncs fresh source state.
 It does not approve one exact reviewed snapshot. A source/destination remap
@@ -152,9 +173,9 @@ In auto mode (the default) the buttons work too: *Sync* is "sync now".
 ## Why was this not published?
 
 Each destination has a **Publication status** explanation, separate from the
-Git/metadata comparison badge and historical attempt results. Held destinations
-also get a visible repository summary, and their current diff opens by default.
-The card shows:
+Git/metadata comparison and historical attempt results, under **Target details**.
+Held destinations include their hold in the forge badge's hover explanation,
+and their current diff opens by default. Each target's details show:
 
 - A primary status and **What happens next**: automatic retry eligibility,
   manual Sync, approval, resume, refresh or storage repair.

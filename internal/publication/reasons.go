@@ -152,9 +152,9 @@ func pendingChangesReason(in Input) Reason {
 	if !in.Auto && !activeSync && !authorizedRetry {
 		return reason(
 			"review_required",
-			"Waiting for manual sync",
+			"Awaiting sync",
 			"Review mode leaves the current changes unapplied.",
-			"Review the current diff, then use Sync. Sync re-plans current state rather than replaying a saved snapshot.",
+			"Review the diff, then Sync. Sync uses the latest state.",
 			true,
 		)
 	}

@@ -423,7 +423,7 @@ func TestDiffView(t *testing.T) {
 
 	body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
 	for _, want := range []string{
-		"out of sync · 20 changes",
+		"Current diff · 20 changes",
 		"release <b>v1.0.0</b> <span class=\"muted\">2 assets</span>",
 		"release <b>v0.9.0</b> name: <span class=\"old\">old</span> → <span class=\"new\">new</span>",
 		"assets +c.tgz ~d.tgz −e.tgz",
@@ -485,14 +485,14 @@ func TestAppliedPlanStates(t *testing.T) {
 			fail: func(s *status.Store, ctx context.Context) {
 				s.TargetFinished(ctx, "acme/app", "github", time.Second, errors.New("rejected"))
 			},
-			want: `pill-fail">failed`,
+			want: `title="github: error`,
 		},
 		{
 			name: "operation failed while applying", changes: true,
 			fail: func(s *status.Store, ctx context.Context) {
 				s.SyncFinished(ctx, "acme/app", "github", "labels", errors.New("forbidden"))
 			},
-			want: `pill-fail">failed`,
+			want: `title="github: error`,
 		},
 	}
 	for _, tc := range tests {

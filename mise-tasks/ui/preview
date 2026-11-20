@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Preview the UI with sample data and simulated actions (no forge connections)"
+set -euo pipefail
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+go build -o "${tmp}/ui-preview" ./internal/ui/testdata/server
+export FORGEMIRROR_UI_TEST_PORT="${FORGEMIRROR_UI_TEST_PORT:-9099}"
+export FORGEMIRROR_UI_PREVIEW=true
+printf 'UI preview (sample data; simulated actions): http://127.0.0.1:%s\n' "${FORGEMIRROR_UI_TEST_PORT}"
+"${tmp}/ui-preview"

@@ -107,7 +107,7 @@ func (a actions) start(name string, apply bool) {
 		current := initialFor(name, false)
 		if apply {
 			a.store.TargetFinished(ctx, name, "github", time.Millisecond, nil)
-			current.Targets = []plan.Target{{Name: "github"}, {Name: "codeberg"}}
+			current.Targets = []plan.Target{{Name: "github"}, {Name: "codeberg"}, {Name: "gitlab"}}
 		}
 		a.store.PlanFinished(ctx, current)
 		a.store.RunFinished(ctx, name)
@@ -121,6 +121,7 @@ func initialFor(name string, apply bool) plan.Repo {
 	return plan.Repo{Name: name, At: time.Now(), Apply: apply, Targets: []plan.Target{
 		{Name: "github", Refs: []plan.RefChange{{Ref: "refs/heads/main", Old: "1111111", New: "2222222"}}},
 		{Name: "codeberg", Refs: []plan.RefChange{{Ref: "refs/heads/main", Old: "1111111", New: "2222222"}}},
+		{Name: "gitlab"},
 	}}
 }
 
@@ -128,13 +129,21 @@ func main() {
 	cfg, err := config.Load(config.Options{Environ: func() []string { return nil }, Overrides: map[string]any{
 		"webhook.secret": "test-secret", "ui.enabled": true, "sync.auto": false,
 		"source.base_url": "https://git.example/", "source.token": "test-source",
-		"targets": []map[string]any{{"name": "github", "url": "https://github.com/{{ .FullName }}.git", "token": "test-token"}},
+		"targets": []map[string]any{
+			{"name": "github", "url": "https://github.com/{{ .FullName }}.git", "token": "test-token"},
+			{"name": "codeberg", "url": "https://codeberg.org/{{ .FullName }}.git", "token": "test-token"},
+			{"name": "gitlab", "url": "https://gitlab.com/{{ .FullName }}.git", "token": "test-token"},
+		},
 	}})
 	if err != nil {
 		panic(err)
 	}
 	store := status.New(status.Options{})
-	store.PlanFinished(context.Background(), initialFor("acme/app", false))
+	initial := initialFor("acme/app", false)
+	if os.Getenv("FORGEMIRROR_UI_PREVIEW") == "true" {
+		initial.Targets[2].Refs = []plan.RefChange{{Ref: "refs/tags/obsolete-release", Old: "4444444"}}
+	}
+	store.PlanFinished(context.Background(), initial)
 	jobs := &jobControl{active: map[string]*heldJob{}}
 	h, err := ui.Handler(ui.Options{Config: cfg, Store: store, Logs: logging.NewRing(10), Logger: slog.New(slog.DiscardHandler), Actions: actions{store: store, jobs: jobs}, Queued: jobs.snapshot})
 	if err != nil {

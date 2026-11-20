@@ -6,6 +6,36 @@ test.afterEach(async ({ request }) => {
   await request.post('/test/hold?enabled=false');
 });
 
+test('forge badges stay beside the repository and shared changes appear once', async ({ page, request }) => {
+  await request.post('/test/seed?repo=acme/app');
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/');
+    const repo = page.locator('.repo').filter({ has: page.locator('.repo-name', { hasText: /^acme\/app$/ }) });
+    const badges = repo.locator('.repo-head .forge-badge');
+    await expect(badges).toHaveText(['github', 'codeberg', 'gitlab']);
+    await expect(badges.first()).toHaveAttribute('title', /github: out of sync/);
+    await badges.first().focus();
+    await expect(badges.first()).toBeFocused();
+    const changes = repo.locator('.grouped-changes li');
+    await expect(changes).toHaveCount(1);
+    await expect(changes.locator('.forge-badge')).toHaveText(['github', 'codeberg']);
+    const positions = await repo.evaluate(node => {
+      const name = node.querySelector('.repo-name').getBoundingClientRect();
+      const badge = node.querySelector('.repo-head .forge-badge').getBoundingClientRect();
+      const row = node.querySelector('.grouped-changes li');
+      const code = row.querySelector('code:last-of-type').getBoundingClientRect();
+      const target = row.querySelector('.forge-badge').getBoundingClientRect();
+      return { headerLine: Math.abs(name.top - badge.top), badgeGap: target.left - code.right };
+    });
+    expect(positions.headerLine).toBeLessThan(5);
+    if (width > 400) expect(positions.badgeGap).toBeLessThan(15);
+    await repo.locator('.target-details > summary').click();
+    await expect(repo.locator('[data-publication-state="review_required"]').first()).toContainText('Sync uses the latest state.');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 // Exercise the real CSP, HTMX and browser selection/focus APIs, not a DOM mock.
 test('polling preserves selected text and expanded diffs', async ({ page }) => {
   await page.goto('/');
@@ -30,7 +60,7 @@ test('sync updates current diff and retains the applied plan without reloading',
   await page.evaluate(() => {window.pageIdentity = 'retained';});
   await page.locator('.repo-actions button', { hasText: /^Sync$/ }).click();
   await expect(page.locator('.applied > summary')).toContainText('Last applied plan', {timeout: 12000});
-  await expect(page.locator('.repo-head')).toContainText('in sync');
+  await expect(page.locator('.repo-head .forge-badge').first()).toHaveAttribute('title', 'github: in sync');
   await expect(page.locator('details.diff').first().locator('.changes code')).toHaveCount(0);
   await expect(page.locator('.repo-actions button', { hasText: /^Sync$/ })).toBeFocused();
   await page.locator('.applied > summary').click();
@@ -87,6 +117,9 @@ test('incremental log updates retain scroll position', async ({ page }) => {
 test('wide layouts use available width and targets occupy full rows', async ({ page }) => {
   await page.setViewportSize({width:1920,height:1080});
   await page.goto('/');
+  const current = page.locator('details.diff').first();
+  if (!await current.evaluate(details => details.open)) await current.locator(':scope > summary').click();
+  await current.locator('.target-details > summary').click();
   const dimensions = await page.evaluate(() => {
     const main = document.querySelector('main').getBoundingClientRect();
     const targets = [...document.querySelectorAll('.target')].map(e => e.getBoundingClientRect());

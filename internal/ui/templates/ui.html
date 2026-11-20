@@ -162,8 +162,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     <div class="repo-head" data-live-key="repository-heading">
       <span class="dot" aria-hidden="true"></span>
       <code class="repo-name">{{$r.Name}}</code>
-      <span class="muted">comparison:</span> {{template "state" $r}}
-      {{if $r.HeldTargets}}<span class="pill pill-warn">{{$r.HeldTargets}} destinations held</span>{{end}}
+      <span class="forge-badges" data-live-key="forge-badges">{{range $r.Targets}}{{template "forge-badge" .Badge}}{{end}}</span>
       {{with $r.Activity}}<span class="pill pill-info activity" data-repository-activity data-activity="{{.Kind}}" data-live-key="repository-activity" role="status">{{template "spinner" .}} {{.Label}}</span>{{end}}
       {{if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
       {{- with $r.Current}}
@@ -187,12 +186,14 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       </div>
       {{- end}}
     </div>
-    {{range $r.Targets}}{{$destination := .}}{{with .Publication}}{{if .Held}}<p class="notice warn" data-live-key="hold-summary:{{$destination.Name}}"><strong>{{$destination.Name}} — {{.Headline}}</strong> · {{.Next}}</p>{{end}}{{end}}{{end}}
     <details class="diff" data-live-key="current:{{$r.Name}}" data-key="current:{{$r.Name}}"{{if or $r.HeldTargets (and (eq $r.State "out-of-sync") (not $.Auto))}} data-open-default{{end}}>
-      <summary>Current diff{{if $r.Changes}} · {{$r.Changes}} {{plural $r.Changes "change" "changes"}}{{end}}{{if $r.Stale}} · awaiting verification{{end}}</summary>
+      <summary>Current diff{{if $r.DistinctChanges}} · {{$r.DistinctChanges}} {{plural $r.DistinctChanges "change" "changes"}}{{end}}{{if $r.Stale}} · awaiting verification{{end}}</summary>
       {{- if $r.Stale}}<p class="muted">{{if $r.Running}}Verification pending; the previous diff may be outdated.{{else}}Saved results may be outdated. Awaiting a fresh comparison.{{end}}</p>{{end}}
       {{- with $r.Current}}{{if .Failed}}<p class="fail">Could not verify{{with .Error}}: {{.}}{{end}}</p>{{end}}{{end}}
-      <div class="targets" data-live-key="current-targets">{{range $r.Targets}}{{template "target" .}}{{end}}</div>
+      <ul class="changes grouped-changes" data-live-key="current-changes">{{range $r.ChangeGroups}}{{template "change-rows" .}}{{else}}<li class="c-note">{{if $r.Stale}}Awaiting a fresh comparison.{{else}}no changes{{end}}</li>{{end}}</ul>
+      <details class="target-details" data-live-key="target-details"><summary>Target details{{if $r.HeldTargets}} · {{$r.HeldTargets}} destinations held{{end}}</summary>
+        <div class="targets" data-live-key="current-targets">{{range $r.Targets}}{{template "target-details" .}}{{end}}</div>
+      </details>
     </details>
     {{- with $r.LastAttempt}}
     <details class="diff applied" data-live-key="applied:{{$r.Name}}" data-key="applied:{{$r.Name}}">
@@ -209,20 +210,30 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 
 {{define "spinner" -}}<span class="spinner" aria-hidden="true"></span>{{- end}}
 
-{{define "state" -}}
-{{- if eq .State "failed"}}<span class="pill pill-fail">failed</span>
-{{- else if eq .State "out-of-sync"}}<span class="pill pill-warn">out of sync · {{.Changes}} {{plural .Changes "change" "changes"}}</span>
-{{- else if eq .State "unchecked"}}<span class="pill pill-muted">{{if .Stale}}awaiting verification{{else}}not checked yet{{end}}</span>
-{{- else if eq .State "synced"}}<span class="pill pill-ok">synced · {{.Changes}} {{plural .Changes "change" "changes"}}</span>
-{{- else}}<span class="pill pill-ok">in sync</span>
-{{- end}}
-{{- end}}
-
 {{define "target" -}}
 <div class="target" data-live-key="target:{{.Name}}">
-  <h3><code>{{.Name}}</code>{{with .Pause}} <span class="pill pill-warn">paused</span>{{end}}
-    {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
-  </h3>
+  {{template "target-heading" .}}
+  {{template "target-policy" .}}
+  <ul class="changes">{{template "change-rows" .}}</ul>
+  {{template "target-results" .}}
+</div>
+{{- end}}
+
+{{define "target-details" -}}
+<div class="target" data-live-key="target:{{.Name}}">
+  {{template "target-heading" .}}
+  {{template "target-policy" .}}
+  {{template "target-results" .}}
+</div>
+{{- end}}
+
+{{define "target-heading" -}}
+<h3><code>{{.Name}}</code>{{with .Pause}} <span class="pill pill-warn">paused</span>{{end}}
+  {{- with .Plan}}{{if not (.Changes)}}{{if not .Error}} <span class="muted">no changes</span>{{end}}{{end}}{{end}}
+</h3>
+{{- end}}
+
+{{define "target-policy" -}}
   {{with .Publication}}{{template "publication" .}}{{end}}
   {{$target := .}}
   {{with .Plan}}{{if .ApprovalRequired}}
@@ -238,44 +249,9 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     {{end}}
   {{end}}{{end}}
   {{- with .Pause}}<p class="warn">Publication paused{{with .Reason}}: {{.}}{{end}}{{if not .Until.IsZero}} until <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}.</p>{{end}}
-  {{- with .Plan}}
-  <ul class="changes">
-    {{- with .Error}}<li class="c-err"><span class="sign">!</span>{{.}}</li>{{end}}
-    {{- if .Create}}<li class="c-add"><span class="sign">+</span>create repository</li>{{end}}
-    {{- if .Privatise}}<li class="c-chg"><span class="sign">~</span>make repository private</li>{{end}}
-    {{- if .Delete}}<li class="c-del"><span class="sign">−</span>delete repository</li>{{end}}
-    {{- if .RefsUnknown}}<li class="c-chg"><span class="sign">~</span>refs unknown, full push</li>{{end}}
-    {{- range .Refs}}
-      {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span><code>{{.Ref}}</code> <code class="muted">{{short .New}}</code></li>
-      {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span><code>{{.Ref}}</code> <code class="muted">{{short .Old}}</code></li>
-      {{- else}}<li class="c-chg"><span class="sign">~</span><code>{{.Ref}}</code> <code class="muted">{{short .Old}}</code> → <code>{{short .New}}</code></li>
-      {{- end}}
-    {{- end}}
-    {{- if .RefsOmitted}}<li class="c-note"><span class="sign">…</span>{{.RefsOmitted}} more ref {{plural .RefsOmitted "change" "changes"}}</li>{{end}}
-    {{- range .Settings}}
-    <li class="c-chg"><span class="sign">~</span>{{.Field}}: <span class="old">{{if .Old}}{{.Old}}{{else}}(empty){{end}}</span> → <span class="new">{{if .New}}{{.New}}{{else}}(empty){{end}}</span></li>
-    {{- end}}
-    {{- range .Labels}}
-      {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span>label <b>{{.Name}}</b> <span class="swatch" data-color="{{.New.Color}}">#{{.New.Color}}</span>{{with .New.Description}} <span class="muted">{{.}}</span>{{end}}</li>
-      {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span>label <b>{{.Name}}</b></li>
-      {{- else}}<li class="c-chg"><span class="sign">~</span>label <b>{{.Name}}</b> <span class="old">#{{.Old.Color}}{{with .Old.Description}} {{.}}{{end}}</span> → <span class="new">#{{.New.Color}}{{with .New.Description}} {{.}}{{end}}</span></li>
-      {{- end}}
-    {{- end}}
-    {{- range .Releases}}
-      {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span>release <b>{{.Tag}}</b>{{with .AssetsAdded}} <span class="muted">{{len .}} {{plural (len .) "asset" "assets"}}</span>{{end}}</li>
-      {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span>release <b>{{.Tag}}</b></li>
-      {{- else}}<li class="c-chg"><span class="sign">~</span>release <b>{{.Tag}}</b>
-        {{- range .Fields}} {{.Field}}: <span class="old">{{if .Old}}{{.Old}}{{else}}(empty){{end}}</span> → <span class="new">{{if .New}}{{.New}}{{else}}(empty){{end}}</span>{{end}}
-        {{- if or .AssetsAdded .AssetsReplaced .AssetsRemoved}} <span class="muted">assets{{range .AssetsAdded}} +{{.}}{{end}}{{range .AssetsReplaced}} ~{{.}}{{end}}{{range .AssetsRemoved}} −{{.}}{{end}}</span>{{end}}</li>
-      {{- end}}
-    {{- end}}
-    {{- range .Packages}}
-    <li class="c-add"><span class="sign">+</span>package <b>{{.Package}}</b> → <code>{{.Image}}</code>: {{.Count}} {{plural .Count "tag" "tags"}}
-      {{- range .Tags}} <code class="muted">{{.Tag}}</code>{{end}}{{if .TagsOmitted}} <span class="muted">…</span>{{end}}</li>
-    {{- end}}
-    {{- range .Warnings}}<li class="c-warn"><span class="sign">!</span>{{.}}</li>{{end}}
-  </ul>
-  {{- end}}
+{{- end}}
+
+{{define "target-results" -}}
   {{- with .Last}}
   <div class="last muted">
     {{- if not .LastRun.IsZero}}
@@ -288,7 +264,6 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     {{- end}}
   </div>
   {{- end}}
-</div>
 {{- end}}
 
 {{define "logs" -}}

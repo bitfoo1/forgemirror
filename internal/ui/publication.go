@@ -15,6 +15,11 @@ func (h *handler) explainPublications(data *pageData) {
 	}
 	for i := range data.Repos {
 		repository := &data.Repos[i]
+		for _, configured := range h.opts.Config.Targets {
+			if !slices.ContainsFunc(repository.Targets, func(t targetView) bool { return t.Name == configured.Name }) {
+				repository.Targets = append(repository.Targets, targetView{Name: configured.Name})
+			}
+		}
 		for j := range repository.Targets {
 			target := &repository.Targets[j]
 			h.attachPublicationPolicy(data, repository, target)
@@ -27,10 +32,15 @@ func (h *handler) explainPublications(data *pageData) {
 			}
 			view := publication.Explain(input)
 			target.Publication = &view
+			target.Badge = targetBadge(repository, target, input.TargetRemoved)
 			if view.Held {
 				repository.HeldTargets++
 				data.Counts.HeldTargets++
 			}
+		}
+		repository.ChangeGroups = groupedChanges(repository.Targets)
+		for _, group := range repository.ChangeGroups {
+			repository.DistinctChanges += group.Plan.Changes()
 		}
 	}
 }

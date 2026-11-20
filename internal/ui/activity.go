@@ -2,6 +2,8 @@ package ui
 
 import "fmt"
 
+const activityRefreshing = "refreshing"
+
 type activity struct{ Kind, Label string }
 
 // Dispatcher names cover accepted/queued work before observer callbacks run;
@@ -18,7 +20,7 @@ func populateActivity(data *pageData, queued map[string]bool) {
 		if !repository.Running {
 			continue
 		}
-		phase := activity{Kind: "refreshing", Label: "Refreshing"}
+		phase := activity{Kind: activityRefreshing, Label: "Refreshing"}
 		if repository.Applying {
 			phase = activity{Kind: "syncing", Label: "Syncing"}
 		}
@@ -41,7 +43,7 @@ func activitySummary(total int, phases map[string]int) string {
 	if total == 0 {
 		return ""
 	}
-	for _, phase := range []activity{{Kind: "refreshing", Label: "Refreshing"}, {Kind: "syncing", Label: "Syncing"}, {Kind: "starting", Label: "Starting"}} {
+	for _, phase := range []activity{{Kind: activityRefreshing, Label: "Refreshing"}, {Kind: "syncing", Label: "Syncing"}, {Kind: "starting", Label: "Starting"}} {
 		if phases[phase.Kind] == total {
 			return phase.Label + " " + repositories(total)
 		}

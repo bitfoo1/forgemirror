@@ -1,0 +1,47 @@
+{{define "forge-badge" -}}
+<span class="pill pill-{{.Class}} forge-badge" data-forge="{{.Name}}" data-live-key="forge:{{.Name}}" title="{{.Name}}: {{.Status}}" aria-label="{{.Name}}: {{.Status}}" tabindex="0">{{.Name}}</span>
+{{- end}}
+
+{{define "change-badges" -}}
+{{range .}} {{template "forge-badge" .}}{{end}}
+{{- end}}
+
+{{define "change-rows" -}}
+{{$badges := .Badges}}
+{{- with .Plan}}
+  {{- with .Error}}<li class="c-err"><span class="sign">!</span>{{.}}{{template "change-badges" $badges}}</li>{{end}}
+  {{- if .Create}}<li class="c-add"><span class="sign">+</span>create repository{{template "change-badges" $badges}}</li>{{end}}
+  {{- if .Privatise}}<li class="c-chg"><span class="sign">~</span>make repository private{{template "change-badges" $badges}}</li>{{end}}
+  {{- if .Delete}}<li class="c-del"><span class="sign">−</span>delete repository{{template "change-badges" $badges}}</li>{{end}}
+  {{- if .RefsUnknown}}<li class="c-chg"><span class="sign">~</span>refs unknown, full push{{template "change-badges" $badges}}</li>{{end}}
+  {{- range .Refs}}
+    {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span><code>{{.Ref}}</code> <code class="muted">{{short .New}}</code>{{template "change-badges" $badges}}</li>
+    {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span><code>{{.Ref}}</code> <code class="muted">{{short .Old}}</code>{{template "change-badges" $badges}}</li>
+    {{- else}}<li class="c-chg"><span class="sign">~</span><code>{{.Ref}}</code> <code class="muted">{{short .Old}}</code> → <code>{{short .New}}</code>{{template "change-badges" $badges}}</li>
+    {{- end}}
+  {{- end}}
+  {{- if .RefsOmitted}}<li class="c-note"><span class="sign">…</span>{{.RefsOmitted}} more ref {{plural .RefsOmitted "change" "changes"}}{{template "change-badges" $badges}}</li>{{end}}
+  {{- range .Settings}}
+  <li class="c-chg"><span class="sign">~</span>{{.Field}}: <span class="old">{{if .Old}}{{.Old}}{{else}}(empty){{end}}</span> → <span class="new">{{if .New}}{{.New}}{{else}}(empty){{end}}</span>{{template "change-badges" $badges}}</li>
+  {{- end}}
+  {{- range .Labels}}
+    {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span>label <b>{{.Name}}</b> <span class="swatch" data-color="{{.New.Color}}">#{{.New.Color}}</span>{{with .New.Description}} <span class="muted">{{.}}</span>{{end}}{{template "change-badges" $badges}}</li>
+    {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span>label <b>{{.Name}}</b>{{template "change-badges" $badges}}</li>
+    {{- else}}<li class="c-chg"><span class="sign">~</span>label <b>{{.Name}}</b> <span class="old">#{{.Old.Color}}{{with .Old.Description}} {{.}}{{end}}</span> → <span class="new">#{{.New.Color}}{{with .New.Description}} {{.}}{{end}}</span>{{template "change-badges" $badges}}</li>
+    {{- end}}
+  {{- end}}
+  {{- range .Releases}}
+    {{- if eq .Kind "create"}}<li class="c-add"><span class="sign">+</span>release <b>{{.Tag}}</b>{{with .AssetsAdded}} <span class="muted">{{len .}} {{plural (len .) "asset" "assets"}}</span>{{end}}{{template "change-badges" $badges}}</li>
+    {{- else if eq .Kind "delete"}}<li class="c-del"><span class="sign">−</span>release <b>{{.Tag}}</b>{{template "change-badges" $badges}}</li>
+    {{- else}}<li class="c-chg"><span class="sign">~</span>release <b>{{.Tag}}</b>
+      {{- range .Fields}} {{.Field}}: <span class="old">{{if .Old}}{{.Old}}{{else}}(empty){{end}}</span> → <span class="new">{{if .New}}{{.New}}{{else}}(empty){{end}}</span>{{end}}
+      {{- if or .AssetsAdded .AssetsReplaced .AssetsRemoved}} <span class="muted">assets{{range .AssetsAdded}} +{{.}}{{end}}{{range .AssetsReplaced}} ~{{.}}{{end}}{{range .AssetsRemoved}} −{{.}}{{end}}</span>{{end}}{{template "change-badges" $badges}}</li>
+    {{- end}}
+  {{- end}}
+  {{- range .Packages}}
+  <li class="c-add"><span class="sign">+</span>package <b>{{.Package}}</b> → <code>{{.Image}}</code>: {{.Count}} {{plural .Count "tag" "tags"}}
+    {{- range .Tags}} <code class="muted">{{.Tag}}</code>{{end}}{{if .TagsOmitted}} <span class="muted">…</span>{{end}}{{template "change-badges" $badges}}</li>
+  {{- end}}
+  {{- range .Warnings}}<li class="c-warn"><span class="sign">!</span>{{.}}{{template "change-badges" $badges}}</li>{{end}}
+{{- end}}
+{{- end}}
