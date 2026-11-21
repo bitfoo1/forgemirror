@@ -8,7 +8,7 @@
 
 {{define "forge-badge" -}}
 {{$forge := forgeName .Name}}
-<span class="pill pill-{{.Class}} forge-badge" data-forge="{{.Name}}" data-live-key="forge:{{.Name}}" title="{{$forge.Label}}: {{.Status}}">{{template "forge-icon" $forge.Icon}}{{$forge.Label}}<span class="visually-hidden">: {{.Status}}</span>
+<span class="pill pill-{{.Class}} forge-badge" data-forge="{{.Name}}" data-live-key="forge:{{.Name}}" title="{{$forge.Label}}: {{.Status}}">{{template "forge-icon" $forge.Icon}}<span class="forge-label">{{$forge.Label}}</span><span class="visually-hidden">: {{.Status}}</span>
 {{- /* A mark beside the colour, so status does not depend on colour alone. */ -}}
 {{if eq .Class "ok"}}<span class="badge-mark" aria-hidden="true">✓</span>{{else if eq .Class "warn"}}<span class="badge-mark" aria-hidden="true">~</span>{{else if eq .Class "fail"}}<span class="badge-mark" aria-hidden="true">!</span>{{end}}</span>
 {{- end}}

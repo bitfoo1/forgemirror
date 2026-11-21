@@ -506,10 +506,21 @@ th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-
 .err { color: var(--fail); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (max-width: 40rem) {
-  /* Tighter spacing keeps three badges (with status marks) beside the name. */
+  /* Labelled badges beside the name fit only with narrow fonts (macOS), not
+     with Linux defaults, so the header shows icon and status mark only. The
+     label stays in the accessible name and the title tooltip. */
   .repo-head { column-gap: .4rem; }
   .repo-head .forge-badges { gap: .15rem; }
   .repo-head .forge-badge { gap: .1rem; padding-inline: .25rem; }
+  .repo-head .forge-label {
+    position: absolute;
+    clip-path: inset(50%);
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    white-space: nowrap;
+  }
   .repo-head .badge-mark { margin-left: 0; }
   .repo-actions { margin-left: 0; width: 100%; }
   .diff { margin-left: 0; }
