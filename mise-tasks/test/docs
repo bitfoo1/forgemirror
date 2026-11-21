@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 #MISE description="Browser checks of the documentation site: axe accessibility on every page, screenshot loading"
+#MISE depends=["setup:browsers"]
 set -euo pipefail
 
 # Same mise-owned Playwright and axe packages as test:ui.
 playwright_modules="$(mise where npm:@playwright/test)/node_modules"
 export NODE_PATH="${playwright_modules}:$(mise where npm:@axe-core/playwright)/node_modules${NODE_PATH:+:$NODE_PATH}"
-if [[ "${CI:-}" == "true" && "$(uname -s)" == "Linux" ]]; then
-  playwright install --with-deps chromium
-else
-  playwright install chromium
-fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 trap 'exit 143' TERM

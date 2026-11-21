@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Install the Playwright Chromium used by test:ui and test:docs"
+set -euo pipefail
+
+# One task for both browser suites: check runs them in parallel, and two
+# concurrent `--with-deps` installs race for the apt lock in CI and fail.
+# As a shared dependency, mise runs this exactly once per invocation.
+if [[ "${CI:-}" == "true" && "$(uname -s)" == "Linux" ]]; then
+  playwright install --with-deps chromium
+else
+  playwright install chromium
+fi
