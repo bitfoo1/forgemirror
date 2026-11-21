@@ -5,7 +5,7 @@ weight: 6
 
 A status page on its own port, where you can also review and start syncs.
 
-{{< screenshot name="web-ui" alt="The ForgeMirror web UI: overview tiles with the configured target types, and a mirrored repository with the last result of every sync step on its Forgejo target." >}}
+{{< screenshot name="web-ui" alt="The ForgeMirror web UI in review mode: the pipeline from its triggers through ForgeMirror to the GitHub, Codeberg and GitLab targets, with Codeberg on hold, and two repositories whose current diffs show the pending ref changes per target." >}}
 
 It shows:
 - **Overview:** version, uptime, targets, whether push webhooks are on, the
