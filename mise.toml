@@ -8,6 +8,7 @@ git-lfs = "3.8.1"
 go = "1.27.4"
 node = "26.13.1"
 "npm:@playwright/test" = "1.65.1"
+"npm:@axe-core/playwright" = "4.11.0" # library for tests/ui; NODE_PATH is set by test:ui
 golangci-lint = "2.15.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 goreleaser = "2.20.2"

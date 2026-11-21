@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-#MISE description="Browser regression tests for live UI updates and responsive diffs"
+#MISE description="Browser regression tests: live updates, responsive layout and axe accessibility checks"
 set -euo pipefail
 
-# Resolve the mise-owned package rather than maintaining a second npm toolchain.
-export NODE_PATH="$(mise where npm:@playwright/test)/node_modules${NODE_PATH:+:$NODE_PATH}"
+# Resolve the mise-owned packages rather than maintaining a second npm toolchain.
+playwright_modules="$(mise where npm:@playwright/test)/node_modules"
+export NODE_PATH="${playwright_modules}:$(mise where npm:@axe-core/playwright)/node_modules${NODE_PATH:+:$NODE_PATH}"
 if [[ "${CI:-}" == "true" && "$(uname -s)" == "Linux" ]]; then
   playwright install --with-deps chromium
 else
@@ -19,4 +20,6 @@ go build -o "${tmp}/ui-server" ./internal/ui/testdata/server
 export FORGEMIRROR_UI_TEST_SERVER="${tmp}/ui-server"
 export FORGEMIRROR_UI_TEST_PORT
 FORGEMIRROR_UI_TEST_PORT="$(node -e 'const s=require("node:net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
-playwright test --config tests/ui/playwright.config.cjs "$@"
+# Not the `playwright` bin: its shim overwrites NODE_PATH with Playwright's
+# own directories, so specs could not require @axe-core/playwright.
+node "${playwright_modules}/@playwright/test/cli.js" test --config tests/ui/playwright.config.cjs "$@"
