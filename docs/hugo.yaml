@@ -68,7 +68,11 @@ params:
   description: Mirror Forgejo repositories to GitHub, Codeberg, GitLab and any other forge, instantly on push.
   navbar:
     displayTitle: true
-    displayLogo: false
+    displayLogo: true
+    logo:
+      path: images/logo.png
+      width: 28
+      height: 28
     width: wide
   page:
     width: wide

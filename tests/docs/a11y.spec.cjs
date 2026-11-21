@@ -36,13 +36,14 @@ for (const scheme of ['light', 'dark']) {
 }
 
 // The home page screenshot is the LCP element: it must load eagerly at high
-// priority, and only the image of the active theme may be downloaded.
+// priority, and only the image of the active theme may be downloaded. Other
+// images (the hero mascot) are not screenshots and are not counted.
 const visibleShot = page => page.locator('.fm-ribbon img').filter({ visible: true });
 
 for (const scheme of ['light', 'dark']) {
   test(`the home screenshot loads once, with priority: ${scheme} system theme`, async ({ page }) => {
     const fetched = [];
-    page.on('request', r => { if (r.resourceType() === 'image' && r.url().endsWith('.webp')) fetched.push(r.url()); });
+    page.on('request', r => { if (r.resourceType() === 'image' && /\/images\/web-ui-.*\.webp$/.test(r.url())) fetched.push(r.url()); });
     await page.emulateMedia({ colorScheme: scheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/', { waitUntil: 'networkidle' });

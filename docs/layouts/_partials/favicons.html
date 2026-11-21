@@ -1,0 +1,10 @@
+{{- /*
+Overrides Hextra's favicons partial only to drop its favicon.svg link: the
+ForgeMirror icon exists as PNG only, and browsers prefer the SVG link, so
+Hextra's own logo would show in the tab instead.
+*/ -}}
+<link rel="icon shortcut" href="{{ "favicon.ico" | relURL }}" sizes="32x32" />
+<link rel="icon" href="{{ "favicon-16x16.png" | relURL }}" type="image/png" sizes="16x16" />
+<link rel="icon" href="{{ "favicon-32x32.png" | relURL }}" type="image/png" sizes="32x32" />
+<link rel="apple-touch-icon" href="{{ "apple-touch-icon.png" | relURL }}" sizes="180x180" />
+<link fetchpriority="low" href="{{ "site.webmanifest" | relURL }}" rel="manifest" />

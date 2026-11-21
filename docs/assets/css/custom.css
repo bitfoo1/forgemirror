@@ -171,6 +171,38 @@ body {
     radial-gradient(40% 50% at 70% 40%, var(--tn-cyan), transparent 70%);
 }
 
+/* Hero text on the left, mascot on the right; stacked on narrow screens. */
+.fm-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.fm-hero-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fm-hero-mascot {
+  flex: 0 0 auto;
+  width: clamp(14rem, 26vw, 20rem);
+  height: auto;
+  filter: drop-shadow(0 12px 28px color-mix(in srgb, var(--tn-blue) 35%, transparent));
+}
+
+@media (max-width: 767px) {
+  .fm-hero {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .fm-hero-mascot {
+    width: 9rem;
+  }
+}
+
 .fm-headline h1 {
   background-image: var(--fm-gradient);
 }

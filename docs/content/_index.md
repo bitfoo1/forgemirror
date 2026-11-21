@@ -5,6 +5,9 @@ layout: hextra-home
 
 <div class="fm-glow" aria-hidden="true"></div>
 
+<div class="fm-hero">
+<div class="fm-hero-text">
+
 <div class="fm-badge">
 {{< hextra/hero-badge link="docs/getting-started/" >}}
   <span>Get started</span>
@@ -26,6 +29,12 @@ layout: hextra-home
 
 <div class="fm-button hx:mb-6">
 {{< hextra/hero-button text="Read the docs" link="docs/" >}}
+</div>
+
+</div>
+
+{{< mascot name="thumbsup" width="320" class="fm-hero-mascot" alt="The ForgeMirror mascot: a salamander blacksmith giving a thumbs-up and holding a glowing fork that splits one line into three." >}}
+
 </div>
 
 {{< screenshot name="web-ui" class="fm-ribbon" priority="true" alt="The ForgeMirror web UI in review mode: the pipeline from its triggers through ForgeMirror to the GitHub, Codeberg and GitLab targets, with Codeberg on hold, and two repositories whose current diffs show the pending ref changes per target." >}}

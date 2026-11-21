@@ -1,0 +1,19 @@
+{{- /*
+The ForgeMirror mascot from assets/images/mascot-<name>.png. The PNG is the
+source of truth; Hugo resizes it and generates WebP at twice the display
+width, so no image tool is needed outside Hugo.
+
+Usage: {{< mascot name="thumbsup" width="320" class="fm-hero-mascot" alt="…" >}}
+An empty alt (the default) marks the mascot as decorative.
+*/ -}}
+{{- $name := .Get "name" -}}
+{{- $width := .Get "width" | default "320" | int -}}
+{{- $alt := .Get "alt" | default "" -}}
+{{- $class := .Get "class" | default "" -}}
+{{- $path := printf "images/mascot-%s.png" $name -}}
+{{- with resources.Get $path -}}
+  {{- $img := .Process (printf "resize %dx webp q85" (mul $width 2)) -}}
+  <img class="fm-mascot {{ $class }}" src="{{ $img.RelPermalink }}" width="{{ div $img.Width 2 }}" height="{{ div $img.Height 2 }}" alt="{{ $alt }}" decoding="async">
+{{- else -}}
+  {{- errorf "mascot: assets/%s not found (%s)" $path $.Position -}}
+{{- end -}}
