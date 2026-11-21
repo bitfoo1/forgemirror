@@ -20,6 +20,8 @@ Defaults:
 - **Shutdown:** a grace period longer than the shutdown timeout.
 - **Rollouts:** a pod restart whenever the config or credentials change.
 
+## Install
+
 {{% steps %}}
 
 ### Create the credentials

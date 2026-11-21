@@ -17,6 +17,8 @@ hardened setup as the [Helm chart](../helm/).
 | `pvc.yaml` | Default 1 GiB ReadWriteOnce storage for the mandatory SQLite state |
 | `service.yaml`        | ClusterIP service on port 80                                |
 
+## Install
+
 {{% steps %}}
 
 ### Configure
