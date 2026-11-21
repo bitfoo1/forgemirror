@@ -3,6 +3,11 @@
  * light and Night for dark, the same colours as the web UI
  * (internal/ui/static/style.css). Source names are noted next to each value.
  *
+ * WCAG 2.2 AA: text colours that miss 4.5:1 on any page, sidebar, callout or
+ * code background are darkened (Day) or lightened (Night) at constant hue
+ * until they pass; the upstream value follows "was". The syntax colours are
+ * adjusted the same way against the code block backgrounds.
+ *
  * Hextra is themed through CSS variables only, so the theme itself stays
  * untouched and upgrades stay painless:
  * - --primary-* drive every primary-* shade (links, buttons, active sidebar).
@@ -21,19 +26,21 @@
   --tn-bg: #e1e2e7;           /* day bg */
   --tn-bg-dark: #d0d5e3;      /* day bg_dark */
   --tn-bg-highlight: #c4c8da; /* day bg_highlight */
-  --tn-fg: #3760bf;           /* day fg */
-  --tn-fg-dark: #6172b0;      /* day fg_dark */
+  --tn-fg: #2d4f9d;           /* day fg (was #3760bf) */
+  --tn-fg-dark: #425084;      /* day fg_dark (was #6172b0) */
   --tn-fg-gutter: #a8aecb;    /* day fg_gutter */
   --tn-dark3: #8990b3;        /* day dark3 */
-  --tn-dark5: #68709a;        /* day dark5 */
-  --tn-blue: #2e7de9;         /* day blue */
-  --tn-cyan: #007197;         /* day cyan */
-  --tn-magenta: #9854f1;      /* day magenta */
+  --tn-dark5: #4b5170;        /* day dark5 (was #68709a) */
+  --tn-blue: #1150a5;         /* day blue (was #2e7de9) */
+  --tn-cyan: #005a78;         /* day cyan (was #007197) */
+  --tn-magenta: #6a12dc;      /* day magenta (was #9854f1) */
 
-  /* hsl() of day blue */
-  --primary-hue: 215deg;
+  /* Hextra draws links and the primary button with primary-600, which is
+     90% of this lightness: 39.7% puts primary-600 on the (adjusted) day
+     blue, hsl(214deg 81% 35.7%). */
+  --primary-hue: 214deg;
   --primary-saturation: 81%;
-  --primary-lightness: 55%;
+  --primary-lightness: 39.7%;
 
   --hx-color-white: var(--tn-bg);
   --hx-color-gray-50: color-mix(in srgb, var(--tn-bg) 50%, var(--tn-bg-dark));
@@ -61,15 +68,16 @@
   --tn-fg-dark: #a9b1d6;      /* night fg_dark */
   --tn-fg-gutter: #3b4261;    /* night fg_gutter */
   --tn-dark3: #545c7e;        /* night dark3 */
-  --tn-dark5: #737aa2;        /* night dark5 */
+  --tn-dark5: #9096b5;        /* night dark5 (was #737aa2) */
   --tn-blue: #7aa2f7;         /* night blue */
   --tn-cyan: #7dcfff;         /* night cyan */
   --tn-magenta: #bb9af7;      /* night magenta */
 
-  /* hsl() of night blue */
+  /* primary-600 (90% of this lightness, see above) is night blue,
+     hsl(221deg 89% 72.4%), so links stay readable on the dark page. */
   --primary-hue: 221deg;
   --primary-saturation: 89%;
-  --primary-lightness: 72%;
+  --primary-lightness: 80.4%;
 
   /* Dark mode reads the scales from the light end for text and from the
      dark end for surfaces, so they run from fg to bg_dark. */
@@ -124,6 +132,15 @@ body {
   box-shadow: 0 -12px 16px var(--tn-bg) !important;
 }
 
+/* Hextra's sidebar "Toggle section" buttons are 18 px; WCAG 2.5.8 asks for
+   a 24 px target. The chevron stays centred in the larger box. */
+.hextra-sidebar-collapsible-button {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+}
+
 /* ---------- Navbar: subtle accent rule instead of the grey hairline ---------- */
 
 .hextra-nav-container::after {
@@ -160,6 +177,12 @@ body {
 
 .fm-badge a {
   border-color: color-mix(in srgb, var(--fm-accent) 35%, transparent);
+}
+
+/* Hextra sets the button text to its "white", which is light text in dark
+   mode too; on the light night blue that is 2:1. bg_dark reaches 7:1. */
+.dark .fm-button a {
+  color: var(--tn-bg-dark);
 }
 
 .fm-button a {
@@ -319,104 +342,107 @@ body {
  * (Hugo v0.170.0), keeping only colour and font properties. Block
  * backgrounds stay Hextra's tinted ones. Light rules are scoped to
  * html:not(.dark) so they outrank Hextra's ".dark .highlight" rules in
- * specificity only in light mode.
+ * specificity only in light mode. Colours that missed 4.5:1 on the code
+ * backgrounds are adjusted (see the top of this file); comments change most,
+ * upstream draws them far below AA (Day #a1a6c5, Night #414868).
  */
 
 /* Tokyo Night Day */
-html:not(.dark) .highlight .chroma .x { color:#3760bf } /* Other */
-html:not(.dark) .highlight .chroma .err { color:#c64343 } /* Error */
-html:not(.dark) .highlight .chroma .cl { color:#3760bf } /* CodeLine */
+html:not(.dark) .highlight .chroma .x { color:#2d4f9d } /* Other */
+html:not(.dark) .highlight .chroma .err { color:#962e2e } /* Error */
+html:not(.dark) .highlight .chroma .cl { color:#2d4f9d } /* CodeLine */
 html:not(.dark) .highlight .chroma .hl { background-color:#a1a6c5 } /* LineHighlight */
-html:not(.dark) .highlight .chroma .lnt { color:#6172b0 } /* LineNumbersTable */
-html:not(.dark) .highlight .chroma .ln { color:#6172b0 } /* LineNumbers */
-html:not(.dark) .highlight .chroma .k { color:#9854f1 } /* Keyword */
-html:not(.dark) .highlight .chroma .kc { color:#8c6c3e } /* KeywordConstant */
-html:not(.dark) .highlight .chroma .kd { color:#9d7cd8 } /* KeywordDeclaration */
-html:not(.dark) .highlight .chroma .kn { color:#007197 } /* KeywordNamespace */
-html:not(.dark) .highlight .chroma .kp { color:#9854f1 } /* KeywordPseudo */
-html:not(.dark) .highlight .chroma .kr { color:#9854f1 } /* KeywordReserved */
-html:not(.dark) .highlight .chroma .kt { color:#0db9d7 } /* KeywordType */
-html:not(.dark) .highlight .chroma .na { color:#2e7de9 } /* NameAttribute */
-html:not(.dark) .highlight .chroma .nc { color:#b15c00 } /* NameClass */
-html:not(.dark) .highlight .chroma .no { color:#b15c00 } /* NameConstant */
-html:not(.dark) .highlight .chroma .nd { color:#2e7de9; font-weight:bold } /* NameDecorator */
-html:not(.dark) .highlight .chroma .ni { color:#007197 } /* NameEntity */
-html:not(.dark) .highlight .chroma .ne { color:#8c6c3e } /* NameException */
-html:not(.dark) .highlight .chroma .nl { color:#587539 } /* NameLabel */
-html:not(.dark) .highlight .chroma .nn { color:#8c6c3e } /* NameNamespace */
-html:not(.dark) .highlight .chroma .nx { color:#3760bf } /* NameOther */
-html:not(.dark) .highlight .chroma .py { color:#8c6c3e } /* NameProperty */
-html:not(.dark) .highlight .chroma .nt { color:#9854f1 } /* NameTag */
-html:not(.dark) .highlight .chroma .nb { color:#587539 } /* NameBuiltin */
-html:not(.dark) .highlight .chroma .bp { color:#587539 } /* NameBuiltinPseudo */
-html:not(.dark) .highlight .chroma .vc { color:#3760bf } /* NameVariableClass */
-html:not(.dark) .highlight .chroma .vg { color:#3760bf } /* NameVariableGlobal */
-html:not(.dark) .highlight .chroma .vi { color:#3760bf } /* NameVariableInstance */
-html:not(.dark) .highlight .chroma .vm { color:#3760bf } /* NameVariableMagic */
-html:not(.dark) .highlight .chroma .nf { color:#2e7de9 } /* NameFunction */
-html:not(.dark) .highlight .chroma .fm { color:#2e7de9 } /* NameFunctionMagic */
-html:not(.dark) .highlight .chroma .ld { color:#3760bf } /* LiteralDate */
-html:not(.dark) .highlight .chroma .s { color:#587539 } /* LiteralString */
-html:not(.dark) .highlight .chroma .sa { color:#9d7cd8 } /* LiteralStringAffix */
-html:not(.dark) .highlight .chroma .sb { color:#587539 } /* LiteralStringBacktick */
-html:not(.dark) .highlight .chroma .sc { color:#587539 } /* LiteralStringChar */
-html:not(.dark) .highlight .chroma .dl { color:#2e7de9 } /* LiteralStringDelimiter */
-html:not(.dark) .highlight .chroma .sd { color:#a1a6c5 } /* LiteralStringDoc */
-html:not(.dark) .highlight .chroma .s2 { color:#587539 } /* LiteralStringDouble */
-html:not(.dark) .highlight .chroma .se { color:#2e7de9 } /* LiteralStringEscape */
-html:not(.dark) .highlight .chroma .sh { color:#a1a6c5 } /* LiteralStringHeredoc */
-html:not(.dark) .highlight .chroma .si { color:#587539 } /* LiteralStringInterpol */
-html:not(.dark) .highlight .chroma .sx { color:#587539 } /* LiteralStringOther */
-html:not(.dark) .highlight .chroma .sr { color:#007197 } /* LiteralStringRegex */
-html:not(.dark) .highlight .chroma .s1 { color:#587539 } /* LiteralStringSingle */
-html:not(.dark) .highlight .chroma .ss { color:#587539 } /* LiteralStringSymbol */
-html:not(.dark) .highlight .chroma .m { color:#8c6c3e } /* LiteralNumber */
-html:not(.dark) .highlight .chroma .mb { color:#8c6c3e } /* LiteralNumberBin */
-html:not(.dark) .highlight .chroma .mf { color:#8c6c3e } /* LiteralNumberFloat */
-html:not(.dark) .highlight .chroma .mh { color:#8c6c3e } /* LiteralNumberHex */
-html:not(.dark) .highlight .chroma .mi { color:#8c6c3e } /* LiteralNumberInteger */
-html:not(.dark) .highlight .chroma .il { color:#8c6c3e } /* LiteralNumberIntegerLong */
-html:not(.dark) .highlight .chroma .mo { color:#8c6c3e } /* LiteralNumberOct */
-html:not(.dark) .highlight .chroma .o { color:#587539; font-weight:bold } /* Operator */
-html:not(.dark) .highlight .chroma .ow { color:#587539; font-weight:bold } /* OperatorWord */
-html:not(.dark) .highlight .chroma .or { color:#587539; font-weight:bold } /* OperatorReserved */
-html:not(.dark) .highlight .chroma .c { color:#a1a6c5; font-style:italic } /* Comment */
-html:not(.dark) .highlight .chroma .ch { color:#a1a6c5; font-style:italic } /* CommentHashbang */
-html:not(.dark) .highlight .chroma .cm { color:#a1a6c5; font-style:italic } /* CommentMultiline */
-html:not(.dark) .highlight .chroma .c1 { color:#a1a6c5; font-style:italic } /* CommentSingle */
-html:not(.dark) .highlight .chroma .cs { color:#a1a6c5; font-style:italic } /* CommentSpecial */
-html:not(.dark) .highlight .chroma .cp { color:#a1a6c5; font-style:italic } /* CommentPreproc */
-html:not(.dark) .highlight .chroma .cpf { color:#a1a6c5; font-weight:bold; font-style:italic } /* CommentPreprocFile */
-html:not(.dark) .highlight .chroma .gd { color:#c64343 } /* GenericDeleted */
+html:not(.dark) .highlight .chroma .lnt { color:#425084 } /* LineNumbersTable */
+html:not(.dark) .highlight .chroma .ln { color:#425084 } /* LineNumbers */
+html:not(.dark) .highlight .chroma .k { color:#6a12dc } /* Keyword */
+html:not(.dark) .highlight .chroma .kc { color:#674f2e } /* KeywordConstant */
+html:not(.dark) .highlight .chroma .kd { color:#6336b4 } /* KeywordDeclaration */
+html:not(.dark) .highlight .chroma .kn { color:#005a78 } /* KeywordNamespace */
+html:not(.dark) .highlight .chroma .kp { color:#6a12dc } /* KeywordPseudo */
+html:not(.dark) .highlight .chroma .kr { color:#6a12dc } /* KeywordReserved */
+html:not(.dark) .highlight .chroma .kt { color:#065b69 } /* KeywordType */
+html:not(.dark) .highlight .chroma .na { color:#1150a5 } /* NameAttribute */
+html:not(.dark) .highlight .chroma .nc { color:#804300 } /* NameClass */
+html:not(.dark) .highlight .chroma .no { color:#804300 } /* NameConstant */
+html:not(.dark) .highlight .chroma .nd { color:#1150a5; font-weight:bold } /* NameDecorator */
+html:not(.dark) .highlight .chroma .ni { color:#005a78 } /* NameEntity */
+html:not(.dark) .highlight .chroma .ne { color:#674f2e } /* NameException */
+html:not(.dark) .highlight .chroma .nl { color:#435a2c } /* NameLabel */
+html:not(.dark) .highlight .chroma .nn { color:#674f2e } /* NameNamespace */
+html:not(.dark) .highlight .chroma .nx { color:#2d4f9d } /* NameOther */
+html:not(.dark) .highlight .chroma .nv { color:#2d4f9d } /* NameVariable: not in the generated style, so Hextra's teal (3.4:1) showed */
+html:not(.dark) .highlight .chroma .py { color:#674f2e } /* NameProperty */
+html:not(.dark) .highlight .chroma .nt { color:#6a12dc } /* NameTag */
+html:not(.dark) .highlight .chroma .nb { color:#435a2c } /* NameBuiltin */
+html:not(.dark) .highlight .chroma .bp { color:#435a2c } /* NameBuiltinPseudo */
+html:not(.dark) .highlight .chroma .vc { color:#2d4f9d } /* NameVariableClass */
+html:not(.dark) .highlight .chroma .vg { color:#2d4f9d } /* NameVariableGlobal */
+html:not(.dark) .highlight .chroma .vi { color:#2d4f9d } /* NameVariableInstance */
+html:not(.dark) .highlight .chroma .vm { color:#2d4f9d } /* NameVariableMagic */
+html:not(.dark) .highlight .chroma .nf { color:#1150a5 } /* NameFunction */
+html:not(.dark) .highlight .chroma .fm { color:#1150a5 } /* NameFunctionMagic */
+html:not(.dark) .highlight .chroma .ld { color:#2d4f9d } /* LiteralDate */
+html:not(.dark) .highlight .chroma .s { color:#435a2c } /* LiteralString */
+html:not(.dark) .highlight .chroma .sa { color:#6336b4 } /* LiteralStringAffix */
+html:not(.dark) .highlight .chroma .sb { color:#435a2c } /* LiteralStringBacktick */
+html:not(.dark) .highlight .chroma .sc { color:#435a2c } /* LiteralStringChar */
+html:not(.dark) .highlight .chroma .dl { color:#1150a5 } /* LiteralStringDelimiter */
+html:not(.dark) .highlight .chroma .sd { color:#4a5178 } /* LiteralStringDoc */
+html:not(.dark) .highlight .chroma .s2 { color:#435a2c } /* LiteralStringDouble */
+html:not(.dark) .highlight .chroma .se { color:#1150a5 } /* LiteralStringEscape */
+html:not(.dark) .highlight .chroma .sh { color:#4a5178 } /* LiteralStringHeredoc */
+html:not(.dark) .highlight .chroma .si { color:#435a2c } /* LiteralStringInterpol */
+html:not(.dark) .highlight .chroma .sx { color:#435a2c } /* LiteralStringOther */
+html:not(.dark) .highlight .chroma .sr { color:#005a78 } /* LiteralStringRegex */
+html:not(.dark) .highlight .chroma .s1 { color:#435a2c } /* LiteralStringSingle */
+html:not(.dark) .highlight .chroma .ss { color:#435a2c } /* LiteralStringSymbol */
+html:not(.dark) .highlight .chroma .m { color:#674f2e } /* LiteralNumber */
+html:not(.dark) .highlight .chroma .mb { color:#674f2e } /* LiteralNumberBin */
+html:not(.dark) .highlight .chroma .mf { color:#674f2e } /* LiteralNumberFloat */
+html:not(.dark) .highlight .chroma .mh { color:#674f2e } /* LiteralNumberHex */
+html:not(.dark) .highlight .chroma .mi { color:#674f2e } /* LiteralNumberInteger */
+html:not(.dark) .highlight .chroma .il { color:#674f2e } /* LiteralNumberIntegerLong */
+html:not(.dark) .highlight .chroma .mo { color:#674f2e } /* LiteralNumberOct */
+html:not(.dark) .highlight .chroma .o { color:#435a2c; font-weight:bold } /* Operator */
+html:not(.dark) .highlight .chroma .ow { color:#435a2c; font-weight:bold } /* OperatorWord */
+html:not(.dark) .highlight .chroma .or { color:#435a2c; font-weight:bold } /* OperatorReserved */
+html:not(.dark) .highlight .chroma .c { color:#4a5178; font-style:italic } /* Comment */
+html:not(.dark) .highlight .chroma .ch { color:#4a5178; font-style:italic } /* CommentHashbang */
+html:not(.dark) .highlight .chroma .cm { color:#4a5178; font-style:italic } /* CommentMultiline */
+html:not(.dark) .highlight .chroma .c1 { color:#4a5178; font-style:italic } /* CommentSingle */
+html:not(.dark) .highlight .chroma .cs { color:#4a5178; font-style:italic } /* CommentSpecial */
+html:not(.dark) .highlight .chroma .cp { color:#4a5178; font-style:italic } /* CommentPreproc */
+html:not(.dark) .highlight .chroma .cpf { color:#4a5178; font-weight:bold; font-style:italic } /* CommentPreprocFile */
+html:not(.dark) .highlight .chroma .gd { color:#962e2e } /* GenericDeleted */
 html:not(.dark) .highlight .chroma .ge { font-style:italic } /* GenericEmph */
-html:not(.dark) .highlight .chroma .gr { color:#c64343 } /* GenericError */
-html:not(.dark) .highlight .chroma .gh { color:#8c6c3e; font-weight:bold } /* GenericHeading */
-html:not(.dark) .highlight .chroma .gi { color:#587539 } /* GenericInserted */
-html:not(.dark) .highlight .chroma .go { color:#3760bf } /* GenericOutput */
-html:not(.dark) .highlight .chroma .gp { color:#3760bf } /* GenericPrompt */
+html:not(.dark) .highlight .chroma .gr { color:#962e2e } /* GenericError */
+html:not(.dark) .highlight .chroma .gh { color:#674f2e; font-weight:bold } /* GenericHeading */
+html:not(.dark) .highlight .chroma .gi { color:#435a2c } /* GenericInserted */
+html:not(.dark) .highlight .chroma .go { color:#2d4f9d } /* GenericOutput */
+html:not(.dark) .highlight .chroma .gp { color:#2d4f9d } /* GenericPrompt */
 html:not(.dark) .highlight .chroma .gs { font-weight:bold } /* GenericStrong */
-html:not(.dark) .highlight .chroma .gu { color:#8c6c3e; font-weight:bold } /* GenericSubheading */
-html:not(.dark) .highlight .chroma .gt { color:#c64343 } /* GenericTraceback */
+html:not(.dark) .highlight .chroma .gu { color:#674f2e; font-weight:bold } /* GenericSubheading */
+html:not(.dark) .highlight .chroma .gt { color:#962e2e } /* GenericTraceback */
 html:not(.dark) .highlight .chroma .gl { text-decoration:underline } /* GenericUnderline */
 
 /* Tokyo Night Night */
 .dark .highlight .chroma .x { color:#c0caf5 } /* Other */
-.dark .highlight .chroma .err { color:#db4b4b } /* Error */
+.dark .highlight .chroma .err { color:#ea9494 } /* Error */
 .dark .highlight .chroma .cl { color:#c0caf5 } /* CodeLine */
 .dark .highlight .chroma .hl { background-color:#414868 } /* LineHighlight */
 .dark .highlight .chroma .lnt { color:#a9b1d6 } /* LineNumbersTable */
 .dark .highlight .chroma .ln { color:#a9b1d6 } /* LineNumbers */
 .dark .highlight .chroma .k { color:#bb9af7 } /* Keyword */
 .dark .highlight .chroma .kc { color:#e0af68 } /* KeywordConstant */
-.dark .highlight .chroma .kd { color:#9d7cd8 } /* KeywordDeclaration */
+.dark .highlight .chroma .kd { color:#b79fe2 } /* KeywordDeclaration */
 .dark .highlight .chroma .kn { color:#7dcfff } /* KeywordNamespace */
 .dark .highlight .chroma .kp { color:#bb9af7 } /* KeywordPseudo */
 .dark .highlight .chroma .kr { color:#bb9af7 } /* KeywordReserved */
-.dark .highlight .chroma .kt { color:#41a6b5 } /* KeywordType */
-.dark .highlight .chroma .na { color:#7aa2f7 } /* NameAttribute */
+.dark .highlight .chroma .kt { color:#5cb7c5 } /* KeywordType */
+.dark .highlight .chroma .na { color:#84a9f8 } /* NameAttribute */
 .dark .highlight .chroma .nc { color:#ff9e64 } /* NameClass */
 .dark .highlight .chroma .no { color:#ff9e64 } /* NameConstant */
-.dark .highlight .chroma .nd { color:#7aa2f7; font-weight:bold } /* NameDecorator */
+.dark .highlight .chroma .nd { color:#84a9f8; font-weight:bold } /* NameDecorator */
 .dark .highlight .chroma .ni { color:#7dcfff } /* NameEntity */
 .dark .highlight .chroma .ne { color:#e0af68 } /* NameException */
 .dark .highlight .chroma .nl { color:#9ece6a } /* NameLabel */
@@ -430,18 +456,18 @@ html:not(.dark) .highlight .chroma .gl { text-decoration:underline } /* GenericU
 .dark .highlight .chroma .vg { color:#c0caf5 } /* NameVariableGlobal */
 .dark .highlight .chroma .vi { color:#c0caf5 } /* NameVariableInstance */
 .dark .highlight .chroma .vm { color:#c0caf5 } /* NameVariableMagic */
-.dark .highlight .chroma .nf { color:#7aa2f7 } /* NameFunction */
-.dark .highlight .chroma .fm { color:#7aa2f7 } /* NameFunctionMagic */
+.dark .highlight .chroma .nf { color:#84a9f8 } /* NameFunction */
+.dark .highlight .chroma .fm { color:#84a9f8 } /* NameFunctionMagic */
 .dark .highlight .chroma .ld { color:#c0caf5 } /* LiteralDate */
 .dark .highlight .chroma .s { color:#9ece6a } /* LiteralString */
-.dark .highlight .chroma .sa { color:#9d7cd8 } /* LiteralStringAffix */
+.dark .highlight .chroma .sa { color:#b79fe2 } /* LiteralStringAffix */
 .dark .highlight .chroma .sb { color:#9ece6a } /* LiteralStringBacktick */
 .dark .highlight .chroma .sc { color:#9ece6a } /* LiteralStringChar */
-.dark .highlight .chroma .dl { color:#7aa2f7 } /* LiteralStringDelimiter */
-.dark .highlight .chroma .sd { color:#414868 } /* LiteralStringDoc */
+.dark .highlight .chroma .dl { color:#84a9f8 } /* LiteralStringDelimiter */
+.dark .highlight .chroma .sd { color:#a3a9c6 } /* LiteralStringDoc */
 .dark .highlight .chroma .s2 { color:#9ece6a } /* LiteralStringDouble */
-.dark .highlight .chroma .se { color:#7aa2f7 } /* LiteralStringEscape */
-.dark .highlight .chroma .sh { color:#414868 } /* LiteralStringHeredoc */
+.dark .highlight .chroma .se { color:#84a9f8 } /* LiteralStringEscape */
+.dark .highlight .chroma .sh { color:#a3a9c6 } /* LiteralStringHeredoc */
 .dark .highlight .chroma .si { color:#9ece6a } /* LiteralStringInterpol */
 .dark .highlight .chroma .sx { color:#9ece6a } /* LiteralStringOther */
 .dark .highlight .chroma .sr { color:#7dcfff } /* LiteralStringRegex */
@@ -457,21 +483,21 @@ html:not(.dark) .highlight .chroma .gl { text-decoration:underline } /* GenericU
 .dark .highlight .chroma .o { color:#9ece6a; font-weight:bold } /* Operator */
 .dark .highlight .chroma .ow { color:#9ece6a; font-weight:bold } /* OperatorWord */
 .dark .highlight .chroma .or { color:#9ece6a; font-weight:bold } /* OperatorReserved */
-.dark .highlight .chroma .c { color:#414868; font-style:italic } /* Comment */
-.dark .highlight .chroma .ch { color:#414868; font-style:italic } /* CommentHashbang */
-.dark .highlight .chroma .cm { color:#414868; font-style:italic } /* CommentMultiline */
-.dark .highlight .chroma .c1 { color:#414868; font-style:italic } /* CommentSingle */
-.dark .highlight .chroma .cs { color:#414868; font-style:italic } /* CommentSpecial */
-.dark .highlight .chroma .cp { color:#414868; font-style:italic } /* CommentPreproc */
-.dark .highlight .chroma .cpf { color:#414868; font-weight:bold; font-style:italic } /* CommentPreprocFile */
-.dark .highlight .chroma .gd { color:#db4b4b } /* GenericDeleted */
+.dark .highlight .chroma .c { color:#a3a9c6; font-style:italic } /* Comment */
+.dark .highlight .chroma .ch { color:#a3a9c6; font-style:italic } /* CommentHashbang */
+.dark .highlight .chroma .cm { color:#a3a9c6; font-style:italic } /* CommentMultiline */
+.dark .highlight .chroma .c1 { color:#a3a9c6; font-style:italic } /* CommentSingle */
+.dark .highlight .chroma .cs { color:#a3a9c6; font-style:italic } /* CommentSpecial */
+.dark .highlight .chroma .cp { color:#a3a9c6; font-style:italic } /* CommentPreproc */
+.dark .highlight .chroma .cpf { color:#a3a9c6; font-weight:bold; font-style:italic } /* CommentPreprocFile */
+.dark .highlight .chroma .gd { color:#ea9494 } /* GenericDeleted */
 .dark .highlight .chroma .ge { font-style:italic } /* GenericEmph */
-.dark .highlight .chroma .gr { color:#db4b4b } /* GenericError */
+.dark .highlight .chroma .gr { color:#ea9494 } /* GenericError */
 .dark .highlight .chroma .gh { color:#e0af68; font-weight:bold } /* GenericHeading */
 .dark .highlight .chroma .gi { color:#9ece6a } /* GenericInserted */
 .dark .highlight .chroma .go { color:#c0caf5 } /* GenericOutput */
 .dark .highlight .chroma .gp { color:#c0caf5 } /* GenericPrompt */
 .dark .highlight .chroma .gs { font-weight:bold } /* GenericStrong */
 .dark .highlight .chroma .gu { color:#e0af68; font-weight:bold } /* GenericSubheading */
-.dark .highlight .chroma .gt { color:#db4b4b } /* GenericTraceback */
+.dark .highlight .chroma .gt { color:#ea9494 } /* GenericTraceback */
 .dark .highlight .chroma .gl { text-decoration:underline } /* GenericUnderline */
