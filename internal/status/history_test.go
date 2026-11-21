@@ -21,10 +21,10 @@ func TestHistoryRestoresInterruptedAttempt(t *testing.T) {
 	defer func() { _ = db.Close() }()
 	opts := status.Options{Persistence: db, Now: func() time.Time { return now }}
 	s := status.New(opts)
-	s.RunStarted(t.Context(), "acme/app", true)
+	s.RunStarted(t.Context(), "acme/app", "", true)
 	s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", Apply: true})
 	s.RunFinished(t.Context(), "acme/app")
-	s.RunStarted(t.Context(), "acme/app", true)
+	s.RunStarted(t.Context(), "acme/app", "", true)
 	s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", Apply: true, Retry: true, ParentID: 1})
 	restored := status.New(opts)
 	if err = restored.Restore(t.Context()); err != nil {
@@ -42,7 +42,7 @@ func TestHistoryRetentionAndPagination(t *testing.T) {
 	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 	s := status.New(status.Options{HistoryLimit: 2, HistoryRetention: time.Hour, Now: func() time.Time { return now }})
 	for range 3 {
-		s.RunStarted(t.Context(), "acme/app", true)
+		s.RunStarted(t.Context(), "acme/app", "", true)
 		s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", At: now, Apply: true, Trigger: "manual"})
 		s.TargetFinished(t.Context(), "acme/app", "github", time.Second, nil)
 		s.RunFinished(t.Context(), "acme/app")

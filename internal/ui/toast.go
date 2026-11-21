@@ -11,13 +11,22 @@ type toastNotice struct {
 	Kind    string `json:"kind"`
 }
 
+// activityEvent makes the overview tiles re-fetch at once: an action response
+// only re-renders its own fragment, and a short run can start and finish
+// between two polls without the Running tile ever showing it.
+const activityEvent = "forgemirror:activity"
+
 // Header events acknowledge requests independently of deferred/polled fragments.
-func triggerNotice(w http.ResponseWriter, message string, failed bool) error {
+func triggerNotice(w http.ResponseWriter, message string, failed, activity bool) error {
 	kind := "success"
 	if failed {
 		kind = "error"
 	}
-	payload, err := json.Marshal(map[string]toastNotice{"forgemirror:notice": {Message: message, Kind: kind}})
+	events := map[string]any{"forgemirror:notice": toastNotice{Message: message, Kind: kind}}
+	if activity {
+		events[activityEvent] = true
+	}
+	payload, err := json.Marshal(events)
 	if err != nil {
 		return fmt.Errorf("encoding action notification: %w", err)
 	}

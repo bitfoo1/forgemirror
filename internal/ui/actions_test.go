@@ -245,13 +245,21 @@ type actionToast struct {
 
 func actionNotification(t *testing.T, rec *httptest.ResponseRecorder) actionToast {
 	t.Helper()
-	var events map[string]actionToast
+	var events map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(rec.Header().Get("Hx-Trigger")), &events); err != nil {
 		t.Fatalf("invalid or missing notification event: %v", err)
 	}
-	notice, ok := events["forgemirror:notice"]
+	raw, ok := events["forgemirror:notice"]
 	if !ok {
 		t.Fatal("action notification event missing")
+	}
+	// Every action asks the overview to re-fetch, so a run shows at once.
+	if string(events["forgemirror:activity"]) != "true" {
+		t.Error("action response lacks the forgemirror:activity event")
+	}
+	var notice actionToast
+	if err := json.Unmarshal(raw, &notice); err != nil {
+		t.Fatalf("invalid notification event: %v", err)
 	}
 	return notice
 }
@@ -376,7 +384,7 @@ func TestModeBadge(t *testing.T) {
 	}
 	review := newFixtureWith(t, reviewMode(), &fakeActions{})
 	page := review.do(t, http.MethodGet, "/").Body.String()
-	for _, want := range []string{"Review mode", `hx-post="actions/refresh"`, `id="theme-toggle"`, `src="static/app.js"`} {
+	for _, want := range []string{"Review mode", `hx-post="actions/refresh"`, `id="theme-toggle"`, `src="static/app.js?v=`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("review page lacks %q", want)
 		}
@@ -390,7 +398,7 @@ func TestModeBadge(t *testing.T) {
 func recordPlan(t *testing.T, s *status.Store, p plan.Repo) {
 	t.Helper()
 
-	s.RunStarted(t.Context(), p.Name, p.Apply)
+	s.RunStarted(t.Context(), p.Name, "", p.Apply)
 	s.PlanFinished(t.Context(), p)
 	s.RunFinished(t.Context(), p.Name)
 }
@@ -516,7 +524,7 @@ func TestAppliedPlanStates(t *testing.T) {
 			if tc.changes {
 				p.Targets[0].Refs = []plan.RefChange{{Ref: "refs/heads/main", Old: "a", New: "b"}}
 			}
-			f.store.RunStarted(ctx, "acme/app", true)
+			f.store.RunStarted(ctx, "acme/app", "", true)
 			f.store.PlanFinished(ctx, p)
 			if tc.fail != nil {
 				tc.fail(f.store, ctx)

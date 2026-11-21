@@ -26,7 +26,7 @@ func TestAttemptSurvivesComparisonAndRestart(t *testing.T) {
 		Apply:   true,
 		Targets: []plan.Target{{Name: "gh", Refs: []plan.RefChange{{Ref: "refs/heads/main", Old: "old", New: "new"}}}},
 	}
-	s.RunStarted(t.Context(), p.Name, true)
+	s.RunStarted(t.Context(), p.Name, "", true)
 	s.PlanFinished(t.Context(), p)
 	if err = s.Checkpoint(t.Context(), p); err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestCheckpointFailsClosed(t *testing.T) {
 	t.Parallel()
 	s := status.New(status.Options{Persistence: brokenPersistence{}})
 	p := plan.Repo{Name: "acme/app", Apply: true}
-	s.RunStarted(t.Context(), p.Name, true)
+	s.RunStarted(t.Context(), p.Name, "", true)
 	s.PlanFinished(t.Context(), p)
 	if err := s.Checkpoint(t.Context(), p); err == nil {
 		t.Fatal("failed persistence did not block apply")
@@ -88,7 +88,7 @@ func TestInterruptedAttempt(t *testing.T) {
 	}
 	defer db.Close()
 	s := status.New(status.Options{Persistence: db})
-	s.RunStarted(t.Context(), "acme/app", true)
+	s.RunStarted(t.Context(), "acme/app", "", true)
 	s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", Apply: true})
 	restored := status.New(status.Options{Persistence: db})
 	if err = restored.Restore(t.Context()); err != nil {

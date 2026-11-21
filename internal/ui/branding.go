@@ -14,6 +14,7 @@ const (
 	labelGitHub   = "GitHub"
 	labelGitLab   = "GitLab"
 	labelCodeberg = "Codeberg"
+	labelForgejo  = "Forgejo"
 )
 
 type forgeIdentity struct {
@@ -36,7 +37,7 @@ func targetBrand(target config.Target) forgeIdentity {
 	case target.Type == forge.TypeGitLab || (target.Type == "" && host == "gitlab.com"):
 		return forgeIdentity{Label: labelGitLab, Icon: forge.TypeGitLab}
 	case target.Type == forge.TypeForgejo:
-		return forgeIdentity{Label: "Forgejo"}
+		return forgeIdentity{Label: labelForgejo}
 	default:
 		return forgeIdentity{Label: "Git"}
 	}

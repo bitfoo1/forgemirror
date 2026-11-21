@@ -20,6 +20,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/ui"
+	"go.bitfoo.de/forgemirror/internal/version"
 )
 
 // Secrets are distinctive so a substring check cannot match by accident.
@@ -93,9 +94,14 @@ func newFixtureWithQueued(t *testing.T, env []string, actions ui.Actions, queued
 		Logs:    ring,
 		Queued:  queued,
 		Actions: actions,
-		Version: "v9.9.9",
-		Logger:  logger,
-		Now:     func() time.Time { return testNow().Add(time.Minute) },
+		Build: version.Info{
+			Version:   "v9.9.9+dirty",
+			Commit:    "0123456789abcdef0123",
+			GoVersion: "go1.99",
+			Modified:  true,
+		},
+		Logger: logger,
+		Now:    func() time.Time { return testNow().Add(time.Minute) },
 	})
 	if err != nil {
 		t.Fatalf("Handler() error = %v", err)
@@ -119,11 +125,11 @@ func (f *fixture) populate(t *testing.T) {
 	t.Helper()
 
 	ctx := t.Context()
-	f.store.RunStarted(ctx, "acme/app", true)
+	f.store.RunStarted(ctx, "acme/app", "", true)
 	f.store.SyncFinished(ctx, "acme/app", "github", "create", nil)
 	f.store.TargetFinished(ctx, "acme/app", "github", 1500*time.Millisecond, nil)
 	f.store.RunFinished(ctx, "acme/app")
-	f.store.RunStarted(ctx, "acme/busy", true)
+	f.store.RunStarted(ctx, "acme/busy", "", true)
 	f.store.TargetFinished(
 		ctx,
 		"acme/busy",
@@ -153,24 +159,29 @@ func TestRoutes(t *testing.T) {
 		{
 			path: "/",
 			want: []string{
-				"<title>ForgeMirror</title>", "v9.9.9", `src="static/htmx.min.js"`,
-				`hx-get="fragments/repos"`, "acme/app", "Configuration", "ops_listen_address: :9090",
-				"mirror finished", "every 1h0m0s",
+				"<title>ForgeMirror</title>",
+				"v9.9.9",
+				`src="static/htmx.min.js?v=`,
+				`hx-get="fragments/repos"`,
+				"acme/app",
+				"Configuration",
+				"ops_listen_address: :9090",
+				"mirror finished",
+				"every 1h0m0s",
+				// Build and uptime share the footer line.
+				`v9.9.9 · commit <code title="0123456789abcdef0123">0123456</code>-dirty · go1.99 · <span class="uptime">up <time datetime="`,
+				`data-uptime-ms="`,
 			},
 			wantType: "text/html; charset=utf-8",
 		},
 		{
 			path: "/fragments/overview",
 			want: []string{
-				"Uptime",
-				// Every accepted target type is shown; configured ones are on.
-				`<li class="kind kind-on" title="GitHub"><img`,
-				`<li class="kind" title="not configured"><img class="forge-icon forge-icon-monochrome" src="static/icons/gitlab.svg"`,
-				`<li class="kind" title="not configured">Forgejo</li>`,
-				`<li class="kind kind-on" title="backup">Git</li>`,
-				"every 1h0m0s",
-				"2 repositories",
-				"1 queued",
+				// Configured targets are branches; the other accepted types
+				// collapse into one "available" branch.
+				`<li class="pl-done" data-target="github">`, `data-target="backup"`,
+				"+3 available", "GitLab, Codeberg, Forgejo",
+				"every 1h0m0s", "syncing acme/busy", "1 queued",
 			},
 			wantType: "text/html; charset=utf-8",
 		},
@@ -205,18 +216,6 @@ func TestRoutes(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestScheduleTileSingular(t *testing.T) {
-	t.Parallel()
-
-	f := newFixture(t)
-	f.store.ScheduledRunFinished(t.Context(), 1, nil)
-
-	body := f.do(t, http.MethodGet, "/fragments/overview").Body.String()
-	if !strings.Contains(body, ": 1 repository ·") {
-		t.Errorf("schedule tile lacks %q:\n%s", ": 1 repository ·", body)
 	}
 }
 
@@ -316,12 +315,16 @@ func TestSecurityHeaders(t *testing.T) {
 	f := newFixture(t)
 	for _, path := range []string{"/", "/static/style.css", "/nope"} {
 		rec := f.do(t, http.MethodGet, path)
-		for header, want := range map[string]string{
+		want := map[string]string{
 			"X-Content-Type-Options": "nosniff",
 			"X-Frame-Options":        "DENY",
 			"Referrer-Policy":        "no-referrer",
-			"Cache-Control":          "no-store",
-		} {
+		}
+		// Pages are never stored; static files have their own policy (TestStaticCaching).
+		if !strings.HasPrefix(path, "/static/") {
+			want["Cache-Control"] = "no-store"
+		}
+		for header, want := range want {
 			if got := rec.Header().Get(header); got != want {
 				t.Errorf("%s: %s = %q, want %q", path, header, got, want)
 			}
@@ -396,5 +399,77 @@ func TestVendoredHTMX(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte(`version:"2.0.11"`)) {
 		t.Error("htmx.min.js is not version 2.0.11")
+	}
+}
+
+func TestStaticCaching(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	page := f.do(t, http.MethodGet, "/").Body.String()
+	versioned := regexp.MustCompile(`href="(static/style\.css\?v=([0-9a-f]+))"`).FindStringSubmatch(page)
+	if versioned == nil {
+		t.Fatalf("page does not reference a versioned stylesheet: %s", page)
+	}
+	tests := []struct {
+		name, path, cache string
+		status            int
+	}{
+		{
+			name:   "current version",
+			path:   "/" + versioned[1],
+			cache:  "public, max-age=31536000, immutable",
+			status: http.StatusOK,
+		},
+		{name: "unversioned", path: "/static/style.css", cache: "no-cache", status: http.StatusOK},
+		{
+			name:   "outdated version",
+			path:   "/static/style.css?v=0000000000000000",
+			cache:  "no-cache",
+			status: http.StatusOK,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := f.do(t, http.MethodGet, tc.path)
+			if rec.Code != tc.status || rec.Header().Get("Cache-Control") != tc.cache {
+				t.Errorf(
+					"%s: %d %q, want %d %q",
+					tc.path,
+					rec.Code,
+					rec.Header().Get("Cache-Control"),
+					tc.status,
+					tc.cache,
+				)
+			}
+			if got := rec.Header().Get("ETag"); got != `"`+versioned[2]+`"` {
+				t.Errorf("ETag = %q, want %q", got, versioned[2])
+			}
+		})
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/static/style.css", http.NoBody)
+	req.Header.Set("If-None-Match", `"`+versioned[2]+`"`)
+	rec := httptest.NewRecorder()
+	f.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Errorf("revalidation = %d, want 304", rec.Code)
+	}
+}
+
+func TestCompactDuration(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		in   time.Duration
+		want string
+	}{
+		{-time.Second, "0s"},
+		{45 * time.Second, "45s"},
+		{59*time.Minute + 59*time.Second, "59m"},
+		{2*time.Hour + 5*time.Minute, "2h 5m"},
+		{3*24*time.Hour + 4*time.Hour + 59*time.Minute, "3d 4h"},
+	} {
+		if got := ui.CompactDuration(tc.in); got != tc.want {
+			t.Errorf("CompactDuration(%v) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

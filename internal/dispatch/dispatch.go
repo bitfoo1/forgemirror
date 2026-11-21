@@ -33,8 +33,10 @@ import (
 // source repository.
 type Observer interface {
 	// RunStarted and RunFinished bracket one run (mirror or deletion) of one
-	// repository; apply is false for a run that only plans.
-	RunStarted(ctx context.Context, repo string, apply bool)
+	// repository; apply is false for a run that only plans. trigger is what
+	// started it, as recorded in the run history ("webhook", "schedule", …),
+	// so observers can show it while the run is still in progress.
+	RunStarted(ctx context.Context, repo, trigger string, apply bool)
 	RunFinished(ctx context.Context, repo string)
 	// PlanFinished reports the plan of a run, before it is applied.
 	PlanFinished(ctx context.Context, p plan.Repo)
@@ -388,7 +390,7 @@ func (d *Dispatcher) run(eventCtx context.Context, e webhook.Event, apply, repai
 	defer stop()
 
 	name := e.Repository.FullName
-	d.opts.Observer.RunStarted(ctx, name, apply || repair)
+	d.opts.Observer.RunStarted(ctx, name, eventTrigger(e), apply || repair)
 	defer d.opts.Observer.RunFinished(ctx, name)
 
 	logger := d.eventLogger(e)
@@ -667,7 +669,7 @@ func (d *Dispatcher) eventLogger(e webhook.Event) *slog.Logger {
 
 type noopObserver struct{}
 
-func (noopObserver) RunStarted(context.Context, string, bool)                             {}
+func (noopObserver) RunStarted(context.Context, string, string, bool)                     {}
 func (noopObserver) PlanFinished(context.Context, plan.Repo)                              {}
 func (noopObserver) RunFinished(context.Context, string)                                  {}
 func (noopObserver) TargetFinished(context.Context, string, string, time.Duration, error) {}
@@ -677,9 +679,9 @@ func (noopObserver) SyncFinished(context.Context, string, string, string, error)
 type Observers []Observer
 
 // RunStarted implements [Observer].
-func (obs Observers) RunStarted(ctx context.Context, repo string, apply bool) {
+func (obs Observers) RunStarted(ctx context.Context, repo, trigger string, apply bool) {
 	for _, o := range obs {
-		o.RunStarted(ctx, repo, apply)
+		o.RunStarted(ctx, repo, trigger, apply)
 	}
 }
 

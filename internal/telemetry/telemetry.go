@@ -148,7 +148,7 @@ func (m *Metrics) Shutdown(ctx context.Context) error {
 // per-repository state instead.
 
 // RunStarted implements [dispatch.Observer].
-func (m *Metrics) RunStarted(ctx context.Context, _ string, _ bool) {
+func (m *Metrics) RunStarted(ctx context.Context, _, _ string, _ bool) {
 	m.active.Add(ctx, 1)
 }
 

@@ -785,7 +785,7 @@ mirror:
 		"/":                   {"<title>ForgeMirror</title>", "ops_listen_address: 127.0.0.1:0"},
 		"/fragments/repos":    {"acme/app", "<code>example</code>", `class="ok"`},
 		"/fragments/logs":     {"forgemirror starting", "mirror finished"},
-		"/fragments/overview": {`<li class="kind kind-on" title="example">Git</li>`},
+		"/fragments/overview": {`data-target="example"`, `aria-label="Triggers"`},
 	} {
 		status, body := httpGet(ctx, t, "http://"+webAddr+path)
 		if status != http.StatusOK {

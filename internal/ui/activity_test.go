@@ -31,14 +31,14 @@ func TestActivityIndicators(t *testing.T) {
 			f := newFixtureWithQueued(t, nil, nil, func() map[string]bool { return tt.queued })
 			f.store.PlanFinished(t.Context(), plan.Repo{Name: "acme/app"})
 			if tt.running {
-				f.store.RunStarted(t.Context(), "acme/app", tt.applying)
+				f.store.RunStarted(t.Context(), "acme/app", "", tt.applying)
 			}
 			if tt.finished {
 				f.store.TargetFinished(t.Context(), "acme/app", "github", time.Second, errors.New("failed"))
 				f.store.RunFinished(t.Context(), "acme/app")
 			}
 			if tt.mixed {
-				f.store.RunStarted(t.Context(), "acme/other", true)
+				f.store.RunStarted(t.Context(), "acme/other", "", true)
 			}
 			response := f.do(t, http.MethodGet, "/fragments/repos")
 			if response.Code != http.StatusOK {

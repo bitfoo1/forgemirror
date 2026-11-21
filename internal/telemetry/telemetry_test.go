@@ -43,8 +43,8 @@ func TestMetrics(t *testing.T) {
 	})
 
 	ctx := t.Context()
-	m.RunStarted(ctx, "acme/app", true)
-	m.RunStarted(ctx, "acme/app", true)
+	m.RunStarted(ctx, "acme/app", "", true)
+	m.RunStarted(ctx, "acme/app", "", true)
 	m.RunFinished(ctx, "acme/app")
 	m.TargetFinished(ctx, "acme/app", "github", 3*time.Second, nil)
 	m.TargetFinished(ctx, "acme/app", "github", time.Second, nil)

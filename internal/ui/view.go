@@ -200,7 +200,7 @@ func targetTypes(targets []config.Target) []targetType {
 		{Label: labelGitHub, Icon: forge.TypeGitHub},
 		{Label: labelGitLab, Icon: forge.TypeGitLab},
 		{Label: labelCodeberg, Icon: brandCodeberg},
-		{Label: "Forgejo"},
+		{Label: labelForgejo},
 		{Label: "Git"},
 	}
 	for _, target := range targets {

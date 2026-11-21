@@ -28,7 +28,7 @@ func (h *handler) writeHoldError(w http.ResponseWriter, err error) {
 		errors.Is(err, status.ErrUnknownHold) {
 		code = http.StatusNotFound
 	}
-	if notifyErr := triggerNotice(w, err.Error(), true); notifyErr != nil {
+	if notifyErr := triggerNotice(w, err.Error(), true, false); notifyErr != nil {
 		http.Error(w, "Could not encode action acknowledgement", http.StatusInternalServerError)
 		return
 	}

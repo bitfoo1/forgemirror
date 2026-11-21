@@ -163,7 +163,7 @@ func (o *recordingObserver) snapshot() ([]targetResult, []syncResult) {
 	return slices.Clone(o.results), slices.Clone(o.syncs)
 }
 
-func (o *recordingObserver) RunStarted(_ context.Context, repo string, apply bool) {
+func (o *recordingObserver) RunStarted(_ context.Context, repo, _ string, apply bool) {
 	o.started.Add(1)
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -423,7 +423,7 @@ func TestObserversFanOut(t *testing.T) {
 	a, b := &recordingObserver{}, &recordingObserver{}
 	obs := dispatch.Observers{a, b}
 	ctx := t.Context()
-	obs.RunStarted(ctx, "acme/app", true)
+	obs.RunStarted(ctx, "acme/app", "", true)
 	obs.TargetFinished(ctx, "acme/app", "gh", time.Second, nil)
 	obs.SyncFinished(ctx, "acme/app", "gh", "labels", nil)
 	obs.RunFinished(ctx, "acme/app")

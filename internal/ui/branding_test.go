@@ -109,10 +109,11 @@ func TestForgeDisplayIdentity(t *testing.T) {
 
 func assertForgeIdentity(t *testing.T, badge, label, icon string) {
 	t.Helper()
-	if !strings.Contains(badge, label+"</span>") {
+	// The visible label sits between tags; hidden status text may follow it.
+	if !strings.Contains(badge, ">"+label+"<") {
 		t.Errorf("missing display label %q: %s", label, badge)
 	}
-	if icon != "" && !strings.Contains(badge, `src="static/icons/`+icon+`.svg"`) {
+	if icon != "" && !strings.Contains(badge, `src="static/icons/`+icon+`.svg?v=`) {
 		t.Errorf("missing official icon %q: %s", icon, badge)
 	}
 	if icon == "" && strings.Contains(badge, `<img`) {
@@ -142,7 +143,7 @@ func TestForgeNamesAndIconsInHistory(t *testing.T) {
 		found := false
 		for _, heading := range regexp.MustCompile(`(?s)<h3>.*?</h3>`).FindAllString(body, -1) {
 			if strings.Contains(heading, brand.label) &&
-				strings.Contains(heading, `src="static/icons/`+brand.name+`.svg"`) {
+				strings.Contains(heading, `src="static/icons/`+brand.name+`.svg?v=`) {
 				found = true
 			}
 		}

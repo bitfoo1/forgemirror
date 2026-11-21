@@ -31,6 +31,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/retry"
 	"go.bitfoo.de/forgemirror/internal/status"
+	"go.bitfoo.de/forgemirror/internal/version"
 )
 
 const (
@@ -60,7 +61,7 @@ func securityHeaders() map[string]string {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js static/icons/* static/controls.js static/controls.css
+//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js static/icons/* static/controls.js static/controls.css static/confirm.js
 var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
@@ -91,14 +92,17 @@ type Options struct {
 	// Actions may be nil: the UI then shows no action buttons and answers
 	// action requests with 404.
 	Actions Actions
-	Version string
-	Logger  *slog.Logger
+	// Build identifies the running binary; the footer shows it so everyone
+	// can tell which release and commit serves the page.
+	Build  version.Info
+	Logger *slog.Logger
 	// Now returns the current time; nil means [time.Now].
 	Now func() time.Time
 }
 
 type handler struct {
 	opts   Options
+	assets *staticAssets
 	tmpl   *template.Template
 	config string
 	types  []targetType
@@ -114,7 +118,16 @@ func Handler(opts Options) (http.Handler, error) {
 		opts.Queued = func() map[string]bool { return nil }
 	}
 
-	h := &handler{opts: opts}
+	static, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, fmt.Errorf("static files: %w", err)
+	}
+	assets, err := newStaticAssets(static)
+	if err != nil {
+		return nil, err
+	}
+
+	h := &handler{opts: opts, assets: assets}
 	tmpl, err := template.New("ui").Funcs(h.funcs()).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing UI templates: %w", err)
@@ -129,11 +142,6 @@ func Handler(opts Options) (http.Handler, error) {
 	h.config = string(cfgYAML)
 	h.types = targetTypes(opts.Config.Targets)
 
-	static, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		return nil, fmt.Errorf("static files: %w", err)
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", h.render("page"))
 	mux.HandleFunc("GET /history", h.history)
@@ -141,7 +149,7 @@ func Handler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("GET /fragments/repos", h.render("repos"))
 	mux.HandleFunc("GET /fragments/controls", h.render("controls"))
 	mux.HandleFunc("GET /fragments/logs", h.render("logs"))
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", assets))
 	if opts.Actions != nil {
 		mux.HandleFunc("POST /actions/refresh", h.action(false))
 		mux.HandleFunc("POST /actions/sync", h.action(true))
@@ -241,7 +249,7 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 
 			return
 		}
-		if notifyErr := triggerNotice(w, notice, err != nil); notifyErr != nil {
+		if notifyErr := triggerNotice(w, notice, err != nil, true); notifyErr != nil {
 			h.opts.Logger.ErrorContext(r.Context(), "UI notification failed", slog.Any("error", notifyErr))
 			http.Error(w, "Could not encode action acknowledgement", http.StatusInternalServerError)
 			return
@@ -297,7 +305,7 @@ type pageData struct {
 	HistoryTotal         int
 	HistoryPrev          int
 	HistoryNext          int
-	Version              string
+	Build                version.Info
 	Refresh              time.Duration
 	Snapshot             status.Snapshot
 	Types                []targetType
@@ -317,6 +325,7 @@ type pageData struct {
 	Config               string
 	Logs                 []logging.Entry
 	Levels               []level
+	Pipeline             pipelineView
 }
 
 // counts summarises the repository states for the section header.
@@ -358,7 +367,7 @@ func (h *handler) renderWith(w http.ResponseWriter, r *http.Request, name string
 func (h *handler) data(r *http.Request) pageData {
 	queued := h.opts.Queued()
 	d := pageData{
-		Version:  h.opts.Version,
+		Build:    h.opts.Build,
 		Refresh:  refresh,
 		Snapshot: h.opts.Store.Snapshot(),
 		Pauses:   h.opts.Store.Pauses(),
@@ -379,6 +388,7 @@ func (h *handler) data(r *http.Request) pageData {
 	}
 	h.explainPublications(&d)
 	h.controlsData(&d)
+	d.Pipeline = h.pipeline(&d)
 
 	minLevel := parseLevel(r.URL.Query().Get("level"))
 	for _, l := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
@@ -412,13 +422,20 @@ func parseLevel(s string) slog.Level {
 func (h *handler) funcs() template.FuncMap {
 	return template.FuncMap{
 		"forgeName": h.forgeIdentity,
-		"iso":       func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
+		// Since Go 1.24 a modified build's version ends in "+dirty"; the
+		// footer marks that once, on the commit.
+		"release": func(v string) string { return strings.TrimSuffix(v, "+dirty") },
+		"asset":   h.assets.url,
+		"iso":     func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		"when": func(t time.Time) string {
 			return t.UTC().Format("2006-01-02 15:04:05 UTC") + " (" + ago(h.opts.Now().Sub(t)) + ")"
 		},
 		"clock": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05") },
-		"since": func(t time.Time) string { return round(h.opts.Now().Sub(t)).String() },
-		"round": round,
+		// The header is not polled, so app.js keeps the uptime current from
+		// elapsedMs; uptime is the server-rendered value without JavaScript.
+		"uptime":    func(t time.Time) string { return compactDuration(h.opts.Now().Sub(t)) },
+		"elapsedMs": func(t time.Time) int64 { return max(h.opts.Now().Sub(t), 0).Milliseconds() },
+		"round":     round,
 		"nextSweep": func(s status.Schedule) time.Time {
 			return s.LastRun.Add(s.Interval)
 		},
@@ -451,6 +468,23 @@ func (h *handler) funcs() template.FuncMap {
 
 // round shortens durations for display, keeping about two significant
 // units.
+// compactDuration keeps the two largest units ("3d 4h", "2h 5m"); it sits
+// beside the version in the header. app.js formats it the same way.
+func compactDuration(d time.Duration) string {
+	d = max(d, 0)
+	const day = 24 * time.Hour
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d/time.Second))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	case d < day:
+		return fmt.Sprintf("%dh %dm", int(d/time.Hour), int(d%time.Hour/time.Minute))
+	default:
+		return fmt.Sprintf("%dd %dh", int(d/day), int(d%day/time.Hour))
+	}
+}
+
 func round(d time.Duration) time.Duration {
 	switch {
 	case d >= time.Hour:

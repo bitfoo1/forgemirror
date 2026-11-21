@@ -13,13 +13,14 @@ test('forge badges stay beside the repository and shared changes appear once', a
     await page.goto('/');
     const repo = page.locator('.repo').filter({ has: page.locator('.repo-name', { hasText: /^acme\/app$/ }) });
     const badges = repo.locator('.repo-head .forge-badge');
-    await expect(badges).toHaveText(['GitHub', 'Codeberg', 'GitLab']);
+    await expect(badges).toHaveText([/^GitHub: /, /^Codeberg: /, /^GitLab: /]);
     await expect(badges.first()).toHaveAttribute('title', /GitHub: out of sync/);
-    await badges.first().focus();
-    await expect(badges.first()).toBeFocused();
+    // Status is announced as text; the badge itself is not a tab stop.
+    await expect(badges.first().locator('.visually-hidden')).toHaveText(/: out of sync/);
+    await expect(badges.first()).not.toHaveAttribute('tabindex');
     const changes = repo.locator('.grouped-changes li');
     await expect(changes).toHaveCount(1);
-    await expect(changes.locator('.forge-badge')).toHaveText(['GitHub', 'Codeberg']);
+    await expect(changes.locator('.forge-badge')).toHaveText([/^GitHub: /, /^Codeberg: /]);
     const positions = await repo.evaluate(node => {
       const name = node.querySelector('.repo-name').getBoundingClientRect();
       const badge = node.querySelector('.repo-head .forge-badge').getBoundingClientRect();
@@ -45,9 +46,9 @@ test('official forge icons work offline in both themes and keep header badges in
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
       const badges = repo.locator('.repo-head .forge-badge');
-      await expect(badges).toHaveText(['GitHub', 'Codeberg', 'GitLab']);
+      await expect(badges).toHaveText([/^GitHub: /, /^Codeberg: /, /^GitLab: /]);
       await expect(repo.locator('.repo-head [data-forge="codeberg"] img:visible')).toHaveAttribute('src',
-        theme === 'dark' ? 'static/icons/codeberg-white.svg' : 'static/icons/codeberg.svg');
+        theme === 'dark' ? /^static\/icons\/codeberg-white\.svg\?v=/ : /^static\/icons\/codeberg\.svg\?v=/);
       await expect.poll(() => page.locator('.forge-icon:visible').evaluateAll(images =>
         images.length > 0 && images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
       const inline = await repo.locator('.repo-head').evaluate(head => {
@@ -60,7 +61,7 @@ test('official forge icons work offline in both themes and keep header badges in
   }
   await repo.locator('.target-details > summary').click();
   await expect(repo.locator('.target h3').first()).toHaveText('GitHub');
-  await expect(repo.locator('.target h3').first().locator('img')).toHaveAttribute('src', 'static/icons/github.svg');
+  await expect(repo.locator('.target h3').first().locator('img')).toHaveAttribute('src', /^static\/icons\/github\.svg\?v=/);
 });
 
 // Exercise the real CSP, HTMX and browser selection/focus APIs, not a DOM mock.
@@ -248,8 +249,8 @@ test('bulk refresh and sync keep aggregate activity until the last job finishes'
   await expect(page.locator('[data-repo="acme/app"] [data-repository-activity]')).toHaveCount(0);
   await request.post('/test/complete?repo=acme/other');
   await expect(page.locator('[data-global-activity]')).toHaveCount(0, {timeout:12000});
-  page.once('dialog', dialog => dialog.accept());
   await page.locator('form[data-live-key="sync-all"] button').click();
+  await page.locator('#confirm-dialog [data-confirm-accept]').click();
   await expect(page.locator('[data-repository-activity]')).toHaveCount(2);
   await expect(page.locator('[data-global-activity]')).toHaveText('Syncing 2 repositories');
   await request.post('/test/complete?repo=acme/app');
@@ -268,9 +269,9 @@ test('single and bulk refresh/sync acknowledge in a top toast, never inline', as
     await request.post('/test/seed?repo=acme/app');
     await request.post('/test/seed?repo=acme/other');
     await page.goto('/');
-    if (action.key === 'sync-all') {page.once('dialog', dialog => dialog.accept());}
     const scope = action.bulk ? page : page.locator('[data-repo="acme/app"]');
     await scope.locator('form[data-live-key="'+action.key+'"] button').click();
+    if (action.key === 'sync-all') await page.locator('#confirm-dialog [data-confirm-accept]').click();
     await expect(page.locator('#notifications .toast')).toBeVisible();
     await expect(page.locator('#notifications .toast-message')).toHaveText(action.message);
     await expect(page.locator('#repos')).not.toContainText(action.message);
@@ -349,4 +350,117 @@ test('notification content is text, errors persist, and reduced motion avoids en
   await expect(toast).toBeVisible();
   await toast.getByRole('button',{name:'Dismiss notification'}).click();
   await expect(toast).toHaveCount(0);
+});
+
+test('notifications are announced once by urgency and polled activity is not live', async ({page}) => {
+  // Record ariaNotify calls where the browser provides it; remove it in the
+  // second pass to exercise the pre-rendered live-region fallback.
+  for (const native of [true, false]) {
+    await page.addInitScript(native => {
+      window.announcements = [];
+      if (native) { document.ariaNotify = (text, options) => window.announcements.push([text, options.priority]); }
+      else { delete Document.prototype.ariaNotify; delete document.ariaNotify; }
+    }, native);
+    await page.goto('/');
+    await expect(page.locator('#notifications')).toHaveAttribute('role', 'region');
+    await expect(page.locator('#notifications')).not.toHaveAttribute('aria-live');
+    await expect(page.locator('#repos [role=status], #repos [aria-live]')).toHaveCount(0);
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent('forgemirror:notice', {detail:{message:'Sync accepted',kind:'success'}})));
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent('forgemirror:notice', {detail:{message:'Sync failed',kind:'error'}})));
+    if (native) {
+      expect(await page.evaluate(() => window.announcements)).toEqual([['Sync accepted', 'normal'], ['Sync failed', 'high']]);
+    } else {
+      await expect(page.locator('#announce-polite')).toHaveText('Sync accepted');
+      await expect(page.locator('#announce-assertive')).toHaveText('Sync failed');
+      await expect(page.locator('#announce-assertive')).toHaveAttribute('role', 'alert');
+    }
+  }
+});
+
+test('cards collapse from heading buttons, persist per browser and survive polling', async ({page}) => {
+  await page.goto('/');
+  const toggle = card => page.locator(`[data-card-toggle="${card}"]`);
+  const body = card => page.locator(`[data-card-body="${card}"]`);
+  for (const card of ['repos', 'controls', 'logs', 'config']) {
+    await expect(page.locator(`h2 > [data-card-toggle="${card}"]`)).toHaveCount(1);
+  }
+  await expect(toggle('config')).toHaveAttribute('aria-expanded', 'false');
+  await expect(body('config')).toBeHidden();
+  await expect(body('repos')).toBeVisible();
+  await toggle('repos').click();
+  await expect(toggle('repos')).toHaveAttribute('aria-expanded', 'false');
+  await expect(body('repos')).toBeHidden();
+  // A poll re-renders the repository header with aria-expanded="true".
+  await page.waitForResponse(response => response.url().endsWith('/fragments/repos'));
+  await expect(toggle('repos')).toHaveAttribute('aria-expanded', 'false');
+  await expect(body('repos')).toBeHidden();
+  await page.reload();
+  await expect(body('repos')).toBeHidden();
+  await toggle('repos').press('Enter');
+  await expect(body('repos')).toBeVisible();
+  await toggle('config').click();
+  await expect(body('config')).toBeVisible();
+});
+
+test.describe('without JavaScript', () => {
+  test.use({javaScriptEnabled: false});
+  test('every card stays expanded', async ({page}) => {
+    await page.goto('/');
+    for (const card of ['repos', 'controls', 'logs', 'config']) {
+      await expect(page.locator(`[data-card-body="${card}"]`)).toBeVisible();
+    }
+  });
+});
+
+test('confirmations use a native modal dialog that cancels safely', async ({page, request}) => {
+  await request.post('/test/seed?repo=acme/app');
+  await request.post('/test/hold');
+  let nativeDialog = false;
+  page.on('dialog', dialog => { nativeDialog = true; dialog.dismiss(); });
+  await page.goto('/');
+  const dialog = page.locator('#confirm-dialog');
+  const syncAll = page.locator('form[data-live-key="sync-all"] button');
+  await syncAll.click();
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate(node => node.matches(':modal'))).toBe(true);
+  await expect(dialog.locator('h2')).toHaveText('Sync all repositories');
+  await expect(dialog.locator('[data-confirm-message]')).toHaveText('Sync the out-of-sync repository to the targets?');
+  await expect(dialog.getByRole('button', {name:'Cancel'})).toBeFocused();
+  await expect(dialog.locator('[data-confirm-accept]')).toHaveText('Sync all');
+  // Esc cancels: no request, focus returns to the invoking button.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(syncAll).toBeFocused();
+  await expect(page.locator('[data-repository-activity]')).toHaveCount(0);
+  await syncAll.click();
+  await dialog.locator('[data-confirm-accept]').click();
+  await expect(page.locator('[data-global-activity]')).toHaveText('Syncing 1 repository');
+  expect(nativeDialog).toBe(false);
+  await request.post('/test/complete');
+});
+
+test('starting a run lights its trigger at once, not on the next poll', async ({page, request}) => {
+  await request.post('/test/seed?repo=acme/app');
+  await request.post('/test/hold');
+  await page.goto('/');
+  const engine = page.locator('#overview .pl-engine');
+  await expect(engine.locator('small')).toHaveText(/^idle/);
+  await page.locator('[data-repo="acme/app"] form[data-live-key="refresh"] button').click();
+  // The overview polls every 5s; the action's activity event must beat that.
+  await expect(page.locator('#overview [data-trigger="manual"]')).toHaveClass('pl-fired', {timeout: 2000});
+  await expect(engine).toHaveClass(/pl-busy/);
+  await expect(engine.locator('small')).toHaveText('refreshing acme/app · by manual');
+  await request.post('/test/complete');
+});
+
+test('a push lights the push branch and the targets fan out with their state', async ({page, request}) => {
+  await request.post('/test/hold');
+  await page.goto('/');
+  await request.post('/test/trigger?trigger=webhook&repo=acme/app');
+  await expect(page.locator('#overview [data-trigger="push"]')).toHaveClass('pl-fired', {timeout: 8000});
+  await expect(page.locator('#overview [data-trigger="schedule"]')).not.toHaveClass('pl-fired');
+  await expect(page.locator('#overview .pl-engine small')).toHaveText('syncing acme/app · by push');
+  await expect(page.locator('#overview [data-target="github"]')).toHaveClass('pl-busy');
+  await request.post('/test/complete');
+  await expect(page.locator('#overview .pl-fired')).toHaveCount(0, {timeout: 8000});
 });

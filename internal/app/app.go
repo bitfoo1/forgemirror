@@ -382,7 +382,7 @@ func newWeb(
 		Queued:  dispatcher.Queued,
 		Known:   func(name string) bool { _, ok := dispatcher.Known(name); return ok },
 		Actions: actions,
-		Version: version.Get().String(),
+		Build:   version.Get(),
 		Logger:  logger,
 	})
 	if err != nil {

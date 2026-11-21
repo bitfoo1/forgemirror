@@ -19,6 +19,7 @@ import (
 	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/ui"
+	"go.bitfoo.de/forgemirror/internal/version"
 	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
@@ -30,6 +31,8 @@ type jobControl struct {
 	mu     sync.Mutex
 	hold   bool
 	active map[string]*heldJob
+	// runtime of a simulated job; the preview needs one long enough to see.
+	runtime time.Duration
 }
 
 func (j *jobControl) snapshot() map[string]bool {
@@ -63,7 +66,7 @@ type actions struct {
 	targets []config.Target
 }
 
-func (a actions) Refresh(_ context.Context, name string) error { a.start(name, false); return nil }
+func (a actions) Refresh(_ context.Context, name string) error { a.start(name, "refresh", false); return nil }
 func (a actions) RefreshAll(ctx context.Context) (int, error) {
 	repos := a.store.Snapshot().Repos
 	for _, r := range repos {
@@ -108,7 +111,7 @@ func (a actions) Dispatch(_ context.Context, e webhook.Event) {
 	if selected == nil && e.Target != "" {
 		selected = []string{e.Target}
 	}
-	a.startScoped(e.Repository.FullName, true, selected)
+	a.startScoped(e.Repository.FullName, "manual sync", true, selected)
 }
 func (a actions) RepairLFS(ctx context.Context, name string) error { return a.Sync(ctx, name) }
 func (a actions) SyncAll(ctx context.Context) int {
@@ -118,21 +121,21 @@ func (a actions) SyncAll(ctx context.Context) int {
 	}
 	return len(names)
 }
-func (a actions) Sync(_ context.Context, name string) error { a.start(name, true); return nil }
+func (a actions) Sync(_ context.Context, name string) error { a.start(name, "manual sync", true); return nil }
 
-func (a actions) start(name string, apply bool) { a.startScoped(name, apply, nil) }
-func (a actions) startScoped(name string, apply bool, selected []string) {
+func (a actions) start(name, trigger string, apply bool) { a.startScoped(name, trigger, apply, nil) }
+func (a actions) startScoped(name, trigger string, apply bool, selected []string) {
 	a.jobs.mu.Lock()
 	if _, busy := a.jobs.active[name]; busy {
 		a.jobs.mu.Unlock()
 		return
 	}
 	job := &heldJob{release: make(chan struct{}), finished: make(chan struct{})}
-	hold := a.jobs.hold
+	hold, runtime := a.jobs.hold, a.jobs.runtime
 	a.jobs.active[name] = job
 	a.jobs.mu.Unlock()
 	ctx := context.Background()
-	a.store.RunStarted(ctx, name, apply)
+	a.store.RunStarted(ctx, name, trigger, apply)
 	if apply {
 		a.store.PlanFinished(ctx, initialFor(name, true))
 	}
@@ -141,7 +144,7 @@ func (a actions) startScoped(name string, apply bool, selected []string) {
 		if hold {
 			<-job.release
 		} else {
-			timer := time.NewTimer(100 * time.Millisecond)
+			timer := time.NewTimer(runtime)
 			select {
 			case <-timer.C:
 			case <-job.release:
@@ -198,8 +201,11 @@ func main() {
 			panic(err)
 		}
 	}
-	jobs := &jobControl{active: map[string]*heldJob{}}
-	h, err := ui.Handler(ui.Options{Config: cfg, Store: store, Logs: logging.NewRing(10), Logger: slog.New(slog.DiscardHandler), Actions: actions{store: store, jobs: jobs, targets: cfg.Targets}, Queued: jobs.snapshot})
+	jobs := &jobControl{active: map[string]*heldJob{}, runtime: 100 * time.Millisecond}
+	if os.Getenv("FORGEMIRROR_UI_PREVIEW") == "true" {
+		jobs.runtime = 4 * time.Second
+	}
+	h, err := ui.Handler(ui.Options{Config: cfg, Store: store, Logs: logging.NewRing(10), Logger: slog.New(slog.DiscardHandler), Build: version.Get(), Actions: actions{store: store, jobs: jobs, targets: cfg.Targets}, Queued: jobs.snapshot})
 	if err != nil {
 		panic(err)
 	}
@@ -213,6 +219,16 @@ func main() {
 	})
 	mux.HandleFunc("POST /test/complete", func(w http.ResponseWriter, r *http.Request) {
 		jobs.complete(r.URL.Query().Get("repo"))
+		w.WriteHeader(http.StatusNoContent)
+	})
+	// Simulates runs the UI cannot start itself, to show their trigger.
+	mux.HandleFunc("POST /test/trigger", func(w http.ResponseWriter, r *http.Request) {
+		trigger := r.URL.Query().Get("trigger")
+		if trigger != "webhook" && trigger != "schedule" && trigger != "retry" {
+			http.Error(w, "unknown trigger", http.StatusBadRequest)
+			return
+		}
+		actions{store: store, jobs: jobs, targets: cfg.Targets}.start(r.URL.Query().Get("repo"), trigger, true)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /test/seed", func(w http.ResponseWriter, r *http.Request) {

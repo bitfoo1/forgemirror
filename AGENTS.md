@@ -58,6 +58,20 @@ Common tasks:
 - Tests are table-driven, call `t.Parallel()`, and use fakes instead of
   network or real git remotes.
 
+## Web UI conventions
+
+- **Browser support:** Baseline *newly available* (current evergreen
+  browsers). The UI is a self-hosted operator tool, so newly available
+  features need no fallback code; features outside Baseline are progressive
+  enhancement only (e.g. `ariaNotify()`, `<meta name="text-scale">`).
+- No build step: hand-written ES modules and CSS in `internal/ui/static/`,
+  embedded in the binary and referenced through the `asset` template func
+  (content-hashed URLs, cached as immutable).
+- The strict CSP forbids inline script and style; set styles via the CSSOM.
+- It must work without JavaScript (plain forms); JavaScript enhances it.
+- Accessibility is part of the gate: WCAG 2.2 AA, checked by the axe tests
+  in `tests/ui/`.
+
 ## Commits and releases
 
 - Conventional Commits with gitmoji: `type(scope): :gitmoji: description`.

@@ -12,7 +12,7 @@ func TestStaleComparisonWithoutAttemptIsNotInSync(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	recordPlan(t, f.store, plan.Repo{Name: "acme/app"})
-	f.store.RunStarted(t.Context(), "acme/app", true)
+	f.store.RunStarted(t.Context(), "acme/app", "", true)
 	body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
 	if strings.Contains(body, `title="GitHub: in sync`) ||
 		!strings.Contains(body, `title="GitHub: awaiting verification`) {

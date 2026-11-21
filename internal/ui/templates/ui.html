@@ -5,26 +5,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+{{- /* Follow the OS text-size setting (Dynamic Type etc.); sizes are in rem, so
+the layout scales with it. Browsers without support ignore it. */}}
+<meta name="text-scale" content="scale">
 {{- /* The indicator styles would be injected as an inline <style>, which the
 Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
 <title>ForgeMirror</title>
-<link rel="stylesheet" href="static/style.css">
-<link rel="stylesheet" href="static/controls.css">
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "controls.css"}}">
 {{- /* Not deferred: it applies the stored theme before the first paint. */}}
-<script src="static/app.js"></script>
-<script src="static/live.js" defer></script>
-<script src="static/controls.js" defer></script>
-<script src="static/toast.js" defer></script>
-<script src="static/htmx.min.js" defer></script>
+<script src="{{asset "app.js"}}"></script>
+<script src="{{asset "live.js"}}" type="module"></script>
+<script src="{{asset "controls.js"}}" type="module"></script>
+<script src="{{asset "toast.js"}}" type="module"></script>
+<script src="{{asset "confirm.js"}}" type="module"></script>
+<script src="{{asset "htmx.min.js"}}" defer></script>
 </head>
 <body>
-<div id="notifications" class="toast-region" role="status" aria-live="polite" aria-atomic="true" aria-label="Notifications"></div>
+{{- /* Toasts are shown in a named region that is not live itself; their text
+is announced through the two regions below, which exist from page load
+because screen readers ignore politeness changes made at insertion time. */}}
+<div id="notifications" class="toast-region" role="region" aria-label="Notifications"></div>
+<div id="announce-polite" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+<div id="announce-assertive" class="visually-hidden" role="alert" aria-atomic="true"></div>
+{{- /* Confirmation for hx-confirm actions; confirm.js opens it with showModal(). */}}
+<dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+  <form method="dialog">
+    <h2 id="confirm-dialog-title" data-confirm-title>Please confirm</h2>
+    <p id="confirm-dialog-message" data-confirm-message></p>
+    <div class="confirm-actions">
+      <button type="submit" class="btn" value="cancel" autofocus>Cancel</button>
+      <button type="submit" class="btn btn-primary" value="confirm" data-confirm-accept>Confirm</button>
+    </div>
+  </form>
+</dialog>
 <header class="topbar">
   <div class="brand">
     <span class="mark" aria-hidden="true"></span>
     <h1>ForgeMirror</h1>
-    <span class="version">{{.Version}}</span>
   </div>
   <div class="topbar-end">
     {{- if .Auto}}
@@ -32,11 +51,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     {{- else}}
     <span class="pill pill-warn" title="Changes reach the targets only when you press Sync">Review mode</span>
     {{- end}}
-    <button type="button" id="theme-toggle" class="btn btn-ghost" hidden aria-live="polite">Theme: system</button>
+    <button type="button" id="theme-toggle" class="btn btn-ghost" hidden>Theme: system</button>
   </div>
 </header>
 <main>
-  <section id="overview" class="tiles" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">
+  <section id="overview" class="card" aria-labelledby="pipeline-heading" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}, forgemirror:activity from:body" hx-swap="innerHTML" hx-sync="this:drop">
     {{template "overview" .}}
   </section>
   {{if .Actions}}<section id="controls" class="card controls-card" hx-get="fragments/controls" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">{{template "controls" .}}</section>{{end}}
@@ -45,7 +64,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   </section>
   <section class="card">
     <div class="card-head">
-      <h2>Logs</h2>
+      <h2 id="logs-heading"><button type="button" class="card-toggle" data-card-toggle="logs" aria-expanded="true" aria-controls="logs-body"><span class="card-toggle-icon">{{template "control-chevron"}}</span>Logs</button></h2>
       <form class="toolbar" action="./" method="get">
         <label for="log-level">Level</label>
         <select id="log-level" name="level" hx-get="fragments/logs" hx-target="#logs" hx-trigger="change">
@@ -56,75 +75,102 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
         <noscript><button type="submit" class="btn">Filter</button></noscript>
       </form>
     </div>
+    <div id="logs-body" class="card-body" data-card-body="logs">
     <div id="logs" class="scroll logs-box" hx-get="fragments/logs" hx-trigger="every {{.Refresh}}" hx-include="#log-level" hx-swap="innerHTML" hx-sync="this:drop">
       {{template "logs" .}}
     </div>
+    </div>
   </section>
-  <details class="card config">
-    <summary><h2>Configuration</h2><span class="muted">effective, secrets redacted</span></summary>
-    <p class="muted">Effective configuration after defaults, file, environment and flags. Secrets are redacted.</p>
-    <pre>{{.Config}}</pre>
-  </details>
+  <section class="card config">
+    <div class="card-head">
+      <div class="card-title-row">
+        <h2 id="config-heading"><button type="button" class="card-toggle" data-card-toggle="config" aria-expanded="true" aria-controls="config-body"><span class="card-toggle-icon">{{template "control-chevron"}}</span>Configuration</button></h2>
+        <p class="summary">Effective configuration after defaults, file, environment and flags. Secrets are redacted.</p>
+      </div>
+    </div>
+    <div id="config-body" class="card-body" data-card-body="config">
+      <pre>{{.Config}}</pre>
+    </div>
+  </section>
 </main>
-<footer class="foot muted">Live data checked every {{.Refresh}} · updates pause while selecting text</footer>
+<footer class="foot muted">
+  <p>Live data checked every {{.Refresh}} · updates pause while selecting text</p>
+  <p class="build">
+  {{- with .Build}}ForgeMirror {{release .Version}}{{with .Commit}} · commit <code title="{{.}}">{{short .}}</code>{{end}}{{if .Modified}}-dirty{{end}}{{with .GoVersion}} · {{.}}{{end}}
+  {{- end}} · <span class="uptime">up <time datetime="{{iso .Snapshot.Started}}" title="since {{clock .Snapshot.Started}} UTC" data-uptime-ms="{{elapsedMs .Snapshot.Started}}">{{uptime .Snapshot.Started}}</time></span></p>
+</footer>
 </body>
 </html>
 {{- end}}
 
 {{define "overview" -}}
-<div class="tile">
-  <span class="tile-label">Uptime</span>
-  <span class="tile-value">{{since .Snapshot.Started}}</span>
-  <span class="tile-note">since <time datetime="{{iso .Snapshot.Started}}">{{clock .Snapshot.Started}} UTC</time></span>
+{{- /* The pipeline reads left to right: what starts work, ForgeMirror, where
+it goes. Lines are CSS borders and purely decorative; each list item carries
+its state as text, so the structure also works for screen readers. */}}
+{{- with .Pipeline}}
+<div class="card-head">
+  <div class="card-title-row">
+    <h2 id="pipeline-heading"><button type="button" class="card-toggle" data-card-toggle="pipeline" aria-expanded="true" aria-controls="pipeline-body"><span class="card-toggle-icon">{{template "control-chevron"}}</span>Pipeline</button></h2>
+    <p class="summary">What starts a sync, and where it is published</p>
+  </div>
 </div>
-<div class="tile">
-  <span class="tile-label">Targets</span>
-  <ul class="kinds">
-    {{- range .Types}}
-    <li class="kind{{if .Names}} kind-on{{end}}" title="{{if .Names}}{{range $i, $n := .Names}}{{if $i}}, {{end}}{{(forgeName $n).Label}}{{end}}{{else}}not configured{{end}}">{{template "forge-icon" .Icon}}{{.Label}}</li>
-    {{- end}}
-  </ul>
-</div>
-<div class="tile">
-  <span class="tile-label">Push webhooks</span>
-  <span class="tile-value">{{if .OnPush}}<span class="ok">on</span>{{else}}<span class="muted">off</span>{{end}}</span>
-  <span class="tile-note">{{if .OnPush}}{{if .Auto}}pushes are mirrored{{else}}pushes refresh the diff{{end}}{{else}}ignored{{end}}</span>
-</div>
-<div class="tile">
-  <span class="tile-label">Schedule</span>
-  {{- with .Snapshot.Schedule}}
-    {{- if .Interval}}
-  <span class="tile-value">every {{.Interval}}</span>
-  <span class="tile-note">
-      {{- if .LastRun.IsZero}}first sweep running
-      {{- else if .Error}}<span class="fail">last sweep failed</span> <span class="err">{{.Error}}</span>
-      {{- else}}last <time datetime="{{iso .LastRun}}">{{when .LastRun}}</time>: {{.Repos}} {{plural .Repos "repository" "repositories"}} · next around <time datetime="{{iso (nextSweep .)}}">{{clock (nextSweep .)}} UTC</time>
-      {{- end}}
-  </span>
-    {{- else}}
-  <span class="tile-value muted">off</span>
-  <span class="tile-note">no scheduled runs</span>
-    {{- end}}
+<div id="pipeline-body" class="card-body pl-flow" data-card-body="pipeline">
+<ul class="pl-triggers{{if .Live}} pl-live{{end}}" role="list" aria-label="Triggers">
+  {{- range .Triggers}}
+  <li class="{{if .Running}}pl-fired{{else if not .Enabled}}pl-off{{end}}" data-trigger="{{.Key}}">
+    <span class="pl-source{{if .Failed}} fail{{end}}">{{if .Failed}}sweep failed{{else}}{{.Source}}{{end}}</span>
+    <span class="pl-pill{{if .Running}} pl-pill-fired{{else if .Failed}} pl-pill-fail{{else if and .Enabled (ne .Key "manual") (ne .Key "retry")}} pl-pill-on{{else if not .Enabled}} pl-pill-off{{end}}">
+      {{- if .Running}}<span aria-hidden="true">{{if eq .Key "push"}}⚡{{else if eq .Key "schedule"}}⏱{{else if eq .Key "retry"}}↻{{else}}▶{{end}}</span> {{else if .Failed}}<span aria-hidden="true">!</span> {{else if and .Enabled (ne .Key "manual") (ne .Key "retry")}}<span aria-hidden="true">✓</span> {{end}}
+      {{- .Label}}{{if and (not .Enabled) (not .Running)}} off{{end}}{{if and .Running (gt .Running 1)}} · {{.Running}}{{end}}
+      <span class="visually-hidden">: {{if .Running}}started {{.Running}} running {{plural .Running "repository" "repositories"}}{{else if .Failed}}last sweep failed{{else if .Enabled}}on{{else}}off{{end}}</span>
+    </span>
+  </li>
   {{- end}}
+</ul>
+<span class="pl-wire{{if .Live}} pl-live{{end}}" aria-hidden="true"><i></i></span>
+{{- with .Engine}}
+<p class="pl-engine{{if .Busy}} pl-busy{{end}}">
+  <span class="pl-engine-name">{{if .Busy}}{{template "spinner" .}} {{end}}ForgeMirror</span>
+  <small>{{.Line}}{{with .By}} · <b>{{.}}</b>{{end}}{{if .Queued}} · {{.Queued}} queued{{end}}
+    {{- if .FirstSweep}} · first sweep running{{end}}
+    {{- if not .NextSweep.IsZero}} · next sweep <time datetime="{{iso .NextSweep}}">{{clock .NextSweep}} UTC</time>{{end}}
+    {{- if and (not .Busy) .Error}} · <span class="fail">last sweep failed:</span> <span class="err">{{.Error}}</span>{{end}}</small>
+</p>
+{{- end}}
+<span class="pl-wire pl-wire-short{{if .Live}} pl-live{{end}}" aria-hidden="true"><i></i></span>
+<ul class="pl-targets{{if .Live}} pl-live{{end}}" role="list" aria-label="Targets">
+  {{- range .Targets}}
+  {{- $forge := forgeName .Name}}
+  <li class="pl-{{.State}}" data-target="{{.Name}}">
+    <span class="pl-chip">{{if eq .State "held"}}<span aria-hidden="true">⏸</span> {{end}}{{template "forge-icon" $forge.Icon}}{{$forge.Label}}
+      {{- if eq .State "busy"}} {{template "spinner" .}}{{else if eq .State "done"}} <span class="ok" aria-hidden="true">✓</span>{{else if eq .State "failed"}} <span class="fail" aria-hidden="true">!</span>{{end}}
+      <span class="visually-hidden">: {{if eq .State "busy"}}pushing{{else if eq .State "done"}}pushed{{else if eq .State "idle"}}ready{{else}}{{.State}}{{end}},</span></span>
+    {{- if .Note}}<span class="pl-note">{{.Note}}</span>{{end}}
+  </li>
+  {{- end}}
+  {{- with .Available}}
+  <li class="pl-available"><span class="pl-chip">+{{len .}} available</span><span class="pl-note">{{range $i, $l := .}}{{if $i}}, {{end}}{{$l}}{{end}}</span></li>
+  {{- end}}
+</ul>
 </div>
-<div class="tile">
-  <span class="tile-label">Running</span>
-  <span class="tile-value">{{if .Running}}{{template "spinner" .}} {{end}}{{.Running}}</span>
-  <span class="tile-note">{{plural .Running "repository" "repositories"}}{{if .Queued}}, {{.Queued}} queued{{end}}</span>
-</div>
+{{- end}}
 {{- end}}
 
 {{define "repos" -}}
 <div class="card-head">
   <div>
-    <h2>Repositories</h2>
+    <div class="card-title-row">
+    <h2 id="repos-heading"><button type="button" class="card-toggle" data-card-toggle="repos" aria-expanded="true" aria-controls="repos-body"><span class="card-toggle-icon">{{template "control-chevron"}}</span>Repositories</button></h2>
     <p class="summary">
       {{- len .Repos}} {{plural (len .Repos) "repository" "repositories"}}
       {{- if .Counts.OutOfSync}} · <span class="warn">{{.Counts.OutOfSync}} out of sync</span>{{end}}
       {{- if .Counts.Failed}} · <span class="fail">{{.Counts.Failed}} failed</span>{{end}}
       {{- if .Counts.HeldTargets}} · <span class="warn">{{.Counts.HeldTargets}} destinations held</span>{{end}}
     </p>
-    {{with .Activity}}<p class="activity" data-global-activity role="status" data-live-key="global-activity">{{template "spinner" .}} {{.}}</p>{{end}}
+    </div>
+    {{- /* Not a live region: it is re-rendered on every poll and would announce
+    transient progress; action outcomes are announced by toasts. */}}
+    {{with .Activity}}<p class="activity" data-global-activity data-live-key="global-activity">{{template "spinner" .}} {{.}}</p>{{end}}
   </div>
   {{- if .Actions}}
   <div class="toolbar" data-live-key="global-actions" hx-sync="#repos:queue all">
@@ -132,12 +178,13 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
       <button type="submit" class="btn"><span class="request-spinner">{{template "spinner" .}}</span>Refresh all</button>
     </form>
     <form class="run-action" data-live-key="sync-all" aria-busy="false" method="post" action="actions/sync" hx-post="actions/sync" hx-target="#repos" hx-swap="innerHTML"
-      hx-confirm="Sync all {{.Counts.Pending}} out-of-sync repositories to the targets?">
+      hx-confirm="{{if eq .Counts.Pending 1}}Sync the out-of-sync repository{{else}}Sync all {{.Counts.Pending}} out-of-sync repositories{{end}} to the targets?" data-confirm-title="Sync all repositories" data-confirm-label="Sync all">
       <button type="submit" class="btn btn-primary"{{if not .Counts.Pending}} disabled{{end}}><span class="request-spinner">{{template "spinner" .}}</span>Sync all{{if .Counts.Pending}} ({{.Counts.Pending}}){{end}}</button>
     </form>
   </div>
   {{- end}}
 </div>
+<div id="repos-body" class="card-body" data-card-body="repos">
 {{- with .Snapshot.Error}}<p class="notice fail" role="alert">{{.}}</p>{{end}}
 {{with .Retries}}<details data-live-key="retry-status"><summary>Retry status · {{len .}}</summary>
 {{range .}}<p><code>{{.Repo}}</code> → {{template "forge-name" .Target}}: {{.State}} · {{.Attempts}} failures{{if or (eq .State "waiting") (eq .State "paused")}} · next eligible <time datetime="{{iso .Next}}">{{when .Next}}</time>{{end}}</p>{{end}}
@@ -149,10 +196,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   {{- range $r := .Repos}}
   <li class="repo state-{{$r.State}}" data-repo="{{$r.Name}}" data-live-key="repo:{{$r.Name}}">
     <div class="repo-head" data-live-key="repository-heading">
-      <span class="dot" aria-hidden="true"></span>
-      <code class="repo-name">{{$r.Name}}</code>
+      {{- /* The dot's shape, not only its colour, encodes the state (WCAG 1.4.1). */}}
+      <span class="dot" aria-hidden="true" title="{{template "state-label" $r.State}}"></span>
+      <code class="repo-name">{{$r.Name}}</code><span class="visually-hidden">, {{template "state-label" $r.State}}</span>
       <span class="forge-badges" data-live-key="forge-badges">{{range $r.Targets}}{{template "forge-badge" .Badge}}{{end}}</span>
-      {{with $r.Activity}}<span class="pill pill-info activity" data-repository-activity data-activity="{{.Kind}}" data-live-key="repository-activity" role="status">{{template "spinner" .}} {{.Label}}</span>{{end}}
+      {{with $r.Activity}}<span class="pill pill-info activity" data-repository-activity data-activity="{{.Kind}}" data-live-key="repository-activity">{{template "spinner" .}} {{.Label}}</span>{{end}}
       {{if $r.Queued}}<span class="pill pill-muted">queued</span>{{end}}
       {{- with $r.Current}}
       <span class="checked muted">checked <time datetime="{{iso .At}}">{{when .At}}</time></span>
@@ -195,6 +243,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   {{- end}}
 </ul>
 {{- end}}
+</div>
+{{- end}}
+
+{{define "state-label" -}}
+{{if eq . "failed"}}failed{{else if eq . "out-of-sync"}}out of sync{{else if eq . "unchecked"}}not checked yet{{else if eq . "synced"}}synced{{else if eq . "in-sync"}}in sync{{else}}{{.}}{{end}}
 {{- end}}
 
 {{define "spinner" -}}<span class="spinner" aria-hidden="true"></span>{{- end}}
@@ -229,7 +282,7 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
     {{with .URL}}<p><a href="{{.}}" rel="noreferrer">Destination repository</a></p>{{end}}
     {{if and $target.Actionable .PublicationID}}
     <form method="post" action="actions/approve" hx-post="actions/approve" hx-target="#repos" hx-swap="innerHTML"
-      hx-confirm="Approve ongoing publication to this destination and sync current source state? This does not approve an exact snapshot.">
+      hx-confirm="Approve ongoing publication to this destination and sync current source state? This does not approve an exact snapshot." data-confirm-title="Approve destination" data-confirm-label="Approve and sync">
       <input type="hidden" name="repo" value="{{$target.Repo}}">
       <input type="hidden" name="target" value="{{$target.Name}}">
       <input type="hidden" name="identity" value="{{.PublicationID}}">
@@ -260,7 +313,8 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <p class="empty muted">No log records at this level yet.</p>
 {{- else}}
 <table class="logs">
-  <thead><tr><th>Time</th><th>Level</th><th>Message</th></tr></thead>
+  <caption class="visually-hidden">Log records, newest first</caption>
+  <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Message</th></tr></thead>
   <tbody>
   {{- range .Logs}}
     <tr>

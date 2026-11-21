@@ -5,9 +5,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+{{- /* Follow the OS text-size setting (Dynamic Type etc.); sizes are in rem, so
+the layout scales with it. Browsers without support ignore it. */}}
+<meta name="text-scale" content="scale">
 <title>Sync history · {{.HistoryRepo}} · ForgeMirror</title>
-<link rel="stylesheet" href="static/style.css">
-<script src="static/app.js"></script>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<script src="{{asset "app.js"}}"></script>
 </head>
 <body>
 <header class="topbar"><h1>Sync history</h1><a class="btn" href="./">Back to repositories</a></header>

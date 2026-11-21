@@ -67,6 +67,8 @@ type repoState struct {
 	sequence uint64
 	history  []Attempt
 	running  int
+	// trigger is what started the newest run; kept only while running.
+	trigger string
 	// applying is set while the running run applies its plan.
 	applying     bool
 	attempt      *Attempt
@@ -101,7 +103,10 @@ type Repo struct {
 	Running  bool      `json:"-"`
 	// Applying is set while the running run applies its plan; a running run
 	// without it only plans.
-	Applying     bool      `json:"-"`
+	Applying bool `json:"-"`
+	// Trigger is what started the running run (see dispatch.Observer); it is
+	// empty while nothing runs.
+	Trigger      string    `json:"-"`
 	LastStarted  time.Time `json:"last_started"`
 	LastFinished time.Time `json:"last_finished"`
 	// Targets is sorted by target name.
@@ -195,12 +200,13 @@ func (r *repoState) target(name string) *Target {
 }
 
 // RunStarted implements dispatch.Observer.
-func (s *Store) RunStarted(ctx context.Context, repo string, apply bool) {
+func (s *Store) RunStarted(ctx context.Context, repo, trigger string, apply bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	r := s.repo(repo)
 	r.running++
+	r.trigger = trigger
 	r.applying = apply
 	r.lastStarted = s.now()
 	r.deleting, r.deleteFailed = false, false
@@ -329,6 +335,13 @@ func (s *Store) ScheduledRunFinished(_ context.Context, repos int, err error) {
 	s.schedule.Runs++
 }
 
+func (r *repoState) runningTrigger() string {
+	if r.running == 0 {
+		return ""
+	}
+	return r.trigger
+}
+
 // Snapshot returns a copy of the current state; repositories are sorted by
 // name.
 func (s *Store) Snapshot() Snapshot {
@@ -347,6 +360,7 @@ func (s *Store) Snapshot() Snapshot {
 			Name:         name,
 			Running:      r.running > 0,
 			Applying:     r.applying,
+			Trigger:      r.runningTrigger(),
 			Plan:         r.plan,
 			LastAttempt:  cloneAttempt(r.attempt),
 			Current:      r.current,

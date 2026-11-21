@@ -25,12 +25,12 @@ func TestAttemptOutcomesAreIndependent(t *testing.T) {
 			t.Parallel()
 			s := newStore()
 			s.TargetFinished(t.Context(), "acme/app", "gh", time.Second, tc.firstError)
-			s.RunStarted(t.Context(), "acme/app", true)
+			s.RunStarted(t.Context(), "acme/app", "", true)
 			s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", Apply: true})
 			s.TargetFinished(t.Context(), "acme/app", "gh", time.Second, tc.errorGH)
 			s.TargetFinished(t.Context(), "acme/app", "cb", time.Second, tc.errorCB)
 			s.RunFinished(t.Context(), "acme/app")
-			s.RunStarted(t.Context(), "acme/app", false)
+			s.RunStarted(t.Context(), "acme/app", "", false)
 			s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app"})
 			s.RunFinished(t.Context(), "acme/app")
 			if got := s.Snapshot().Repos[0].LastAttempt.Status; got != tc.want {
@@ -57,11 +57,11 @@ func TestRefreshWriteFailurePreservesAttempt(t *testing.T) {
 	t.Parallel()
 	persistence := &switchPersistence{}
 	s := status.New(status.Options{Persistence: persistence})
-	s.RunStarted(t.Context(), "acme/app", true)
+	s.RunStarted(t.Context(), "acme/app", "", true)
 	s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", Apply: true})
 	s.RunFinished(t.Context(), "acme/app")
 	persistence.fail = true
-	s.RunStarted(t.Context(), "acme/app", false)
+	s.RunStarted(t.Context(), "acme/app", "", false)
 	s.PlanFinished(t.Context(), plan.Repo{Name: "acme/app"})
 	s.RunFinished(t.Context(), "acme/app")
 	r := s.Snapshot().Repos[0]

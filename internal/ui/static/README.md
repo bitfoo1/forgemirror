@@ -14,6 +14,12 @@
 palette entry it comes from; only the colours are used, no files are copied.
 To update, compare those entries in the new release.
 
+Deviations for WCAG 2.2 AA: text colours that miss 4.5:1 on any background
+(`bg_dark`, `bg`, `bg_highlight`) are darkened (Day) or lightened (Night
+`dark5`) at constant hue until they pass; `style.css` keeps the upstream value
+next to each one. `--border-strong` is an extra token derived from
+`fg_gutter` that gives controls the 3:1 non-text contrast `fg_gutter` lacks.
+
 The tarball was checked against the npm registry's `dist.integrity`
 (sha512). To update: download `https://registry.npmjs.org/htmx.org/-/htmx.org-<version>.tgz`,
 verify it the same way, copy both files, and update this table and the

@@ -45,7 +45,7 @@ func TestForgeBadgeStatus(t *testing.T) {
 		},
 		{name: "refresh in progress", target: &plan.Target{Name: "github"}, alter: func(t *testing.T, s *status.Store) {
 			t.Helper()
-			s.RunStarted(t.Context(), "acme/app", false)
+			s.RunStarted(t.Context(), "acme/app", "", false)
 		}, class: "muted", status: "refreshing"},
 		{name: "no comparison", class: "muted", status: "not checked"},
 		{
@@ -57,7 +57,7 @@ func TestForgeBadgeStatus(t *testing.T) {
 		{
 			name:   "stale match",
 			target: &plan.Target{Name: "github"},
-			alter:  func(t *testing.T, s *status.Store) { t.Helper(); s.RunStarted(t.Context(), "acme/app", true) },
+			alter:  func(t *testing.T, s *status.Store) { t.Helper(); s.RunStarted(t.Context(), "acme/app", "", true) },
 			class:  "muted",
 			status: "awaiting verification",
 		},
@@ -83,17 +83,31 @@ func TestForgeBadgeStatus(t *testing.T) {
 				tc.alter(t, f.store)
 			}
 			body := f.do(t, http.MethodGet, "/fragments/repos").Body.String()
-			heading := regexp.MustCompile(`(?s)<div class="repo-head".*?</div>`).FindString(body)
-			badge := regexp.MustCompile(`(?s)<span[^>]*data-forge="github"[^>]*>.*?</span>`).FindString(heading)
-			for _, want := range []string{`pill-` + tc.class, `title="GitHub: ` + tc.status, `aria-label="GitHub: ` + tc.status} {
-				if !strings.Contains(badge, want) {
-					t.Errorf("badge missing %q: %s", want, heading)
-				}
-			}
+			checkGitHubBadge(t, body, tc.class, tc.status)
 			if strings.Contains(body, `hold-summary:`) {
 				t.Error("separate hold banner still rendered")
 			}
 		})
+	}
+}
+
+func checkGitHubBadge(t *testing.T, body, class, state string) {
+	t.Helper()
+	heading := regexp.MustCompile(`(?s)<div class="repo-head".*?</div>`).FindString(body)
+	badge := regexp.MustCompile(`(?s)<span[^>]*data-forge="github"[^>]*>.*?</span></span>`).FindString(heading)
+	for _, want := range []string{
+		`pill-` + class, `title="GitHub: ` + state, `<span class="visually-hidden">: ` + state,
+	} {
+		if !strings.Contains(badge, want) {
+			t.Errorf("badge missing %q: %s", want, heading)
+		}
+	}
+	// Status is text for assistive technology; a focusable, role-less span
+	// would add a tab stop that does nothing.
+	for _, unwanted := range []string{`tabindex=`, `aria-label=`} {
+		if strings.Contains(badge, unwanted) {
+			t.Errorf("badge contains %q: %s", unwanted, badge)
+		}
 	}
 }
 

@@ -2,33 +2,40 @@
 
 {{define "controls" -}}
 {{if .Actions}}
-<details class="publication-controls" data-control-root data-key="publication-controls" data-live-key="publication-controls" open>
-  <summary><strong>Publication controls</strong> <span class="hold-count" data-current-hold-count="{{len .Pauses}}">{{len .Pauses}} {{plural (len .Pauses) "current hold" "current holds"}}</span>{{if .AllPublicationPaused}} <span class="pill pill-warn">All publication paused</span>{{end}}</summary>
+<div class="publication-controls" data-control-root data-live-key="publication-controls">
+  <div class="card-head controls-head">
+    <div class="card-title-row">
+      <h2 id="controls-heading"><button type="button" class="card-toggle" data-card-toggle="controls" aria-expanded="true" aria-controls="controls-body"><span class="card-toggle-icon">{{template "control-chevron"}}</span>Publication controls</button></h2>
+      <p class="summary"><span class="hold-count{{if .Pauses}} warn{{end}}" data-current-hold-count="{{len .Pauses}}">{{len .Pauses}} {{plural (len .Pauses) "current hold" "current holds"}}</span>{{if .AllPublicationPaused}} · <span class="warn">all publication paused</span>{{end}}</p>
+    </div>
+  </div>
+  <div id="controls-body" class="card-body" data-card-body="controls">
   <div data-control-options hidden>
     <select data-target-options>{{range .TargetNames}}{{$identity := forgeName .}}<option value="{{.}}" data-icon="{{$identity.Icon}}">{{$identity.Label}}</option>{{end}}</select>
     <select data-repository-options>{{range .HoldRepositories}}<option value="{{.}}">{{.}}</option>{{end}}</select>
   </div>
-  <nav class="hold-tabs" role="tablist" aria-label="Publication controls" data-control-tabs hidden>
-    <button type="button" role="tab" id="hold-new-tab" aria-controls="hold-new-panel" aria-selected="true" data-hold-tab="new">New hold</button>
-    <button type="button" role="tab" id="hold-current-tab" aria-controls="hold-current-panel" aria-selected="false" data-hold-tab="current">Current holds ({{len .Pauses}})</button>
-  </nav>
+  {{- /* A tablist is a widget, not navigation, so it is not a <nav>. */}}
+  <div class="hold-tabs" role="tablist" aria-label="Publication controls" data-control-tabs hidden>
+    <button type="button" role="tab" id="hold-new-tab" aria-controls="hold-new-panel" aria-selected="true" tabindex="0" data-hold-tab="new">New hold</button>
+    <button type="button" role="tab" id="hold-current-tab" aria-controls="hold-current-panel" aria-selected="false" tabindex="-1" data-hold-tab="current">Current holds ({{len .Pauses}})</button>
+  </div>
   <div id="hold-new-panel" role="tabpanel" aria-labelledby="hold-new-tab" data-live-key="hold-new-panel">
     <form class="hold-create-form" data-control-draft method="post" action="actions/hold" hx-post="actions/hold" hx-target="#controls" hx-swap="innerHTML" hx-sync="#controls:queue all" hx-disabled-elt="find button[type='submit']">
-      <nav class="hold-steps" aria-label="New hold steps" data-hold-steps hidden>
+      <div class="hold-steps" role="group" aria-label="New hold steps" data-hold-steps hidden>
         <button type="button" data-hold-step="0">1 · Targets</button><button type="button" data-hold-step="1">2 · Repositories</button><button type="button" data-hold-step="2">3 · Duration</button><button type="button" data-hold-step="3">4 · Review</button>
-      </nav>
+      </div>
       <div class="hold-workspace"><div class="hold-editor">
       <h3 data-hold-step-title>New publication hold</h3>
       <p class="muted hold-help">Pause writes without stopping comparisons. Existing holds remain independent.</p>
       <fieldset data-hold-stage="0"><legend>Targets</legend>
         <div data-native-picker><label><input type="checkbox" name="all_targets" value="true" id="hold-all-targets" checked> All targets, including subsequently configured targets</label>
         <label for="hold-native-targets">Or uncheck All targets and select destinations</label><select name="targets" id="hold-native-targets" multiple>{{range .TargetNames}}<option value="{{.}}">{{(forgeName .).Label}}</option>{{end}}</select></div>
-        <div class="hold-picker" data-picker="targets" hidden><div class="hold-picker-field"><div class="hold-token-input"><div class="hold-tokens" role="list" aria-label="Selected targets"></div><input type="text" id="hold-target-search" role="combobox" aria-expanded="false" aria-controls="hold-target-menu" aria-autocomplete="list" autocomplete="off" placeholder="Add targets…" aria-label="Targets to pause"></div><button type="button" class="hold-picker-toggle" aria-label="Choose targets" aria-controls="hold-target-menu" aria-expanded="false">{{template "control-chevron"}}</button></div><div class="hold-picker-menu" hidden><div class="hold-picker-heading">Choose targets</div><div id="hold-target-menu" role="listbox" aria-label="Available targets"></div><div class="hold-picker-footer"><span>Selected targets move into the field.</span><button class="btn btn-small" type="button" data-picker-done>Done</button></div></div></div>
+        <div class="hold-picker" data-picker="targets" hidden><div class="hold-picker-field"><div class="hold-token-input"><div class="hold-tokens" role="list" aria-label="Selected targets"></div><input type="text" id="hold-target-search" role="combobox" aria-expanded="false" aria-controls="hold-target-menu" aria-autocomplete="list" autocomplete="off" placeholder="Add targets…" aria-label="Targets to pause"></div><button type="button" class="hold-picker-toggle" aria-label="Choose targets" aria-controls="hold-target-menu" aria-expanded="false">{{template "control-chevron"}}</button></div><div class="hold-picker-menu" hidden><div class="hold-picker-heading">Choose targets</div><div id="hold-target-menu" role="listbox" aria-label="Available targets" aria-multiselectable="true"></div><div class="hold-picker-footer"><span>Selected targets move into the field.</span><button class="btn btn-small" type="button" data-picker-done>Done</button></div></div></div>
         <p class="hold-help">All targets is explicit; removing every badge never means all.</p>
       </fieldset>
       <fieldset data-hold-stage="1"><legend>Repositories</legend>
         <div data-native-picker><label><input type="checkbox" name="all_repositories" value="true" id="hold-all-repositories" checked> All repositories, including future admissions</label><label for="hold-native-repositories">Or uncheck All repositories and enter names or * / ? globs, separated by commas</label><textarea name="repositories" id="hold-native-repositories" rows="3" placeholder="acme/app, acme/*"></textarea></div>
-        <div class="hold-picker" data-picker="repositories" hidden><div class="hold-picker-field"><div class="hold-token-input"><div class="hold-tokens" role="list" aria-label="Selected repository scopes"></div><input type="text" id="hold-repository-search" role="combobox" aria-expanded="false" aria-controls="hold-repository-menu" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Add repositories or a glob…" aria-label="Repositories to pause"></div><button type="button" class="hold-picker-toggle" aria-label="Choose repositories" aria-controls="hold-repository-menu" aria-expanded="false">{{template "control-chevron"}}</button></div><div class="hold-picker-menu" hidden><div class="hold-picker-heading">Choose repositories or enter a glob</div><div id="hold-repository-menu" role="listbox" aria-label="Available repositories"></div><div class="hold-picker-footer"><span>Enter or comma adds a glob. Removing a badge restores suggestions.</span><button class="btn btn-small" type="button" data-picker-done>Done</button></div></div></div>
+        <div class="hold-picker" data-picker="repositories" hidden><div class="hold-picker-field"><div class="hold-token-input"><div class="hold-tokens" role="list" aria-label="Selected repository scopes"></div><input type="text" id="hold-repository-search" role="combobox" aria-expanded="false" aria-controls="hold-repository-menu" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Add repositories or a glob…" aria-label="Repositories to pause"></div><button type="button" class="hold-picker-toggle" aria-label="Choose repositories" aria-controls="hold-repository-menu" aria-expanded="false">{{template "control-chevron"}}</button></div><div class="hold-picker-menu" hidden><div class="hold-picker-heading">Choose repositories or enter a glob</div><div id="hold-repository-menu" role="listbox" aria-label="Available repositories" aria-multiselectable="true"></div><div class="hold-picker-footer"><span>Enter or comma adds a glob. Removing a badge restores suggestions.</span><button class="btn btn-small" type="button" data-picker-done>Done</button></div></div></div>
         <p class="hold-help">Globs match owner/name components and keep protecting future admitted matches. Character classes and exclusions are not supported.</p>
       </fieldset>
       <fieldset data-hold-stage="2"><legend>Duration and reason</legend>
@@ -39,7 +46,7 @@
         <p class="hold-help">A timed hold expiring allows a subsequent enabled run to publish; it does not queue a sync.</p>
       </fieldset>
       <fieldset data-hold-stage="3"><legend>Review</legend><dl class="hold-review"><dt>Targets</dt><dd data-review-targets>All targets</dd><dt>Repositories</dt><dd data-review-repositories>All repositories</dd><dt>Duration</dt><dd data-review-duration>Until resumed</dd></dl><p class="hold-help">Creation waits for active operations to finish. It does not roll back completed writes or replace existing holds.</p><button class="btn hold-pause-button" type="submit" data-hold-submit>Pause selected scope</button></fieldset>
-      <p class="hold-validation" data-hold-validation role="status" aria-live="polite"></p>
+      <p class="hold-validation" data-hold-validation role="status"></p>
       <div class="hold-wizard-actions" data-wizard-actions hidden><button class="btn btn-small" type="button" data-hold-back>Back</button><span data-hold-progress></span><button class="btn btn-small btn-primary" type="button" data-hold-next>Continue</button></div>
       </div><aside class="hold-scope-preview" aria-label="Hold scope preview"><h3>Scope preview</h3><div data-preview-targets></div><p data-preview-count>Select targets and repositories.</p><ul data-preview-repositories></ul><p class="hold-help">The server validates against currently admitted repositories. All-repository scopes also protect future admissions.</p></aside></div>
     </form>
@@ -47,9 +54,10 @@
   <div id="hold-current-panel" role="tabpanel" aria-labelledby="hold-current-tab" data-live-key="hold-current-panel">
     <h3>Current publication holds</h3><p class="hold-help">Resume removes only the chosen hold and syncs fresh state, including in review mode. Other holds and approval requirements remain in effect.</p>
     {{range .Pauses}}
-    <article class="current-hold" data-hold-id="{{.ID}}" data-live-key="hold:{{.ID}}"><div><div class="current-hold-scope">{{if .Scope.AllTargets}}<strong>All targets</strong>{{else}}{{range .Scope.Targets}}<span>{{template "forge-name" .}}</span>{{end}}{{end}}<span class="muted">·</span>{{if .Scope.AllRepositories}}<span>All repositories</span>{{else}}{{range .Scope.Repositories}}<code>{{.}}</code>{{end}}{{end}}</div><p>{{with .Reason}}{{.}}{{else}}No reason provided{{end}} <span class="muted">· {{if .Until.IsZero}}Until resumed{{else}}Expires <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}</span></p></div><form method="post" action="actions/resume-hold" hx-post="actions/resume-hold" hx-target="#controls" hx-swap="innerHTML" hx-sync="#controls:queue all" hx-confirm="Remove only this hold and sync fresh state? Other holds and approvals still apply." hx-disabled-elt="find button[type='submit']"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn btn-small">Resume &amp; sync</button></form></article>
+    <article class="current-hold" data-hold-id="{{.ID}}" data-live-key="hold:{{.ID}}"><div><div class="current-hold-scope">{{if .Scope.AllTargets}}<strong>All targets</strong>{{else}}{{range .Scope.Targets}}<span>{{template "forge-name" .}}</span>{{end}}{{end}}<span class="muted">·</span>{{if .Scope.AllRepositories}}<span>All repositories</span>{{else}}{{range .Scope.Repositories}}<code>{{.}}</code>{{end}}{{end}}</div><p>{{with .Reason}}{{.}}{{else}}No reason provided{{end}} <span class="muted">· {{if .Until.IsZero}}Until resumed{{else}}Expires <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}</span></p></div><form method="post" action="actions/resume-hold" hx-post="actions/resume-hold" hx-target="#controls" hx-swap="innerHTML" hx-sync="#controls:queue all" hx-confirm="Remove only this hold and sync fresh state? Other holds and approvals still apply." data-confirm-title="Resume hold" data-confirm-label="Resume &amp; sync" hx-disabled-elt="find button[type='submit']"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" class="btn btn-small">Resume &amp; sync</button></form></article>
     {{else}}<p class="muted" data-no-holds>No current holds. Use New hold to pause publication.</p>{{end}}
   </div>
-</details>
+  </div>
+</div>
 {{end}}
 {{- end}}

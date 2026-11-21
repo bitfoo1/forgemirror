@@ -12,7 +12,7 @@ func TestHistoryPage(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	for range 21 {
-		f.store.RunStarted(t.Context(), "acme/app", true)
+		f.store.RunStarted(t.Context(), "acme/app", "", true)
 		f.store.PlanFinished(t.Context(), plan.Repo{Name: "acme/app", Apply: true, Trigger: "manual sync"})
 		f.store.RunFinished(t.Context(), "acme/app")
 	}
