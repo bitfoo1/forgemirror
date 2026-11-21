@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="Browser checks of the documentation site: axe accessibility on every page, screenshot loading"
+set -euo pipefail
+
+# Same mise-owned Playwright and axe packages as test:ui.
+playwright_modules="$(mise where npm:@playwright/test)/node_modules"
+export NODE_PATH="${playwright_modules}:$(mise where npm:@axe-core/playwright)/node_modules${NODE_PATH:+:$NODE_PATH}"
+if [[ "${CI:-}" == "true" && "$(uname -s)" == "Linux" ]]; then
+  playwright install --with-deps chromium
+else
+  playwright install chromium
+fi
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+# check runs docs:check in parallel; a private resource dir keeps the two Hugo
+# processes from writing the same generated images.
+export HUGO_RESOURCEDIR="${tmp}/resources"
+export FORGEMIRROR_DOCS_TEST_PORT
+FORGEMIRROR_DOCS_TEST_PORT="$(node -e 'const s=require("node:net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+# Not the `playwright` bin: its shim overwrites NODE_PATH (see test:ui).
+node "${playwright_modules}/@playwright/test/cli.js" test --config tests/docs/playwright.config.cjs "$@"
