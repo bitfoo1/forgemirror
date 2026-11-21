@@ -10,9 +10,11 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
 <title>ForgeMirror</title>
 <link rel="stylesheet" href="static/style.css">
+<link rel="stylesheet" href="static/controls.css">
 {{- /* Not deferred: it applies the stored theme before the first paint. */}}
 <script src="static/app.js"></script>
 <script src="static/live.js" defer></script>
+<script src="static/controls.js" defer></script>
 <script src="static/toast.js" defer></script>
 <script src="static/htmx.min.js" defer></script>
 </head>
@@ -37,7 +39,8 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   <section id="overview" class="tiles" hx-get="fragments/overview" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">
     {{template "overview" .}}
   </section>
-  <section id="repos" class="card" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">
+  {{if .Actions}}<section id="controls" class="card controls-card" hx-get="fragments/controls" hx-trigger="every {{.Refresh}}" hx-swap="innerHTML" hx-sync="this:drop">{{template "controls" .}}</section>{{end}}
+  <section id="repos" class="card" hx-get="fragments/repos" hx-trigger="every {{.Refresh}}, hold-changed" hx-swap="innerHTML" hx-sync="this:drop">
     {{template "repos" .}}
   </section>
   <section class="card">
@@ -136,20 +139,6 @@ Content-Security-Policy forbids; eval and script tags are never needed. */}}
   {{- end}}
 </div>
 {{- with .Snapshot.Error}}<p class="notice fail" role="alert">{{.}}</p>{{end}}
-{{if .Actions}}
-<details data-live-key="target-controls"><summary>Pause or resume a target</summary>
-  <p class="muted">A pause waits for active operations to finish. Empty repository means the whole target. Resume plans fresh state.</p>
-  <form method="post" action="actions/pause" hx-post="actions/pause" hx-target="#repos" hx-swap="innerHTML" hx-sync="#repos:queue all">
-    <label>Target <select name="target">{{range .TargetNames}}<option value="{{.}}">{{(forgeName .).Label}}</option>{{end}}</select></label>
-    <label>Repository <input name="repo" placeholder="owner/name (optional)"></label>
-    <label>Reason <input name="reason" maxlength="256"></label>
-    <label>Duration <input name="duration" placeholder="30m, 2h, or empty"></label>
-    <label>Action <select name="mode"><option value="pause">Pause</option><option value="resume">Resume</option></select></label>
-    <button class="btn" type="submit">Apply</button>
-  </form>
-  {{range .Pauses}}<p class="warn">{{template "forge-name" .Target}} · {{if .Repo}}{{.Repo}}{{else}}all repositories{{end}} · paused{{with .Reason}}: {{.}}{{end}}{{if not .Until.IsZero}} until <time datetime="{{iso .Until}}">{{when .Until}}</time>{{end}}</p>{{end}}
-</details>
-{{end}}
 {{with .Retries}}<details data-live-key="retry-status"><summary>Retry status · {{len .}}</summary>
 {{range .}}<p><code>{{.Repo}}</code> → {{template "forge-name" .Target}}: {{.State}} · {{.Attempts}} failures{{if or (eq .State "waiting") (eq .State "paused")}} · next eligible <time datetime="{{iso .Next}}">{{when .Next}}</time>{{end}}</p>{{end}}
 </details>{{end}}

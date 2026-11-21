@@ -16,6 +16,7 @@ import (
 
 	"go.bitfoo.de/forgemirror/internal/control"
 	"go.bitfoo.de/forgemirror/internal/forge"
+	"go.bitfoo.de/forgemirror/internal/hold"
 	"go.bitfoo.de/forgemirror/internal/plan"
 	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/ui"
@@ -74,6 +75,16 @@ func (a *fakeActions) Pause(_ context.Context, _, target, _ string, _ time.Time)
 
 func (a *fakeActions) Resume(_ context.Context, _, target string) error {
 	a.record("resume " + target)
+	return nil
+}
+
+func (a *fakeActions) PauseScope(_ context.Context, _ hold.Scope, _ string, _ time.Time) error {
+	a.record("hold")
+	return nil
+}
+
+func (a *fakeActions) ResumeHold(_ context.Context, id string) error {
+	a.record("resume-hold " + id)
 	return nil
 }
 
@@ -298,7 +309,7 @@ func TestActionsRejectCrossOrigin(t *testing.T) {
 
 			actions := &fakeActions{}
 			f := newFixtureWith(t, nil, actions)
-			for _, path := range []string{"/actions/sync", "/actions/repair-lfs", "/actions/pause", "/actions/approve"} {
+			for _, path := range []string{"/actions/sync", "/actions/repair-lfs", "/actions/pause", "/actions/approve", "/actions/hold", "/actions/resume-hold"} {
 				rec := f.post(t, path, url.Values{"repo": {"acme/app"}}, headers)
 				if rec.Code != http.StatusForbidden {
 					t.Errorf("%s status = %d, want 403", path, rec.Code)

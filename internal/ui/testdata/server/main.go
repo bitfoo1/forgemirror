@@ -6,14 +6,20 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"go.bitfoo.de/forgemirror/internal/config"
+	"go.bitfoo.de/forgemirror/internal/control"
+	"go.bitfoo.de/forgemirror/internal/hold"
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/plan"
+	"go.bitfoo.de/forgemirror/internal/repo"
 	"go.bitfoo.de/forgemirror/internal/status"
 	"go.bitfoo.de/forgemirror/internal/ui"
+	"go.bitfoo.de/forgemirror/internal/webhook"
 )
 
 type heldJob struct {
@@ -52,8 +58,9 @@ func (j *jobControl) complete(name string) {
 }
 
 type actions struct {
-	store *status.Store
-	jobs  *jobControl
+	store   *status.Store
+	jobs    *jobControl
+	targets []config.Target
 }
 
 func (a actions) Refresh(_ context.Context, name string) error { a.start(name, false); return nil }
@@ -64,10 +71,46 @@ func (a actions) RefreshAll(ctx context.Context) (int, error) {
 	}
 	return len(repos), nil
 }
-func (a actions) Approve(context.Context, string, string, string) error          { return nil }
-func (a actions) Pause(context.Context, string, string, string, time.Time) error { return nil }
-func (a actions) Resume(context.Context, string, string) error                   { return nil }
-func (a actions) RepairLFS(ctx context.Context, name string) error               { return a.Sync(ctx, name) }
+func (a actions) Approve(context.Context, string, string, string) error { return nil }
+func (a actions) Pause(ctx context.Context, name, target, reason string, until time.Time) error {
+	return a.store.Pause(ctx, status.Pause{Repo: name, Target: target, Reason: reason, Until: until})
+}
+func (a actions) Resume(ctx context.Context, name, target string) error {
+	return a.controller().Resume(ctx, name, target)
+}
+func (a actions) PauseScope(ctx context.Context, scope hold.Scope, reason string, until time.Time) error {
+	return a.controller().PauseScope(ctx, scope, reason, until)
+}
+func (a actions) ResumeHold(ctx context.Context, id string) error {
+	return a.controller().ResumeHold(ctx, id)
+}
+func (a actions) controller() *control.Controller {
+	return control.New(control.Options{Store: a.store, Targets: a.targets, Dispatcher: a, Logger: slog.New(slog.DiscardHandler)})
+}
+func (a actions) KnownNames() []string {
+	var names []string
+	for _, r := range a.store.Snapshot().Repos {
+		names = append(names, r.Name)
+	}
+	return names
+}
+func (a actions) Known(name string) (repo.Repository, bool) {
+	for _, known := range a.KnownNames() {
+		if known == name {
+			owner, short, _ := strings.Cut(name, "/")
+			return repo.Repository{FullName: name, Owner: owner, Name: short, CloneURL: "https://git.example/" + name + ".git"}, true
+		}
+	}
+	return repo.Repository{}, false
+}
+func (a actions) Dispatch(_ context.Context, e webhook.Event) {
+	selected := e.Targets
+	if selected == nil && e.Target != "" {
+		selected = []string{e.Target}
+	}
+	a.startScoped(e.Repository.FullName, true, selected)
+}
+func (a actions) RepairLFS(ctx context.Context, name string) error { return a.Sync(ctx, name) }
 func (a actions) SyncAll(ctx context.Context) int {
 	names := ui.Pending(a.store.Snapshot())
 	for _, name := range names {
@@ -77,7 +120,8 @@ func (a actions) SyncAll(ctx context.Context) int {
 }
 func (a actions) Sync(_ context.Context, name string) error { a.start(name, true); return nil }
 
-func (a actions) start(name string, apply bool) {
+func (a actions) start(name string, apply bool) { a.startScoped(name, apply, nil) }
+func (a actions) startScoped(name string, apply bool, selected []string) {
 	a.jobs.mu.Lock()
 	if _, busy := a.jobs.active[name]; busy {
 		a.jobs.mu.Unlock()
@@ -106,8 +150,13 @@ func (a actions) start(name string, apply bool) {
 		}
 		current := initialFor(name, false)
 		if apply {
-			a.store.TargetFinished(ctx, name, "github", time.Millisecond, nil)
-			current.Targets = []plan.Target{{Name: "github"}, {Name: "codeberg"}, {Name: "gitlab"}}
+			for i, target := range current.Targets {
+				chosen := selected == nil || slices.Contains(selected, target.Name)
+				if _, paused := a.store.Paused(name, target.Name); chosen && !paused {
+					a.store.TargetFinished(ctx, name, target.Name, time.Millisecond, nil)
+					current.Targets[i] = plan.Target{Name: target.Name}
+				}
+			}
 		}
 		a.store.PlanFinished(ctx, current)
 		a.store.RunFinished(ctx, name)
@@ -144,8 +193,13 @@ func main() {
 		initial.Targets[2].Refs = []plan.RefChange{{Ref: "refs/tags/obsolete-release", Old: "4444444"}}
 	}
 	store.PlanFinished(context.Background(), initial)
+	if os.Getenv("FORGEMIRROR_UI_PREVIEW") == "true" {
+		if err = store.Pause(context.Background(), status.Pause{Target: "codeberg", Reason: "Maintenance"}); err != nil {
+			panic(err)
+		}
+	}
 	jobs := &jobControl{active: map[string]*heldJob{}}
-	h, err := ui.Handler(ui.Options{Config: cfg, Store: store, Logs: logging.NewRing(10), Logger: slog.New(slog.DiscardHandler), Actions: actions{store: store, jobs: jobs}, Queued: jobs.snapshot})
+	h, err := ui.Handler(ui.Options{Config: cfg, Store: store, Logs: logging.NewRing(10), Logger: slog.New(slog.DiscardHandler), Actions: actions{store: store, jobs: jobs, targets: cfg.Targets}, Queued: jobs.snapshot})
 	if err != nil {
 		panic(err)
 	}
@@ -163,6 +217,15 @@ func main() {
 	})
 	mux.HandleFunc("POST /test/seed", func(w http.ResponseWriter, r *http.Request) {
 		store.PlanFinished(r.Context(), initialFor(r.URL.Query().Get("repo"), false))
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /test/reset-controls", func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range store.Pauses() {
+			if _, resumeErr := store.ResumeHold(r.Context(), p.ID); resumeErr != nil {
+				http.Error(w, resumeErr.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.Handle("/", h)

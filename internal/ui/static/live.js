@@ -38,6 +38,8 @@
       if (node.nodeValue !== next.nodeValue) { node.nodeValue = next.nodeValue; }
       return;
     }
+    // The hold wizard owns its draft subtree; current hold rows remain live.
+    if (node.hasAttribute('data-live-preserve')) { return; }
     // A deferred poll can reconcile a form while its action request is pending.
     var requesting = node.classList.contains('htmx-request');
     Array.from(node.attributes).forEach(function (attr) {
@@ -62,6 +64,7 @@
       }
     }
     var active = document.activeElement;
+    if (target.id === 'controls' && active && active.closest('[data-live-preserve]')) { return false; }
     return active && target.contains(active) && active.matches("input:not([type=hidden]), textarea, select, [contenteditable=true]");
   }
   function apply(target, item) {
@@ -98,7 +101,7 @@
   });
   document.addEventListener("htmx:beforeSwap", function (ev) {
     var target = ev.detail.target;
-    if (!target || !/^(repos|overview|logs)$/.test(target.id) || !ev.detail.shouldSwap) { return; }
+    if (!target || !/^(repos|overview|logs|controls)$/.test(target.id) || !ev.detail.shouldSwap) { return; }
     ev.detail.shouldSwap = false;
     var seq = ev.detail.xhr.forgemirrorSequence || ++sequence;
     if (seq < (accepted.get(target) || 0)) { return; }

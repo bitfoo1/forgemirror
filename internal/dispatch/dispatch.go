@@ -131,9 +131,8 @@ type Dispatcher struct {
 
 // repoState tracks the single active run of a repository.
 type repoState struct {
-	// next is the newest event that arrived during the active run; nil if
-	// none. Only the newest matters, since a run mirrors the full current
-	// state of the repository.
+	// Ref publication and object-only repair retain separate coalesced slots:
+	// combining their target sets would grant repair-only targets ref writes.
 	next *queuedEvent
 }
 
@@ -143,6 +142,7 @@ type queuedEvent struct {
 	event  webhook.Event
 	apply  bool
 	repair bool
+	after  *queuedEvent
 }
 
 var _ webhook.Dispatcher = (*Dispatcher)(nil)
@@ -170,6 +170,10 @@ func New(opts Options) *Dispatcher {
 
 // applies reports whether a run for e changes the targets.
 func (d *Dispatcher) applies(e webhook.Event) bool {
+	// Operator intent does not upgrade read-only/object-only actions to ref writes.
+	if e.Kind == webhook.EventRepairLFS || e.Kind == webhook.EventRefresh {
+		return false
+	}
 	if e.Operator && e.Kind != webhook.EventRefresh {
 		return true
 	}
@@ -190,6 +194,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	if e.Kind == webhook.EventSync || e.Kind == webhook.EventRepairLFS {
 		e.Operator = true
 	}
+	e.Targets = slices.Clone(e.Targets)
 	key := e.Repository.FullName
 	logger := d.eventLogger(e)
 
@@ -206,27 +211,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	current := &queuedEvent{ctx: ctx, event: e, apply: d.applies(e), repair: e.Kind == webhook.EventRepairLFS}
 
 	if state, busy := d.running[key]; busy {
-		if queued := state.next; queued != nil {
-			// A queued sync must survive a later event that only plans, or a
-			// push in review mode would silently cancel the operator's sync.
-			current.event.Target = mergedScope(current, queued)
-			current.apply = current.apply || queued.apply
-			current.repair = current.repair || queued.repair
-			current.event.Operator = current.event.Operator || queued.event.Operator
-			current.event.Retry = current.event.Retry && queued.event.Retry
-			// The repository is gone once a deletion is queued; letting a later
-			// push replace it would recreate the target repository.
-			if queued.event.Kind == webhook.EventDelete && e.Kind != webhook.EventDelete {
-				queued.apply = current.apply
-				queued.event.Operator = current.event.Operator
-				queued.event.Target = current.event.Target
-				queued.event.Retry = current.event.Retry
-				logger.InfoContext(ctx, "deletion already queued; event merged into it")
-
-				return
-			}
-		}
-		state.next = current
+		state.next = coalesce(current, state.next)
 		logger.InfoContext(ctx, "run already in progress; queued one follow-up run")
 
 		return
@@ -236,22 +221,60 @@ func (d *Dispatcher) Dispatch(ctx context.Context, e webhook.Event) {
 	d.wg.Go(func() { d.runLoop(current) })
 }
 
-func mergedScope(current, queued *queuedEvent) string {
-	currentWrites, queuedWrites := current.apply || current.repair, queued.apply || queued.repair
-	if currentWrites && !queuedWrites {
-		return current.event.Target
+func coalesce(current, queued *queuedEvent) *queuedEvent {
+	if queued == nil {
+		return current
 	}
-	if queuedWrites && !currentWrites {
-		return queued.event.Target
+	if (current.apply && queued.repair && !queued.apply) || (queued.apply && current.repair && !current.apply) {
+		queued.after = coalesce(current, queued.after)
+		return queued
 	}
-	return mergedTarget(current.event.Target, queued.event.Target)
+	current.event.Target, current.event.Targets = mergedScope(current, queued)
+	current.apply = current.apply || queued.apply
+	current.repair = current.repair || queued.repair
+	current.event.Operator = current.event.Operator || queued.event.Operator
+	current.event.Retry = current.event.Retry && queued.event.Retry
+	if queued.event.Kind == webhook.EventDelete && current.event.Kind != webhook.EventDelete {
+		queued.apply = current.apply
+		queued.event.Operator = current.event.Operator
+		queued.event.Target = current.event.Target
+		queued.event.Targets = current.event.Targets
+		queued.event.Retry = current.event.Retry
+		return queued
+	}
+	current.after = queued.after
+	return current
 }
 
-func mergedTarget(a, b string) string {
-	if a == b {
-		return a
+func mergedScope(current, queued *queuedEvent) (string, []string) {
+	currentWrites, queuedWrites := current.apply || current.repair, queued.apply || queued.repair
+	if currentWrites && !queuedWrites {
+		return current.event.Target, slices.Clone(current.event.Targets)
 	}
-	return ""
+	if queuedWrites && !currentWrites {
+		return queued.event.Target, slices.Clone(queued.event.Targets)
+	}
+	a, b := eventTargets(current.event), eventTargets(queued.event)
+	if a == nil || b == nil {
+		return "", nil
+	}
+	union := append(slices.Clone(a), b...)
+	slices.Sort(union)
+	union = slices.Compact(union)
+	if len(union) == 1 {
+		return union[0], nil
+	}
+	return "", union
+}
+
+func eventTargets(e webhook.Event) []string {
+	if e.Targets != nil {
+		return e.Targets
+	}
+	if e.Target != "" {
+		return []string{e.Target}
+	}
+	return nil
 }
 
 // Known returns the newest repository data seen for fullName ("owner/name").
@@ -341,6 +364,8 @@ func (d *Dispatcher) nextRun(e webhook.Event) *queuedEvent {
 	state.next = nil
 
 	if next != nil && !d.closed {
+		state.next = next.after
+		next.after = nil
 		return next
 	}
 
@@ -415,8 +440,8 @@ func (d *Dispatcher) eventRuns(e webhook.Event) []*targetRun {
 	for _, tr := range runs {
 		tr.source = e.Repository
 	}
-	if e.Target != "" {
-		runs = slices.DeleteFunc(runs, func(tr *targetRun) bool { return tr.cfg.Name != e.Target })
+	if selected := eventTargets(e); selected != nil {
+		runs = slices.DeleteFunc(runs, func(tr *targetRun) bool { return !slices.Contains(selected, tr.cfg.Name) })
 	}
 	return runs
 }

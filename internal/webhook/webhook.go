@@ -40,6 +40,8 @@ type Event struct {
 	Repository repo.Repository
 	// Target limits an operator-requested run; empty means all destinations.
 	Target string
+	// Targets limits one operation to an explicit union; nil retains Target's legacy meaning.
+	Targets []string
 	// Retry preserves the existing retry budget instead of starting a new one.
 	Retry    bool
 	ParentID uint64

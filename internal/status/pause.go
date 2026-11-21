@@ -8,21 +8,24 @@ import (
 	"slices"
 	"time"
 
+	"go.bitfoo.de/forgemirror/internal/hold"
 	"go.bitfoo.de/forgemirror/internal/retry"
 )
 
 // ErrPaused distinguishes an operator hold from a failed transfer.
 var ErrPaused = errors.New("publication paused")
 
-// Pause holds a whole target (empty Repo) or one repository on that target.
+// Pause is an independently resumable hold. Repo/Target preserve legacy controls.
 type Pause struct {
-	Repo   string    `json:"repo"`
-	Target string    `json:"target"`
-	Reason string    `json:"reason"`
-	Until  time.Time `json:"until"`
+	ID     string     `json:"id,omitempty"`
+	Scope  hold.Scope `json:"scope"`
+	Repo   string     `json:"repo"`
+	Target string     `json:"target"`
+	Reason string     `json:"reason"`
+	Until  time.Time  `json:"until"`
 }
 
-const controlVersion = 3
+const controlVersion = 4
 
 type controlRecord struct {
 	Version   int           `json:"version"`
@@ -39,7 +42,7 @@ func (s *Store) BeginMutation(repo, target string) (func(), error) {
 
 func (s *Store) pauseLocked(repo, target string) (Pause, bool) {
 	for _, p := range s.pauses {
-		if p.Target == target && (p.Repo == "" || p.Repo == repo) && (p.Until.IsZero() || s.now().Before(p.Until)) {
+		if p.Scope.Matches(repo, target) && (p.Until.IsZero() || s.now().Before(p.Until)) {
 			return p, true
 		}
 	}
@@ -50,17 +53,23 @@ func (s *Store) pauseLocked(repo, target string) (Pause, bool) {
 func (s *Store) Paused(repo, target string) (Pause, bool) {
 	s.controlMu.RLock()
 	defer s.controlMu.RUnlock()
-	return s.pauseLocked(repo, target)
+	p, ok := s.pauseLocked(repo, target)
+	p.Scope = p.Scope.Clone()
+	return p, ok
 }
 
 // Pauses returns active holds for operator visibility.
 func (s *Store) Pauses() []Pause {
 	s.controlMu.RLock()
 	defer s.controlMu.RUnlock()
-	return slices.DeleteFunc(
+	active := slices.DeleteFunc(
 		slices.Clone(s.pauses),
 		func(p Pause) bool { return !p.Until.IsZero() && !s.now().Before(p.Until) },
 	)
+	for i := range active {
+		active[i].Scope = active[i].Scope.Clone()
+	}
+	return active
 }
 
 // Pause acknowledges only after active mutations finish and persistence succeeds.
@@ -73,12 +82,19 @@ func (s *Store) Pause(ctx context.Context, p Pause) error {
 	if p.Target == "" || (!p.Until.IsZero() && !p.Until.After(s.now())) {
 		return errors.New("pause requires a target and a future expiry")
 	}
+	p = legacyPause(p)
+	if err := p.Scope.Validate(); err != nil {
+		return err
+	}
 	s.controlMu.Lock()
 	defer s.controlMu.Unlock()
 	next := slices.DeleteFunc(
-		slices.Clone(s.pauses),
-		func(old Pause) bool { return old.Repo == p.Repo && old.Target == p.Target },
+		s.activePausesLocked(),
+		func(old Pause) bool { return old.Target != "" && old.Repo == p.Repo && old.Target == p.Target },
 	)
+	if len(next) >= hold.MaxHolds || (!p.Until.IsZero() && !p.Until.After(s.now())) {
+		return hold.ErrInvalid
+	}
 	return s.saveControls(ctx, append(next, p))
 }
 
@@ -88,7 +104,7 @@ func (s *Store) Resume(ctx context.Context, repo, target string) error {
 	defer s.controlMu.Unlock()
 	next := slices.DeleteFunc(
 		slices.Clone(s.pauses),
-		func(p Pause) bool { return p.Repo == repo && p.Target == target },
+		func(p Pause) bool { return p.Target != "" && p.Repo == repo && p.Target == target },
 	)
 	return s.saveControls(ctx, next)
 }
@@ -144,31 +160,27 @@ func (s *Store) restoreControls(ctx context.Context) error {
 	if err != nil {
 		return errors.New("could not restore publication controls")
 	}
-	if data, ok := records["controls"]; ok {
-		var record controlRecord
-		if err = json.Unmarshal(
-			data,
-			&record,
-		); err != nil ||
-			(record.Version != 1 && record.Version != 2 && record.Version != controlVersion) {
-			return errors.New("invalid publication controls")
-		}
-		if !validApprovals(record.Approvals) {
-			return errors.New("invalid persisted approvals")
-		}
-		if !validRetries(record.Retries) {
-			return errors.New("invalid persisted retries")
-		}
-		for _, p := range record.Pauses {
-			if p.Target == "" {
-				return errors.New("invalid persisted pause")
-			}
-		}
-		s.controlMu.Lock()
-		s.pauses = record.Pauses
-		s.retries = record.Retries
-		s.approvals = record.Approvals
-		s.controlMu.Unlock()
+	data, ok := records["controls"]
+	if !ok {
+		return nil
 	}
+	var record controlRecord
+	if err = json.Unmarshal(data, &record); err != nil || record.Version < 1 || record.Version > controlVersion {
+		return errors.New("invalid publication controls")
+	}
+	if !validApprovals(record.Approvals) {
+		return errors.New("invalid persisted approvals")
+	}
+	if !validRetries(record.Retries) {
+		return errors.New("invalid persisted retries")
+	}
+	if err = normalizePauses(&record); err != nil {
+		return err
+	}
+	s.controlMu.Lock()
+	s.pauses = record.Pauses
+	s.retries = record.Retries
+	s.approvals = record.Approvals
+	s.controlMu.Unlock()
 	return nil
 }

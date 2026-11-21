@@ -87,7 +87,9 @@ test('sync updates current diff and retains the applied plan without reloading',
   await page.evaluate(() => {window.pageIdentity = 'retained';});
   await page.locator('.repo-actions button', { hasText: /^Sync$/ }).click();
   await expect(page.locator('.applied > summary')).toContainText('Last applied plan', {timeout: 12000});
-  await expect(page.locator('.repo-head .forge-badge').first()).toHaveAttribute('title', 'GitHub: in sync');
+  // A retained applied plan can predate this action; completion is the fresh
+  // comparison, which may arrive on the next five-second polling cycle.
+  await expect(page.locator('.repo-head .forge-badge').first()).toHaveAttribute('title', 'GitHub: in sync', {timeout: 12000});
   await expect(page.locator('details.diff').first().locator('.changes code')).toHaveCount(0);
   await expect(page.locator('.repo-actions button', { hasText: /^Sync$/ })).toBeFocused();
   await page.locator('.applied > summary').click();

@@ -27,6 +27,7 @@ import (
 
 	"go.bitfoo.de/forgemirror/internal/config"
 	"go.bitfoo.de/forgemirror/internal/control"
+	"go.bitfoo.de/forgemirror/internal/hold"
 	"go.bitfoo.de/forgemirror/internal/logging"
 	"go.bitfoo.de/forgemirror/internal/retry"
 	"go.bitfoo.de/forgemirror/internal/status"
@@ -59,12 +60,14 @@ func securityHeaders() map[string]string {
 //go:embed templates/*.html
 var templateFS embed.FS
 
-//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js static/icons/*
+//go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js static/icons/* static/controls.js static/controls.css
 var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.
 type Actions interface {
 	Approve(context.Context, string, string, string) error
+	PauseScope(ctx context.Context, scope hold.Scope, reason string, until time.Time) error
+	ResumeHold(ctx context.Context, id string) error
 	Pause(ctx context.Context, repo, target, reason string, until time.Time) error
 	Resume(ctx context.Context, repo, target string) error
 	RepairLFS(ctx context.Context, fullName string) error
@@ -136,6 +139,7 @@ func Handler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("GET /history", h.history)
 	mux.HandleFunc("GET /fragments/overview", h.render("overview"))
 	mux.HandleFunc("GET /fragments/repos", h.render("repos"))
+	mux.HandleFunc("GET /fragments/controls", h.render("controls"))
 	mux.HandleFunc("GET /fragments/logs", h.render("logs"))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	if opts.Actions != nil {
@@ -143,6 +147,8 @@ func Handler(opts Options) (http.Handler, error) {
 		mux.HandleFunc("POST /actions/sync", h.action(true))
 		mux.HandleFunc("POST /actions/repair-lfs", h.action(true))
 		mux.HandleFunc("POST /actions/pause", h.action(true))
+		mux.HandleFunc("POST "+holdActionPath, h.action(true))
+		mux.HandleFunc("POST "+resumeHoldActionPath, h.action(true))
 		mux.HandleFunc("POST /actions/approve", h.action(true))
 	}
 
@@ -195,6 +201,8 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 			notice, err = h.approvalAction(r)
 		case "/actions/pause":
 			notice, err = h.pauseAction(r)
+		case holdActionPath, resumeHoldActionPath:
+			notice, err = h.holdAction(r)
 		case "/actions/repair-lfs":
 			name := r.PostForm.Get("repo")
 			if name == "" {
@@ -205,6 +213,11 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 			notice = "LFS repair started for " + name + "."
 		default:
 			notice, err = h.runAction(r.Context(), sync, r.PostForm.Get("repo"))
+		}
+		holdRequest := r.URL.Path == holdActionPath || r.URL.Path == resumeHoldActionPath
+		if holdRequest && err != nil {
+			h.writeHoldError(w, err)
+			return
 		}
 		switch {
 		case errors.Is(err, control.ErrStaleApproval):
@@ -219,7 +232,7 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 			notice = err.Error()
 		}
 
-		if r.Header.Get("Hx-Request") != "true" {
+		if r.Header.Get("Hx-Request") != trueValue {
 			// The action path has exactly one level, so "../" is the page
 			// under any proxy path prefix. http.Redirect would turn it into an
 			// absolute path and lose the prefix.
@@ -231,6 +244,10 @@ func (h *handler) action(sync bool) http.HandlerFunc {
 		if notifyErr := triggerNotice(w, notice, err != nil); notifyErr != nil {
 			h.opts.Logger.ErrorContext(r.Context(), "UI notification failed", slog.Any("error", notifyErr))
 			http.Error(w, "Could not encode action acknowledgement", http.StatusInternalServerError)
+			return
+		}
+		if holdRequest {
+			h.renderWith(w, r, "controls", nil)
 			return
 		}
 		h.renderWith(w, r, "repos", nil)
@@ -275,29 +292,31 @@ type level struct {
 }
 
 type pageData struct {
-	HistoryRepo  string
-	History      []historyView
-	HistoryTotal int
-	HistoryPrev  int
-	HistoryNext  int
-	Version      string
-	Refresh      time.Duration
-	Snapshot     status.Snapshot
-	Types        []targetType
-	TargetNames  []string
-	Pauses       []status.Pause
-	Retries      []retry.Entry
-	OnPush       bool
-	Auto         bool
-	Actions      bool
-	Running      int
-	Activity     string
-	Queued       int
-	Repos        []repoView
-	Counts       counts
-	Config       string
-	Logs         []logging.Entry
-	Levels       []level
+	HistoryRepo          string
+	History              []historyView
+	HistoryTotal         int
+	HistoryPrev          int
+	HistoryNext          int
+	Version              string
+	Refresh              time.Duration
+	Snapshot             status.Snapshot
+	Types                []targetType
+	TargetNames          []string
+	Pauses               []status.Pause
+	HoldRepositories     []string
+	AllPublicationPaused bool
+	Retries              []retry.Entry
+	OnPush               bool
+	Auto                 bool
+	Actions              bool
+	Running              int
+	Activity             string
+	Queued               int
+	Repos                []repoView
+	Counts               counts
+	Config               string
+	Logs                 []logging.Entry
+	Levels               []level
 }
 
 // counts summarises the repository states for the section header.
@@ -359,6 +378,7 @@ func (h *handler) data(r *http.Request) pageData {
 		d.Repos[i].Actionable = h.opts.Known == nil || h.opts.Known(d.Repos[i].Name)
 	}
 	h.explainPublications(&d)
+	h.controlsData(&d)
 
 	minLevel := parseLevel(r.URL.Query().Get("level"))
 	for _, l := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {

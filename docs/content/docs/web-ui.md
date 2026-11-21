@@ -126,24 +126,52 @@ activates the action-button wheels.
 
 ### Pause and resume targets
 
-Use **Pause or resume a target** to hold an entire destination or one known
-`owner/name` on that destination. Supply an optional reason and duration such
-as `30m` or `2h`; empty duration holds indefinitely. Active pauses and their
-reasons appear beside the controls and on affected targets.
+**Publication controls** is a separate collapsible card above Repositories.
+Its **New hold** tab guides you through **Targets → Repositories → Duration →
+Review**; **Current holds (N)** lists the independent holds already in effect.
+Switching tabs preserves the draft. Creating a hold opens Current holds and
+resets the wizard to its first step. Counts remain visible when the card is
+collapsed; an explicit service-wide hold says **All publication paused**.
 
-Planning continues while paused. A pause acknowledges only after active
-remote operations finish; subsequent Git, LFS, settings, release, package,
-creation and deletion steps cannot start. It does not roll back completed
-steps. Manual Sync and Repair LFS obey the same hold.
+The defaults are **All targets**, **All repositories**, and **Until resumed**.
+Select targets and repositories as removable badges. A selected item disappears
+from the suggestions until its badge is removed. Repository scopes accept exact
+`owner/name` values and `*`/`?` globs: type `acme/*` and press Enter or comma.
+Names and globs form a union, with each match counted once. `*` and `?` match
+within a component, not across `/`; character classes, escapes, and exclusions
+are rejected. An empty selection never means all.
 
-Resume removes only the selected scope and requests a fresh comparison and
-sync for that destination, including in review mode. Resuming a repository
-does not bypass a whole-target hold. An expiry removes the hold automatically
-for subsequent runs; it does not create an independent scheduled run. Enable
-scheduled sync if publication should catch up without another push.
+All-target holds also cover subsequently configured targets. All-repository
+holds cover future source admissions and can be created before discovery;
+globs keep protecting future admitted matches but must initially match at
+least one admitted repository. Exact names must already be admitted. Removing
+repositories or targets from current configuration does not silently delete a
+hold. Scopes are limited to 64 target names and 64 repository expressions, and
+the store permits at most 256 current holds. Reasons are optional and limited
+to 256 bytes. Custom durations use positive Go durations such as `45m` or `6h`.
+The server validates the complete selection before storing any part of it.
 
-Controls survive restarts in the mandatory SQLite database. A failed durable
-write leaves the previous control state intact and reports an error.
+Planning continues while paused. A hold acknowledges only after active remote
+operations finish and durable persistence succeeds; subsequent Git, LFS,
+settings, release, package, creation and deletion steps cannot start. It does
+not roll back completed steps. Manual Sync and Repair LFS obey the same hold.
+A timed hold expiring permits a subsequent enabled run; expiry does not itself
+queue publication. Enable scheduled sync for automatic catch-up.
+
+**Resume & sync** removes only that hold's stable ID, then requests fresh
+comparisons and syncs for its currently admitted repository/target pairs,
+including in review mode. Other holds and approvals remain enforced. In
+particular, resuming a GitHub-only hold does not bypass an all-target hold;
+removing the all-target hold does not remove a separate GitHub hold. Target
+subsets remain bounded even when queued resume requests are combined.
+
+Controls survive restarts in the mandatory SQLite database. Existing exact
+repository and whole-target pauses migrate to stable IDs. A failed durable
+write retains the previous state. During live polling, draft fields, badges,
+steps, custom duration, and tab selection are preserved while Current holds
+updates independently. Without JavaScript the same actions are available as
+native forms; uncheck the explicit All choice before making a narrower
+selection.
 
 ### First-publication approval
 
