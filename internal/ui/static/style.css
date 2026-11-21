@@ -79,13 +79,7 @@ a { color: var(--accent); }
 }
 .brand { display: flex; align-items: baseline; gap: .6rem; min-width: 0; }
 .brand h1 { margin: 0; font-size: 1.15rem; letter-spacing: -.01em; }
-.mark {
-  align-self: center;
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 5px;
-  background: linear-gradient(135deg, var(--accent), var(--magenta));
-}
+.mark { align-self: center; width: 1.5rem; height: 1.5rem; }
 .topbar-end { display: flex; align-items: center; gap: .5rem; }
 
 main {
@@ -95,7 +89,17 @@ main {
   display: grid;
   gap: 1rem;
 }
-.foot { text-align: center; padding: 0 16px 1.5rem; font-size: 0.7812rem; }
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 0 16px 1.5rem;
+  font-size: 0.7812rem;
+  text-align: center;
+}
+.foot-mascot { width: 1.75rem; height: auto; }
 .foot p { margin: .2rem 0; }
 .foot .build code { font-size: inherit; }
 
@@ -153,6 +157,8 @@ so it sits optically level with the title. */
 .card-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .75rem; min-width: 0; }
 .card-title-row > .summary { margin: 0; }
 .empty { margin: .5rem 0; }
+.empty-repos { display: flex; flex-direction: column; align-items: center; gap: .5rem; padding: 1rem 0; text-align: center; }
+.empty-repos img { width: 8.75rem; height: auto; }
 
 /* Overview pipeline: triggers fan in to ForgeMirror, which fans out to the
 targets. Branches are borders on the list items (::before is the branch,
@@ -530,7 +536,6 @@ th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-
    with system colours and drops backgrounds, gradients and shadows. Anything
    that relied on those gets a border, outline or system colour instead. */
 @media (forced-colors: active) {
-  .mark { border: 1px solid CanvasText; }
   .btn:disabled { color: GrayText; border-color: GrayText; opacity: 1; }
   .btn-primary { border-width: 2px; }
   /* A label swatch shows the label's real colour; that colour is the content. */

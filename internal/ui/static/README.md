@@ -52,3 +52,13 @@ See the [Codeberg guidelines](https://codeberg.org/Codeberg/Design) when updatin
 To update: download from the official repositories, inspect SVGs for active
 content/external references, retain licenses, and update the checksums above.
 Never add a runtime dependency on a remote icon service.
+
+## Icon and mascot
+
+`favicon-16x16.png`, `favicon-32x32.png`, `apple-touch-icon.png`, `mark.png`
+and `mascot.webp` are project artwork, derived from the same AI-generated
+masters as the docs site (`docs/static/`, `docs/assets/images/`). Keep both
+in step when the artwork changes. The icons are PNG rather than `.ico`
+because Go's MIME table has no `.ico` entry; see the comment in
+`templates/ui.html`. `mascot.webp` stays small (280×320) because every file
+here is embedded in the binary.

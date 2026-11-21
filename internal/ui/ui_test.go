@@ -168,6 +168,10 @@ func TestRoutes(t *testing.T) {
 				"ops_listen_address: :9090",
 				"mirror finished",
 				"every 1h0m0s",
+				`href="static/favicon-32x32.png?v=`,
+				`href="static/apple-touch-icon.png?v=`,
+				`src="static/mark.png?v=`,
+				`src="static/mascot.webp?v=`,
 				// Build and uptime share the footer line.
 				`v9.9.9 · commit <code title="0123456789abcdef0123">0123456</code>-dirty · go1.99 · <span class="uptime">up <time datetime="`,
 				`data-uptime-ms="`,
@@ -198,6 +202,11 @@ func TestRoutes(t *testing.T) {
 		{path: "/static/htmx.min.js", want: []string{"htmx"}, wantType: "text/javascript; charset=utf-8"},
 		{path: "/static/style.css", want: []string{"--accent"}, wantType: "text/css; charset=utf-8"},
 		{path: "/static/app.js", want: []string{"forgemirror-theme"}, wantType: "text/javascript; charset=utf-8"},
+		{path: "/static/favicon-16x16.png", want: []string{"\x89PNG"}, wantType: "image/png"},
+		{path: "/static/favicon-32x32.png", want: []string{"\x89PNG"}, wantType: "image/png"},
+		{path: "/static/apple-touch-icon.png", want: []string{"\x89PNG"}, wantType: "image/png"},
+		{path: "/static/mark.png", want: []string{"\x89PNG"}, wantType: "image/png"},
+		{path: "/static/mascot.webp", want: []string{"WEBP"}, wantType: "image/webp"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.path, func(t *testing.T) {
@@ -372,14 +381,17 @@ func TestEmptyState(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t)
-	for path, want := range map[string]string{
-		"/fragments/repos":    "No repositories yet",
-		"/fragments/logs":     "No log records",
-		"/fragments/overview": "first sweep running",
+	for path, wants := range map[string][]string{
+		"/fragments/repos":    {"No repositories yet", `<img src="static/mascot.webp?v=`},
+		"/fragments/logs":     {"No log records"},
+		"/fragments/overview": {"first sweep running"},
 	} {
 		// The fixture's logger already logs nothing; the ring is empty.
-		if body := f.do(t, http.MethodGet, path).Body.String(); !strings.Contains(body, want) {
-			t.Errorf("%s lacks %q:\n%s", path, want, body)
+		body := f.do(t, http.MethodGet, path).Body.String()
+		for _, want := range wants {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s lacks %q:\n%s", path, want, body)
+			}
 		}
 	}
 }

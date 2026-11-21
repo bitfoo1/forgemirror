@@ -62,6 +62,8 @@ func securityHeaders() map[string]string {
 var templateFS embed.FS
 
 //go:embed static/htmx.min.js static/style.css static/app.js static/live.js static/toast.js static/icons/* static/controls.js static/controls.css static/confirm.js
+//go:embed static/favicon-16x16.png static/favicon-32x32.png static/apple-touch-icon.png
+//go:embed static/mark.png static/mascot.webp
 var staticFS embed.FS
 
 // Actions are the operator actions; [control.Controller] implements them.

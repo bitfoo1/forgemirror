@@ -12,6 +12,7 @@ the layout scales with it. Browsers without support ignore it. */}}
 Content-Security-Policy forbids; eval and script tags are never needed. */}}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
 <title>ForgeMirror</title>
+{{- template "head-icons"}}
 <link rel="stylesheet" href="{{asset "style.css"}}">
 <link rel="stylesheet" href="{{asset "controls.css"}}">
 {{- /* Not deferred: it applies the stored theme before the first paint. */}}
@@ -42,7 +43,7 @@ because screen readers ignore politeness changes made at insertion time. */}}
 </dialog>
 <header class="topbar">
   <div class="brand">
-    <span class="mark" aria-hidden="true"></span>
+    <img class="mark" src="{{asset "mark.png"}}" alt="" width="24" height="24">
     <h1>ForgeMirror</h1>
   </div>
   <div class="topbar-end">
@@ -94,13 +95,25 @@ because screen readers ignore politeness changes made at insertion time. */}}
   </section>
 </main>
 <footer class="foot muted">
+  <img class="foot-mascot" src="{{asset "mascot.webp"}}" alt="" width="28" height="32" loading="lazy">
+  <div>
   <p>Live data checked every {{.Refresh}} · updates pause while selecting text</p>
   <p class="build">
   {{- with .Build}}ForgeMirror {{release .Version}}{{with .Commit}} · commit <code title="{{.}}">{{short .}}</code>{{end}}{{if .Modified}}-dirty{{end}}{{with .GoVersion}} · {{.}}{{end}}
   {{- end}} · <span class="uptime">up <time datetime="{{iso .Snapshot.Started}}" title="since {{clock .Snapshot.Started}} UTC" data-uptime-ms="{{elapsedMs .Snapshot.Started}}">{{uptime .Snapshot.Started}}</time></span></p>
+  </div>
 </footer>
 </body>
 </html>
+{{- end}}
+
+{{- define "head-icons"}}
+{{- /* PNG instead of favicon.ico: the UI may run under a proxy path prefix,
+where the browser's /favicon.ico fallback misses anyway, and Go's MIME table
+has no .ico entry, so its Content-Type would depend on the host. */}}
+<link rel="icon" type="image/png" sizes="32x32" href="{{asset "favicon-32x32.png"}}">
+<link rel="icon" type="image/png" sizes="16x16" href="{{asset "favicon-16x16.png"}}">
+<link rel="apple-touch-icon" sizes="180x180" href="{{asset "apple-touch-icon.png"}}">
 {{- end}}
 
 {{define "overview" -}}
@@ -190,7 +203,10 @@ its state as text, so the structure also works for screen readers. */}}
 {{range .}}<p><code>{{.Repo}}</code> → {{template "forge-name" .Target}}: {{.State}} · {{.Attempts}} failures{{if or (eq .State "waiting") (eq .State "paused")}} · next eligible <time datetime="{{iso .Next}}">{{when .Next}}</time>{{end}}</p>{{end}}
 </details>{{end}}
 {{- if not .Repos}}
-<p class="empty muted">No repositories yet. They appear after the first push, scheduled sweep or refresh.</p>
+<div class="empty-repos">
+  <img src="{{asset "mascot.webp"}}" alt="" width="140" height="160">
+  <p class="empty muted">No repositories yet. They appear after the first push, scheduled sweep or refresh.</p>
+</div>
 {{- else}}
 <ul class="repos" data-live-key="repository-list">
   {{- range $r := .Repos}}
