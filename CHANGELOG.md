@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-11-21
+
+### Features
+
+- **ui:** Show forge badges and group shared changes (0b811c0)
+- **ui:** Use official forge names and icons (3fe1391)
+- **ui:** Add guided durable publication holds (b217667)
+- **ui:** Add pipeline overview and accessible UI polish (df9fd2f)
+- **ui:** Add the ForgeMirror icon and mascot (7cc5961)
+
+### Bug fixes
+
+- **ui:** Keep header forge badges inline with wider fonts (64cd8ee)
+
+### Documentation
+
+- **site:** Raise documentation colours to WCAG 2.2 AA (ff30fab)
+- **site:** Add section headings above the install steps (125abb3)
+- **site:** Load the home screenshot first and open screenshots in a lightbox (192fcbd)
+- **site:** Update the web UI screenshots (50352f4)
+- **site:** Add the logo, favicons and the hero mascot (9f574ee)
+- **site:** Retake the web UI screenshots with the new logo (d81232e)
+
+### Tests
+
+- **ui:** Add axe accessibility and pipeline layout checks (20314d9)
+- **docs:** Check the documentation in the browser (5579faf)
+- **dispatch:** Wait for idle dispatcher before RetryDue (54edeb4)
+
+### CI
+
+- **tasks:** Install Playwright browsers once for parallel suites (de6ce27)
+
 ## [0.8.0] - 2026-11-20
 
 ### Features
