@@ -70,6 +70,22 @@ func waitRuns(t *testing.T, obs *recordingObserver, n int32) {
 	}
 }
 
+// waitIdle waits until the dispatcher has deregistered every repository.
+// RunFinished fires before the run loop releases the repository, and RetryDue
+// skips busy repositories instead of queueing behind them, so waitRuns alone
+// does not make a following RetryDue call deterministic.
+func waitIdle(t *testing.T, d *dispatch.Dispatcher) {
+	t.Helper()
+
+	deadline := time.Now().Add(waitTimeout)
+	for len(d.Queued()) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("repositories still running: %v", d.Queued())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func withKind(e webhook.Event, k webhook.EventKind) webhook.Event {
 	e.Kind = k
 

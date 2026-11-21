@@ -82,6 +82,7 @@ func TestDueRetryReadmitsOnlyItsTarget(t *testing.T) {
 	)
 	d.Dispatch(t.Context(), withKind(event("app"), webhook.EventRefresh))
 	waitRuns(t, obs, 1)
+	waitIdle(t, d)
 	if err := store.RecordRetry(t.Context(), "acme/app", "github", "sync", true, context.DeadlineExceeded); err != nil {
 		t.Fatal(err)
 	}
