@@ -1,23 +1,46 @@
 {{- /*
-Theme-aware screenshot: renders assets/images/<name>-light.png and
-<name>-dark.png, and CSS shows the one matching Hextra's light/dark switch.
-<picture> with prefers-color-scheme cannot follow the theme toggle, which
-overrides the system setting. The PNGs are the source of truth (taken at 2x);
-WebP is generated here so no image tool is needed outside Hugo.
+Theme-aware screenshot from assets/images/<name>-light.png and
+<name>-dark.png (the PNGs are the source of truth, taken at 2x; WebP is
+generated here so no image tool is needed outside Hugo).
 
-Usage: {{< screenshot name="web-ui" alt="…" class="fm-ribbon" >}}
+The screenshot links to its full-size image, which works without JavaScript
+and keeps open-in-new-tab. assets/js/screenshot.js turns a plain click into a
+modal lightbox with the image of the active theme; the link targets the light
+image because the theme is unknown without JavaScript.
+
+priority="true" marks the screenshot as the page's LCP image (see
+_partials/fm/screenshot-picture.html).
+
+Usage: {{< screenshot name="web-ui" alt="…" class="fm-ribbon" priority="true" >}}
 */ -}}
 {{- $name := .Get "name" -}}
 {{- $alt := .Get "alt" | default "" -}}
 {{- $class := .Get "class" | default "" -}}
-<figure class="fm-shot {{ $class }}">
+{{- $img := dict -}}
 {{- range $scheme := slice "light" "dark" -}}
   {{- $path := printf "images/%s-%s.png" $name $scheme -}}
   {{- with resources.Get $path -}}
-    {{- $img := .Process "webp q85" -}}
-    <img class="fm-shot-{{ $scheme }}" src="{{ $img.RelPermalink }}" width="{{ div $img.Width 2 }}" height="{{ div $img.Height 2 }}" alt="{{ $alt }}" loading="lazy" decoding="async">
+    {{- $img = merge $img (dict $scheme (.Process "webp q85")) -}}
   {{- else -}}
     {{- errorf "screenshot: assets/%s not found (%s)" $path $.Position -}}
   {{- end -}}
 {{- end -}}
+{{- $id := printf "fm-shot-%s-%d" $name .Ordinal -}}
+{{- $picture := dict "light" $img.light "dark" $img.dark "alt" $alt -}}
+<figure class="fm-shot {{ $class }}">
+  <a class="fm-shot-open" href="{{ $img.light.RelPermalink }}" data-fm-lightbox="{{ $id }}" aria-haspopup="dialog">
+    {{- partial "fm/screenshot-picture.html" (merge $picture (dict "priority" (eq (.Get "priority") "true"))) -}}
+  </a>
 </figure>
+<dialog id="{{ $id }}" class="fm-lightbox" closedby="any" aria-label="Full-size screenshot">
+  <form method="dialog">
+    <button type="submit" class="fm-lightbox-close" autofocus>Close</button>
+  </form>
+  {{- partial "fm/screenshot-picture.html" $picture -}}
+</dialog>
+{{- if not (.Page.Store.Get "fm-lightbox-script") -}}
+  {{- .Page.Store.Set "fm-lightbox-script" true -}}
+  {{- with resources.Get "js/screenshot.js" | fingerprint }}
+<script type="module" src="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}"></script>
+  {{- end -}}
+{{- end -}}

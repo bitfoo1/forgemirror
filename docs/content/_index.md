@@ -28,7 +28,9 @@ layout: hextra-home
 {{< hextra/hero-button text="Read the docs" link="docs/" >}}
 </div>
 
-{{< screenshot name="web-ui" class="fm-ribbon" alt="The ForgeMirror web UI: overview tiles with the configured target types, and a mirrored repository with the last result of every sync step on its Forgejo target." >}}
+{{< screenshot name="web-ui" class="fm-ribbon" priority="true" alt="The ForgeMirror web UI in review mode: the pipeline from its triggers through ForgeMirror to the GitHub, Codeberg and GitLab targets, with Codeberg on hold, and two repositories whose current diffs show the pending ref changes per target." >}}
+
+<h2 class="fm-sr-only">Features</h2>
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card

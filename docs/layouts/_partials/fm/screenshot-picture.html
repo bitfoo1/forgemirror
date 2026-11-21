@@ -1,0 +1,21 @@
+{{- /*
+The theme-aware image of a screenshot, shared by the page and its lightbox
+(shortcode "screenshot"). The <picture> follows the system colour scheme, so
+the browser fetches one image. Hextra's theme toggle can override the system
+setting, which a <picture> cannot follow; for that case CSS swaps in a lazy
+override <img> of the other scheme. Hidden lazy images are never fetched, so
+the common case costs a single download.
+
+Context: dict "light" "dark" (processed images, taken at 2x), "alt", and
+"priority" (true for the page's LCP image: fetched eagerly at high priority).
+*/ -}}
+{{- $light := .light -}}
+{{- $dark := .dark -}}
+<picture class="fm-shot-system">
+  <source srcset="{{ $dark.RelPermalink }}" media="(prefers-color-scheme: dark)" width="{{ div $dark.Width 2 }}" height="{{ div $dark.Height 2 }}">
+  <img src="{{ $light.RelPermalink }}" width="{{ div $light.Width 2 }}" height="{{ div $light.Height 2 }}" alt="{{ .alt }}"
+    {{- if .priority }} fetchpriority="high"{{ else }} loading="lazy"{{ end }} decoding="async">
+</picture>
+{{- range $scheme, $img := dict "light" $light "dark" $dark }}
+<img class="fm-shot-override-{{ $scheme }}" src="{{ $img.RelPermalink }}" width="{{ div $img.Width 2 }}" height="{{ div $img.Height 2 }}" alt="{{ $.alt }}" loading="lazy" decoding="async">
+{{- end }}
